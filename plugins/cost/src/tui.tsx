@@ -1,9 +1,9 @@
 /** @jsxImportSource @opentui/solid */
 
 import { errorMessage, formatCount, formatMoney } from "@opcode/core"
-import { Card, CenterEmpty, FilterChip, KeyHints, Page, shorten, StatCard } from "@opcode/ui"
+import { Card, CenterEmpty, FilterChip, KeyHints, Page, shorten, StatCard, usePalette } from "@opcode/ui"
 import { createScreen } from "@opcode/ui/screen"
-import { Plugin, usePlugin } from "@opencode/plugin/tui"
+import { Plugin } from "@opencode/plugin/tui"
 import type { LocationRef } from "@opencode/client"
 import { useTerminalDimensions } from "@opentui/solid"
 import { batch, createComputed, createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
@@ -26,7 +26,7 @@ interface ScreenProps {
 function DashboardScreen(props: ScreenProps) {
   props.mount()
   const dimensions = useTerminalDimensions()
-  const context = usePlugin()
+  const palette = usePalette()
   const [data, setData] = createSignal<Dashboard>()
   const [error, setError] = createSignal("")
   const [refreshWarning, setRefreshWarning] = createSignal("")
@@ -117,19 +117,19 @@ function DashboardScreen(props: ScreenProps) {
         )}
         footer={(
           <box width="100%" flexDirection="row" justifyContent="space-between" gap={1}>
-            <text fg={refreshWarning() ? context.theme.text.feedback.warning.base : context.theme.text.muted}>
+            <text fg={refreshWarning() ? palette.warning : palette.muted}>
               {refreshWarning()
                 ? shorten(`Refresh failed: ${refreshWarning()}; showing last loaded usage.`, Math.max(12, dimensions().width - formatMoney(data()?.total.cost ?? 0).length - 6))
                 : wide() ? "Provider-reported USD; no pricing is recalculated." : "Provider-reported USD; no recalculation."}
             </text>
-            <text fg={context.theme.text.action.primary.base}>{formatMoney(data()?.total.cost ?? 0)}</text>
+            <text fg={palette.value}>{formatMoney(data()?.total.cost ?? 0)}</text>
           </box>
         )}
       >
         <scrollbox id="opcode-cost.content" flexGrow={1} minHeight={0} focused>
           <box flexDirection="column" flexGrow={1} flexShrink={0} gap={1}>
             <Show when={props.importStatus().includes("failed")}>
-              <text fg={context.theme.text.feedback.warning.base}>{props.importStatus()}</text>
+              <text fg={palette.warning}>{props.importStatus()}</text>
             </Show>
             <Show when={error()}>
               <Card grow minHeight={8}><CenterEmpty title="Unable to read ledger" description={error()} /></Card>
@@ -167,7 +167,7 @@ function DashboardScreen(props: ScreenProps) {
 }
 
 function BreakdownPanel(props: { title: string; rows: Breakdown[]; width: number }) {
-  const context = usePlugin()
+  const palette = usePalette()
   const max = () => Math.max(0, ...props.rows.map((row) => row.cost))
   const width = () => Math.min(20, Math.max(4, props.width - 26))
   return (
@@ -176,10 +176,10 @@ function BreakdownPanel(props: { title: string; rows: Breakdown[]; width: number
         <For each={props.rows}>{(row) => (
           <box flexDirection="column" paddingBottom={1} flexShrink={0}>
             <box flexDirection="row" justifyContent="space-between" gap={1}>
-              <text fg={context.theme.text.base}>{shorten(row.label, Math.max(4, props.width - formatMoney(row.cost).length - 6))}</text>
-              <text fg={context.theme.text.action.primary.base}>{formatMoney(row.cost)}</text>
+              <text fg={palette.text}>{shorten(row.label, Math.max(4, props.width - formatMoney(row.cost).length - 6))}</text>
+              <text fg={palette.value}>{formatMoney(row.cost)}</text>
             </box>
-            <text fg={context.theme.text.muted}>{costBar(row.cost, max(), width())}  {formatCount(row.messages)} msg  {formatTokens(row.tokens)} tok</text>
+            <text fg={palette.muted}><CostBar value={row.cost} max={max()} width={width()} />  {formatCount(row.messages)} msg  {formatTokens(row.tokens)} tok</text>
           </box>
         )}</For>
       </box>
@@ -188,16 +188,16 @@ function BreakdownPanel(props: { title: string; rows: Breakdown[]; width: number
 }
 
 function TrendPanel(props: { rows: Breakdown[]; width: number }) {
-  const context = usePlugin()
+  const palette = usePalette()
   const max = () => Math.max(0, ...props.rows.map((row) => row.cost))
   return (
     <Card title="DAILY ACTIVITY" grow minHeight={8}>
       <box flexDirection="column">
         <For each={props.rows}>{(row) => (
           <box flexDirection="row" gap={1} flexShrink={0}>
-            <text fg={context.theme.text.muted}>{row.label}</text>
-            <text fg={context.theme.text.feedback.success.base}>{costBar(row.cost, max(), Math.min(12, Math.max(4, props.width - 24)))}</text>
-            <text fg={context.theme.text.base}>{formatMoney(row.cost)}</text>
+            <text fg={palette.muted}>{row.label}</text>
+            <text><CostBar value={row.cost} max={max()} width={Math.min(12, Math.max(4, props.width - 24))} /></text>
+            <text fg={palette.value}>{formatMoney(row.cost)}</text>
           </box>
         )}</For>
       </box>
@@ -205,9 +205,10 @@ function TrendPanel(props: { rows: Breakdown[]; width: number }) {
   )
 }
 
-function costBar(value: number, max: number, width: number) {
-  const filled = value > 0 && max > 0 ? Math.min(width, Math.max(1, Math.round(value / max * width))) : 0
-  return `${"#".repeat(filled)}${"-".repeat(width - filled)}`
+function CostBar(props: { value: number; max: number; width: number }) {
+  const palette = usePalette()
+  const filled = () => props.value > 0 && props.max > 0 ? Math.min(props.width, Math.max(1, Math.round(props.value / props.max * props.width))) : 0
+  return <><span style={{ fg: palette.accent }}>{"#".repeat(filled())}</span><span style={{ fg: palette.track }}>{"-".repeat(props.width - filled())}</span></>
 }
 
 function formatTokens(value: number) {

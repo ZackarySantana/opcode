@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 
 import { formatCount } from "@opcode/core"
-import { Card, CenterEmpty, KeyHints, Page, Section } from "@opcode/ui"
+import { Card, CenterEmpty, KeyHints, Page, Section, usePalette } from "@opcode/ui"
 import { useInputScope, type Screen } from "@opcode/ui/screen"
 import { usePlugin } from "@opencode/plugin/tui"
 import { CliRenderEvents, type ScrollBoxRenderable } from "@opentui/core"
@@ -14,20 +14,21 @@ import type { LaterView } from "./model"
 const rowID = (id: string) => `opcode-later.item.${id}`
 
 function ItemRow(props: { item: LaterItem; label: string; labelWidth: number; selected: boolean }) {
-  const api = usePlugin()
+  const palette = usePalette()
   return (
     <box id={rowID(props.item.id)} flexDirection="row" minWidth={0} flexShrink={0} padding={1}
-      backgroundColor={props.selected ? api.theme.background.base : undefined}>
-      <text width={2} fg={props.selected ? api.theme.text.action.primary.base : api.theme.text.muted}>{props.selected ? ">" : " "}</text>
-      <text width={props.labelWidth} fg={props.selected ? api.theme.text.action.primary.base : api.theme.text.muted}>{props.label}</text>
+      backgroundColor={props.selected ? palette.selectedBackground : undefined}>
+      <text width={2} fg={props.selected ? palette.selectedText : palette.accent}>{props.selected ? ">" : " "}</text>
+      <text width={props.labelWidth} fg={props.selected ? palette.selectedText : props.item.completedAt === undefined ? palette.value : palette.success}>{props.label}</text>
       <text flexGrow={1} minWidth={0} wrapMode="word"
-        fg={props.item.completedAt === undefined ? api.theme.text.base : api.theme.text.muted}>{props.item.message}</text>
+        fg={props.selected ? palette.selectedText : props.item.completedAt === undefined ? palette.text : palette.muted}>{props.item.message}</text>
     </box>
   )
 }
 
 export function Manager(props: { view: Accessor<LaterView>; screen?: Screen }) {
   const api = usePlugin()
+  const palette = usePalette()
   const dimensions = useTerminalDimensions()
   let scroll: ScrollBoxRenderable | undefined
   if (props.screen) props.screen.mount()
@@ -71,14 +72,14 @@ export function Manager(props: { view: Accessor<LaterView>; screen?: Screen }) {
       )}
       filters={(
         <box flexDirection="row" minWidth={0} flexWrap="wrap" gap={1}>
-          <text fg={api.theme.text.action.primary.base}>{formatCount(props.view().active.length)} active<span style={{ fg: api.theme.text.muted }}> / {formatCount(props.view().completed.length)} completed</span></text>
+          <text fg={palette.value}>{formatCount(props.view().active.length)} active<span style={{ fg: palette.muted }}> / </span><span style={{ fg: palette.success }}>{formatCount(props.view().completed.length)} completed</span></text>
           <KeyHints items={[{ key: "h", label: "history" }, { key: "J/K", label: "reorder" }]} />
         </box>
       )}
       footer={(
         <box width="100%" flexDirection="row" minWidth={0} justifyContent="space-between" gap={2}>
           <text minWidth={0} flexShrink={1} wrapMode="word" fg={api.theme.text.muted}>{dimensions().width < 80 ? "Shared across projects" : "Changes are shared across projects and OpenCode instances."}</text>
-          <text flexShrink={0} fg={api.theme.text.action.primary.base}>{props.view().history ? "history shown" : "active only"}</text>
+          <text flexShrink={0} fg={palette.value}>{props.view().history ? "history shown" : "active only"}</text>
         </box>
       )}>
       <Card grow minHeight={0}>
@@ -88,7 +89,7 @@ export function Manager(props: { view: Accessor<LaterView>; screen?: Screen }) {
               <ItemRow item={item} label={`${index() + 1}.`} labelWidth={labelWidth()} selected={props.view().selectedID === item.id} />
             )}</For>
             <Show when={props.view().history && props.view().completed.length}>
-              <text fg={api.theme.text.muted}><b>COMPLETED HISTORY</b></text>
+              <text fg={palette.accent}><b>COMPLETED HISTORY</b></text>
               <For each={props.view().completed}>{(item) => (
                 <ItemRow item={item} label="x" labelWidth={labelWidth()} selected={props.view().selectedID === item.id} />
               )}</For>
@@ -101,15 +102,15 @@ export function Manager(props: { view: Accessor<LaterView>; screen?: Screen }) {
 }
 
 export function Sidebar(props: { view: Accessor<LaterView> }) {
-  const api = usePlugin()
+  const palette = usePalette()
   return (
     <Show when={props.view().active.length}>
       <box paddingTop={1}>
         <Section title="Later">
           <For each={props.view().active}>{(item, index) => (
             <box flexDirection="row" minWidth={0}>
-              <text width={Math.max(4, String(props.view().active.length).length + 2)} fg={api.theme.text.muted}>{index() + 1}.</text>
-              <text flexGrow={1} minWidth={0} wrapMode="word" fg={api.theme.text.base}>{item.message}</text>
+              <text width={Math.max(4, String(props.view().active.length).length + 2)} fg={palette.value}>{index() + 1}.</text>
+              <text flexGrow={1} minWidth={0} wrapMode="word" fg={palette.text}>{item.message}</text>
             </box>
           )}</For>
         </Section>

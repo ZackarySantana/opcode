@@ -54,14 +54,15 @@ async function openDialog(options: {
   let listener: ((event: { details: { data: { sessionID: string } } }) => void) | undefined
   let stopped = false, cleared = false
   const theme = {
-    background: { base: "#171717", raised: { base: "#262626" } }, border: { base: "#666666" },
-    text: { base: "white", muted: "gray", action: { primary: { base: "cyan" } },
+    hue: { accent: { 300: "#77cccc", 600: "#336666" }, interactive: { 300: "cyan" } },
+    background: { base: "#171717", raised: { base: "#262626" }, action: { primary: { selected: "#0055cc" } } }, border: { base: "#666666" },
+    text: { base: "white", muted: "gray", action: { primary: { base: "white", selected: "white" } },
       feedback: { success: { base: "green" }, warning: { base: "yellow" }, error: { base: "red" } } },
   }
   const context = {
     ...host,
     renderer: { widthMethod: "unicode" },
-    theme: { ...theme, surface: () => theme },
+    theme: { ...theme, background: { base: "#080808", raised: { base: "#101010" } }, surface: () => theme },
     keymap: {
       layer: (factory: () => KeymapLayer) => {
         const index = layers.length
@@ -265,6 +266,9 @@ test("bordered Overview cards stack narrowly and restore the original two-by-two
     expect(spans.some((span) => span.bg.equals(RGBA.fromHex("#171717")))).toBe(true)
     expect(spans.some((span) => span.text.includes("Overview") && span.fg.equals(RGBA.fromHex("#00ffff")))).toBe(true)
     expect(spans.some((span) => span.text.includes("Content") && !span.fg.equals(RGBA.fromHex("#00ffff")))).toBe(true)
+    expect(spans.some((span) => span.text.includes("RECORDED INPUT") && span.fg.equals(RGBA.fromHex("#77cccc")))).toBe(true)
+    expect(spans.some((span) => span.text.includes("RECORDED INPUT") && span.bg.equals(RGBA.fromHex("#262626")))).toBe(true)
+    expect(spans.some((span) => span.text.includes("Current context") && span.fg.equals(RGBA.fromHex("#77cccc")))).toBe(true)
     for (let index = 0; index < 60; index++) await dialog.run("down")
     const bottom = await dialog.view.waitForFrame((value) => value.includes("Latest checkpoint:") && value.includes("Excludes hidden instructions"))
     expect(bottom).toContain("Tools / compactions:")

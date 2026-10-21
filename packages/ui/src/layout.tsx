@@ -3,6 +3,7 @@
 import { usePlugin } from "@opencode/plugin/tui"
 import type { JSX } from "@opentui/solid/jsx-runtime"
 import { For, Show } from "solid-js"
+import { usePalette } from "./palette"
 
 export interface PageProps {
   title: string
@@ -51,14 +52,14 @@ export interface CenterEmptyProps {
 
 /** Fill the available host surface, keeping chrome outside the shrinking content area. */
 export function Page(props: PageProps) {
-  const context = usePlugin()
+  const palette = usePalette()
   return (
     <box width="100%" height="100%" minWidth={0} minHeight={0} flexDirection="column"
-      paddingX={2} paddingY={1} gap={1} backgroundColor={context.theme.background.base}>
+      paddingX={2} paddingY={1} gap={1} backgroundColor={palette.background}>
       <box flexDirection="row" flexWrap="wrap" justifyContent="space-between" alignItems="center" gap={1} flexShrink={0} minWidth={0}>
-        <text fg={context.theme.text.base} minWidth={0} flexShrink={1}>
+        <text fg={palette.accent} minWidth={0} flexShrink={1}>
           <b>{props.title}</b>
-          <Show when={props.subtitle}><span style={{ fg: context.theme.text.muted }}> {props.subtitle}</span></Show>
+          <Show when={props.subtitle}><span style={{ fg: palette.muted }}> {props.subtitle}</span></Show>
         </text>
         <Show when={props.actions}>
           <box minWidth={0} maxWidth="100%" flexShrink={1}>{props.actions}</box>
@@ -79,13 +80,13 @@ export function Page(props: PageProps) {
 
 /** Raised, bordered content surface. The parent chooses row/column composition. */
 export function Card(props: CardProps) {
-  const context = usePlugin()
+  const palette = usePalette()
   return (
     <box flexDirection="column" flexGrow={props.grow ? 1 : 0} minWidth={0} minHeight={props.minHeight ?? 0}
-      border borderColor={context.theme.border.base} backgroundColor={context.theme.background.raised.base}
+      border borderColor={palette.border} backgroundColor={palette.panel}
       paddingX={1} paddingY={props.compact ? 0 : 1} overflow="hidden">
       <Show when={props.title}>
-        <text fg={context.theme.text.base} flexShrink={0} marginBottom={props.compact ? 0 : 1}><b>{props.title}</b></text>
+        <text fg={palette.accent} flexShrink={0} marginBottom={props.compact ? 0 : 1}><b>{props.title}</b></text>
       </Show>
       {props.children}
     </box>
@@ -94,22 +95,22 @@ export function Card(props: CardProps) {
 
 /** A vertically stacked statistic, not a stretched label/value row. */
 export function StatCard(props: StatCardProps) {
-  const context = usePlugin()
+  const palette = usePalette()
   return (
     <Card grow compact={props.compact}>
-      <text fg={context.theme.text.muted}>{props.label.toUpperCase()}</text>
-      <text fg={context.theme.text.action.primary.base}><b>{String(props.value)}</b></text>
-      <Show when={props.detail}><text fg={context.theme.text.muted}>{props.detail}</text></Show>
+      <text fg={palette.accent}>{props.label.toUpperCase()}</text>
+      <text fg={palette.value}><b>{String(props.value)}</b></text>
+      <Show when={props.detail}><text fg={palette.muted}>{props.detail}</text></Show>
     </Card>
   )
 }
 
 export function FilterChip(props: FilterChipProps) {
-  const context = usePlugin()
+  const palette = usePalette()
   return (
-    <box border borderColor={context.theme.border.base} paddingX={1} height={3} minWidth={0} maxWidth="100%" overflow="hidden">
-      <text wrapMode="none" minWidth={0} fg={context.theme.text.muted}>
-        {props.label}: <span style={{ fg: context.theme.text.base }}>{String(props.value)}</span>
+    <box border borderColor={palette.border} paddingX={1} height={3} minWidth={0} maxWidth="100%" overflow="hidden">
+      <text wrapMode="none" minWidth={0} fg={palette.accent}>
+        {props.label}: <span style={{ fg: palette.text }}>{String(props.value)}</span>
       </text>
     </box>
   )
@@ -118,6 +119,7 @@ export function FilterChip(props: FilterChipProps) {
 /** Optional actions reuse the same registered commands as keyboard dispatch. */
 export function KeyHints(props: KeyHintsProps) {
   const context = usePlugin()
+  const palette = usePalette()
   return (
     <box flexDirection="row" flexWrap="wrap" columnGap={2} rowGap={0} minWidth={0}>
       <For each={props.items}>{(item) => (
@@ -127,7 +129,7 @@ export function KeyHints(props: KeyHintsProps) {
           if (item.command) context.keymap.dispatch(item.command)
           else item.onTrigger?.()
         } : undefined}>
-          <text fg={context.theme.text.muted} wrapMode="word"><span style={{ fg: context.theme.text.base }}>{item.key}</span> {item.label}</text>
+          <text fg={palette.muted} wrapMode="word"><span style={{ fg: palette.value }}>{item.key}</span> {item.label}</text>
         </box>
       )}</For>
     </box>
@@ -135,11 +137,11 @@ export function KeyHints(props: KeyHintsProps) {
 }
 
 export function CenterEmpty(props: CenterEmptyProps) {
-  const context = usePlugin()
+  const palette = usePalette()
   return (
     <box flexDirection="column" flexGrow={1} minWidth={0} minHeight={0} alignItems="center" justifyContent="center" gap={1}>
-      <text fg={context.theme.text.base}><b>{props.title}</b></text>
-      <Show when={props.description}><text fg={context.theme.text.muted}>{props.description}</text></Show>
+      <text fg={palette.text}><b>{props.title}</b></text>
+      <Show when={props.description}><text fg={palette.muted}>{props.description}</text></Show>
     </box>
   )
 }

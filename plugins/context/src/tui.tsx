@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { errorMessage, formatCount } from "@opcode/core"
-import { Card, CenterEmpty, cellWidth, KeyHints, shorten, StatCard } from "@opcode/ui"
+import { Card, CenterEmpty, cellWidth, KeyHints, shorten, StatCard, ThemeSurface, usePalette } from "@opcode/ui"
 import { useDialogCommands } from "@opcode/ui/screen"
 import { Plugin, usePlugin } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
@@ -24,6 +24,7 @@ export function ContextDialog(props: { sessionID?: string }) {
   const context = usePlugin()
   const dimensions = useTerminalDimensions()
   const colors = createMemo(() => context.theme.surface("dialog"))
+  const palette = usePalette()
   const [width, setWidth] = createSignal(dimensions().width)
   const [listSize, setListSize] = createSignal({ width: 0, height: 1 })
   const truncate = (text: string, cells: number) => shorten(text, cells, context.renderer.widthMethod)
@@ -78,7 +79,7 @@ export function ContextDialog(props: { sessionID?: string }) {
     <box width="100%" maxWidth="100%" overflow="hidden" flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}
       backgroundColor={colors().background.base} onSizeChange={function () { setWidth(this.width) }}>
         <box flexDirection="row" justifyContent="space-between" gap={1} paddingBottom={1}>
-          <text wrapMode="none" fg={colors().text.base}><b>Current context</b><span style={{ fg: colors().text.muted }}> {truncate(props.sessionID ?? "no active session", Math.max(0, width() - 31 - (state().loading ? 12 : 0)))}</span></text>
+          <text wrapMode="none" fg={palette.accent}><b>Current context</b><span style={{ fg: colors().text.muted }}> {truncate(props.sessionID ?? "no active session", Math.max(0, width() - 31 - (state().loading ? 12 : 0)))}</span></text>
           <box flexDirection="row">
             <Show when={state().loading}><text fg={colors().text.muted}>refreshing  </text></Show>
             <KeyHints items={[{ key: "esc", label: "close", command: "opcode-context.close" }]} />
@@ -86,14 +87,14 @@ export function ContextDialog(props: { sessionID?: string }) {
         </box>
         <box flexDirection="row" gap={1} paddingBottom={1}>
           <For each={tabs}>{(name, index) => (
-            <box border borderColor={index() === tab() ? colors().text.action.primary.base : colors().border.base}
+            <box border borderColor={index() === tab() ? palette.value : colors().border.base}
               paddingLeft={width() >= 44 ? 1 : 0} paddingRight={width() >= 44 ? 1 : 0}
               onMouseDown={(event) => {
                 if (event.button !== 0) return
                 event.stopPropagation()
                 switchTab(index() - tab())
               }}>
-              <text fg={index() === tab() ? colors().text.action.primary.base : colors().text.muted}>{name}</text>
+              <text fg={index() === tab() ? palette.value : colors().text.muted}>{name}</text>
             </box>
           )}</For>
         </box>
@@ -111,11 +112,11 @@ export function ContextDialog(props: { sessionID?: string }) {
                     description={tab() === 1 && !snapshot()?.retained ? "History is not a retained estimate." : undefined} />}>
                     <For each={rows().slice(window().start, window().end)}>{(row, index) => (
                       <box flexDirection="row" height={1} flexShrink={0} justifyContent="space-between" gap={1}
-                        backgroundColor={window().start + index() === window().selected ? colors().background.raised.base : undefined}>
-                        <text wrapMode="none" fg={window().start + index() === window().selected ? colors().text.action.primary.base : colors().text.base}>
+                        backgroundColor={window().start + index() === window().selected ? palette.selectedBackground : undefined}>
+                        <text wrapMode="none" fg={window().start + index() === window().selected ? palette.selectedText : colors().text.base}>
                           {window().start + index() === window().selected ? "> " : "  "}{truncate(row.label, Math.max(0, listSize().width - 3 - detailWidth(row.detail)))}
                         </text>
-                        <text wrapMode="none" fg={colors().text.muted}>{truncate(row.detail, detailBudget())}</text>
+                        <text wrapMode="none" fg={window().start + index() === window().selected ? palette.selectedText : colors().text.muted}>{truncate(row.detail, detailBudget())}</text>
                       </box>
                     )}</For>
                   </Show>
@@ -139,6 +140,7 @@ export function ContextDialog(props: { sessionID?: string }) {
 
 function Overview(props: { snapshot: Snapshot; width: number }) {
   const context = usePlugin()
+  const palette = usePalette()
   const colors = createMemo(() => context.theme.surface("dialog"))
   const snapshot = () => props.snapshot
   const tokens = (value: number) => snapshot().usageReports ? formatCount(value) : "unavailable"
@@ -149,8 +151,8 @@ function Overview(props: { snapshot: Snapshot; width: number }) {
   return (
     <box flexDirection="column" gap={1}>
       <Card compact>
-        <text wrapMode="none" fg={colors().text.base}><b>{truncate(model() ? `${model()!.providerName ?? model()!.providerID}/${model()!.modelName ?? model()!.modelID}` : "Model unavailable")}</b></text>
-        <text fg={colors().text.muted}>Context limit <span style={{ fg: colors().text.base }}>{model()?.contextLimit ? formatCount(model()!.contextLimit!) : "unavailable"}</span> · Estimated utilization <span style={{ fg: colors().text.feedback.warning.base }}>{percent(snapshot().utilization)}</span></text>
+        <text wrapMode="none" fg={palette.value}><b>{truncate(model() ? `${model()!.providerName ?? model()!.providerID}/${model()!.modelName ?? model()!.modelID}` : "Model unavailable")}</b></text>
+        <text fg={colors().text.muted}>Context limit <span style={{ fg: palette.value }}>{model()?.contextLimit ? formatCount(model()!.contextLimit!) : "unavailable"}</span> · Estimated utilization <span style={{ fg: colors().text.feedback.warning.base }}>{percent(snapshot().utilization)}</span></text>
       </Card>
       <box flexDirection={narrow() ? "column" : "row"} gap={1}>
         <box width={cardWidth()}><StatCard compact label="RECORDED INPUT" value={tokens(snapshot().usage.input + snapshot().usage.cacheRead + snapshot().usage.cacheWrite)} detail={`${tokens(snapshot().usage.input)} fresh`} /></box>
@@ -162,8 +164,8 @@ function Overview(props: { snapshot: Snapshot; width: number }) {
           detail={snapshot().retained ? `${formatCount(snapshot().retained!.characters)} chars` : "Retained context unavailable"} /></box>
       </box>
       <Card compact title="ACTIVITY">
-        <text fg={colors().text.muted}>Messages: <span style={{ fg: colors().text.base }}>{snapshot().messageCount.user} user / {snapshot().messageCount.assistant} assistant</span></text>
-        <text fg={colors().text.muted}>Tools / compactions: <span style={{ fg: colors().text.base }}>{snapshot().toolCalls} / {snapshot().compaction.count}</span></text>
+        <text fg={colors().text.muted}>Messages: <span style={{ fg: palette.value }}>{snapshot().messageCount.user} user / {snapshot().messageCount.assistant} assistant</span></text>
+        <text fg={colors().text.muted}>Tools / compactions: <span style={{ fg: palette.value }}>{snapshot().toolCalls} / {snapshot().compaction.count}</span></text>
         <text wrapMode="none" fg={colors().text.muted}>{truncate(`Latest checkpoint: ${snapshot().compaction.latestBoundary ?? "unavailable"}`)}</text>
         <text fg={colors().text.muted}>History: <span style={{ fg: colors().text.base }}>{snapshot().history}</span> · Retained: <span style={{ fg: colors().text.base }}>{snapshot().retained ? "estimated" : "unavailable"}</span></text>
       </Card>
@@ -183,7 +185,7 @@ export default Plugin.define({
       description: "Inspect current-session context usage", slash: { name: "context" },
       run() {
         const sessionID = currentSessionID(context)
-        context.ui.dialog.show(() => <ContextDialog sessionID={sessionID} />, () => { opened = false })
+        context.ui.dialog.show(() => <ThemeSurface name="dialog"><ContextDialog sessionID={sessionID} /></ThemeSurface>, () => { opened = false })
         opened = true
         context.ui.dialog.set({ size: "large", centered: true })
       },

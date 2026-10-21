@@ -33,9 +33,10 @@ function harness() {
     options: { database: path },
     renderer: { isDestroyed: false, once: () => {}, off: () => {}, requestRender: () => {} },
     theme: {
-      background: { base: RGBA.fromHex("#000000"), raised: { base: RGBA.fromHex("#111111") } },
+      hue: { accent: { 300: RGBA.fromHex("#77cccc"), 600: RGBA.fromHex("#336666") }, interactive: { 300: RGBA.fromHex("#77aaff") } },
+      background: { base: RGBA.fromHex("#000000"), raised: { base: RGBA.fromHex("#111111") }, action: { primary: { selected: RGBA.fromHex("#0055cc") } } },
       border: { base: color },
-      text: { base: color, muted: RGBA.fromHex("#778899"), action: { primary: { base: RGBA.fromHex("#77aaff") } }, feedback: { error: { base: color }, warning: { base: color }, success: { base: color } } },
+      text: { base: color, muted: RGBA.fromHex("#778899"), action: { primary: { base: color, selected: RGBA.fromHex("#ffffff") } }, feedback: { error: { base: color }, warning: { base: color }, success: { base: RGBA.fromHex("#77cc88") } } },
     },
     ui: {
       router: {
@@ -266,8 +267,11 @@ test("manager restores the original compact hierarchy, padded raised list, and s
     expect(view.captureCharFrame()).not.toContain("Client-local list shared")
     const spans = view.captureSpans().lines.flatMap((line) => line.spans)
     expect(spans.find((span) => span.text.includes("First active item"))?.bg.equals(h.api.theme.background.raised.base)).toBe(true)
-    expect(spans.find((span) => span.text.includes("Second active item"))?.bg.equals(h.api.theme.background.base)).toBe(true)
-    expect(spans.find((span) => span.text.includes("2 active"))?.fg.equals(h.api.theme.text.action.primary.base)).toBe(true)
+    expect(spans.find((span) => span.text.includes("Second active item"))?.bg.equals(h.api.theme.background.action.primary.selected)).toBe(true)
+    expect(spans.find((span) => span.text.includes("Second active item"))?.fg.equals(h.api.theme.text.action.primary.selected)).toBe(true)
+    expect(spans.find((span) => span.text.includes("2 active"))?.fg.equals(h.api.theme.hue.interactive[300])).toBe(true)
+    expect(spans.find((span) => span.text.includes("1 completed"))?.fg.equals(h.api.theme.text.feedback.success.base)).toBe(true)
+    expect(spans.find((span) => span.text.includes("COMPLETED HISTORY"))?.fg.equals(h.api.theme.hue.accent[300])).toBe(true)
   } finally { await view.dispose() }
 })
 

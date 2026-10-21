@@ -23,6 +23,7 @@ test("original-style shared browser preserves layout, selected previews, viewpor
     renderer: { widthMethod: "unicode" },
     keymap: { mode: { push: () => () => {} } }, ui: { format: { path: (path: string) => path } },
     theme: {
+      hue: { accent: { 300: "#77cccc", 600: "#336666" }, interactive: { 300: "#55aaff" } },
       background: { base: "#101010", raised: { base: "#202020" }, action: { primary: { selected: "#0055cc" } } },
       border: { base: "#555555" },
       text: { base: "#ffffff", muted: "#aaaaaa", action: { primary: { base: "#55aaff", selected: "#ffffff" }, secondary: { base: "#aaaaee" } }, feedback: { success: { base: "#00ff00" }, error: { base: "#ff5555" } } },
@@ -65,6 +66,8 @@ test("original-style shared browser preserves layout, selected previews, viewpor
       expect(footer.trimEnd().endsWith("alpha")).toBe(true)
       const spans = view.captureSpans().lines.flatMap((line) => line.spans)
       expect(spans.some((span) => span.bg.equals(RGBA.fromHex("#202020")))).toBe(true)
+      expect(spans.some((span) => span.text.includes("All sessions") && span.fg.equals(RGBA.fromHex("#77cccc")))).toBe(true)
+      expect(spans.some((span) => span.text.includes("$1.11") && span.fg.equals(RGBA.fromHex("#55aaff")))).toBe(true)
       expect(spans.some((span) => span.text.includes("Session row-0") && (span.attributes & TextAttributes.BOLD) !== 0)).toBe(true)
       for (let index = 0; index < 35; index++) model.move(1)
       await view.flush()

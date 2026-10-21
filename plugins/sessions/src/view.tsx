@@ -3,7 +3,7 @@ import { usePlugin } from "@opencode/plugin/tui"
 import type { BoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
-import { Page, Card, FilterChip, KeyHints, CenterEmpty, cellWidth, shorten } from "@opcode/ui"
+import { Page, Card, FilterChip, KeyHints, CenterEmpty, cellWidth, shorten, usePalette } from "@opcode/ui"
 import { useInputScope, type Screen } from "@opcode/ui/screen"
 import { formatCount, formatMoney } from "@opcode/core"
 import { viewport } from "./domain"
@@ -24,6 +24,7 @@ function updatedAge(timestamp: number) {
 
 export function SessionsView(props: { model: BrowserModel; currentSession: () => string | undefined; onDeactivate?: () => void; screen?: Screen }) {
   const api = usePlugin()
+  const palette = usePalette()
   const dimensions = useTerminalDimensions()
   const state = props.model.state
   const [start, setStart] = createSignal(0)
@@ -70,7 +71,7 @@ export function SessionsView(props: { model: BrowserModel; currentSession: () =>
             <text height={1} width={footerWidth()} fg={state().syncError ? api.theme.text.feedback.error.base : api.theme.text.muted}>
               {shorten(state().syncError || `${state().syncing ? "Syncing · " : state().loading ? "Searching · " : ""}${sourceInfo()}`, footerWidth(), api.renderer.widthMethod)}
             </text>
-            <text height={1} fg={api.theme.text.action.primary.base}>{selectedProject()}</text>
+            <text height={1} fg={palette.value}>{selectedProject()}</text>
           </box>
         }
       >
@@ -94,10 +95,10 @@ export function SessionsView(props: { model: BrowserModel; currentSession: () =>
                   const fittedMarker = () => shorten(marker(), Math.max(0, titleWidth() - 2), api.renderer.widthMethod)
                   return (
                     <box height={1} minHeight={1} flexShrink={0} width="100%" flexDirection="row" justifyContent="space-between" gap={1} backgroundColor={active() ? api.theme.background.action.primary.selected : undefined}>
-                      <text height={1} width={titleWidth()} fg={active() ? api.theme.text.action.primary.selected : api.theme.text.base}>
-                        {active() ? "> " : "  "}<span style={{ fg: active() ? api.theme.text.action.primary.selected : row.id === props.currentSession() ? api.theme.text.feedback.success.base : api.theme.text.action.secondary.base }}>{fittedMarker()}</span>{shorten(row.title, Math.max(0, titleWidth() - 2 - cellWidth(fittedMarker(), api.renderer.widthMethod)), api.renderer.widthMethod)}
+                      <text height={1} width={titleWidth()} fg={active() ? palette.selectedText : palette.text}>
+                        {active() ? "> " : "  "}<span style={{ fg: active() ? palette.selectedText : row.id === props.currentSession() ? palette.success : palette.accent }}>{fittedMarker()}</span>{shorten(row.title, Math.max(0, titleWidth() - 2 - cellWidth(fittedMarker(), api.renderer.widthMethod)), api.renderer.widthMethod)}
                       </text>
-                      <text height={1} width={summaryWidth()} fg={active() ? api.theme.text.action.primary.selected : api.theme.text.muted}>{summary()}</text>
+                      <text height={1} width={summaryWidth()} fg={active() ? palette.selectedText : palette.muted}>{summary()}</text>
                     </box>
                   )
                 }}</For>
@@ -110,11 +111,11 @@ export function SessionsView(props: { model: BrowserModel; currentSession: () =>
                     setPreviewSize((previous) => previous.width === this.width && previous.height === this.height ? previous : { width: this.width, height: this.height })
                   }}>
                     <box flexDirection="row" justifyContent="space-between" gap={1} height={1} flexShrink={0}>
-                      <text height={1} width={modelWidth()} fg={api.theme.text.action.primary.base}>{shorten(modelName(), modelWidth(), api.renderer.widthMethod)}</text>
-                      <text height={1} fg={api.theme.text.base}>{recordedMetrics()}</text>
+                      <text height={1} width={modelWidth()} fg={palette.accent}>{shorten(modelName(), modelWidth(), api.renderer.widthMethod)}</text>
+                      <text height={1} fg={palette.value}>{recordedMetrics()}</text>
                     </box>
                     <text height={1} flexShrink={0} fg={api.theme.text.base}><b>{shorten(selected()?.title ?? "", previewSize().width, api.renderer.widthMethod)}</b></text>
-                    <text height={1} flexShrink={0} fg={api.theme.text.action.primary.base}>{shorten(projectName(selected()?.directory ?? ""), previewSize().width, api.renderer.widthMethod)}</text>
+                    <text height={1} flexShrink={0} fg={palette.value}>{shorten(projectName(selected()?.directory ?? ""), previewSize().width, api.renderer.widthMethod)}</text>
                     <text height={1} flexShrink={0} fg={api.theme.text.muted}>{shorten(api.ui.format.path(selected()?.directory ?? ""), previewSize().width, api.renderer.widthMethod)}</text>
                     <text height={1} flexShrink={0} fg={api.theme.text.muted}>{formatCount(selected()?.messageCount ?? 0)} indexed messages</text>
                     <text height={1} flexShrink={0} fg={api.theme.text.muted}>{shorten(`${formatCount(selected()?.output ?? 0)} out · ${formatCount(selected()?.reasoning ?? 0)} reasoning · cache ${formatCount(selected()?.cacheRead ?? 0)}/${formatCount(selected()?.cacheWrite ?? 0)}`, previewSize().width, api.renderer.widthMethod)}</text>

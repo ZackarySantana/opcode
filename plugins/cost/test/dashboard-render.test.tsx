@@ -178,6 +178,14 @@ test("wide dashboard restores raised stat cards, filter chips, three cost-bar pa
     const titleSpans = scene.captureSpans().lines.flatMap((line) => line.spans).filter((span) => /TOTAL COST|ALL TOKENS|OUTPUT|CACHE|BY MODEL|BY PROJECT|DAILY ACTIVITY/.test(span.text))
     expect(titleSpans.length).toBeGreaterThanOrEqual(7)
     for (const span of titleSpans) expect(span.bg).toEqual(raised)
+    const spans = scene.captureSpans().lines.flatMap((line) => line.spans)
+    const accent = harness.api.theme.hue.accent[300]
+    const value = harness.api.theme.hue.interactive[300]
+    expect(spans.find((span) => span.text.includes("TOTAL COST"))?.fg).toEqual(accent)
+    expect(spans.find((span) => span.text.includes("BY MODEL"))?.fg).toEqual(accent)
+    expect(spans.filter((span) => span.text.includes("$2.00")).every((span) => span.fg.equals(value))).toBe(true)
+    expect(spans.some((span) => span.text.includes("####") && span.fg.equals(accent))).toBe(true)
+    expect(spans.some((span) => span.text.includes("----") && span.fg.equals(border))).toBe(true)
   } finally { await scene.dispose(); await harness.cleanup() }
 })
 

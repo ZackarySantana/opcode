@@ -46,6 +46,7 @@ export async function createTuiHarness(initial: Route = { type: "home" }, mutabl
   const api = {
     get location() { return location() },
     theme: {
+      hue: { accent: { 300: RGBA.fromHex("#77cccc"), 600: RGBA.fromHex("#336666") }, interactive: { 300: RGBA.fromHex("#88aaff") } },
       background: { base: RGBA.fromHex("#000000") },
       text: { base: white, muted: white, action: { primary: { base: white } }, feedback: { success: { base: white }, warning: { base: white }, error: { base: white } } },
     },

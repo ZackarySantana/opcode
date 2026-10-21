@@ -1,78 +1,126 @@
 # Opcode
 
-A cohesive set of independently installable plugins for **OpenCode V2**.
+**Stay in flow. Keep the ideas, understand the usage, find the work.**
 
-| Package | Purpose | Replaces |
+Four plugins that make [OpenCode](https://opencode.ai) feel a little more like your workspace. Save a thought without changing tasks, see what's filling your context, track usage, and pick up a conversation you thought you'd lost.
+
+[![CI](https://github.com/ZackarySantana/opcode/actions/workflows/ci.yml/badge.svg)](https://github.com/ZackarySantana/opcode/actions/workflows/ci.yml)
+[![Release](https://github.com/ZackarySantana/opcode/actions/workflows/release.yml/badge.svg)](https://github.com/ZackarySantana/opcode/actions/workflows/release.yml)
+
+| Plugin | Make room for… | npm |
 | --- | --- | --- |
-| `@lidtop/opencode-context` | Inspect the current session's context budget | `opencode-context-tui` |
-| `@lidtop/opencode-cost` | Track persistent token usage and costs | `opencode-cost` |
-| `@lidtop/opencode-later` | Save, organize, and paste deferred prompts | `opencode-later` |
-| `@lidtop/opencode-sessions` | Browse sessions across projects | `opencode-sessions-all` |
+| [Later](#later--save-the-thought-keep-the-flow) | The next idea, without interrupting this one | [![Later version](https://img.shields.io/npm/v/@lidtop/opencode-later?label=later)](https://www.npmjs.com/package/@lidtop/opencode-later) |
+| [Context](#context--know-whats-taking-up-space) | A clearer picture of your current session | [![Context version](https://img.shields.io/npm/v/@lidtop/opencode-context?label=context)](https://www.npmjs.com/package/@lidtop/opencode-context) |
+| [Cost](#cost--see-where-the-usage-goes) | Perspective on costs, tokens, and activity | [![Cost version](https://img.shields.io/npm/v/@lidtop/opencode-cost?label=cost)](https://www.npmjs.com/package/@lidtop/opencode-cost) |
+| [Sessions](#sessions--find-the-conversation-not-just-the-project) | Work worth coming back to | [![Sessions version](https://img.shields.io/npm/v/@lidtop/opencode-sessions?label=sessions)](https://www.npmjs.com/package/@lidtop/opencode-sessions) |
 
-## Try it locally
+Install one or all four. They share a consistent look that follows your OpenCode theme, in light or dark mode.
+
+## Later — save the thought, keep the flow
+
+“After this, we should…” doesn't have to become a distraction. Keep a shared Later list across your local projects and sessions, with your next ideas visible in the sidebar.
+
+**Capture → organize → bring it back when you're ready.** Reorder what matters, keep completed history, and put an item into your prompt when it's time. You review and submit it yourself—nothing runs automatically.
+
+<table>
+  <tr>
+    <td width="50%">
+      <!-- Replace with docs/images/later-sidebar.png -->
+      <img src="docs/images/screenshot-placeholder.svg" alt="Screenshot placeholder: Later list alongside an active OpenCode session" width="100%" />
+      <p><strong>Keep the next idea in sight.</strong><br />Your list, right beside the conversation.</p>
+    </td>
+    <td width="50%">
+      <!-- Replace with docs/images/later-manager.png -->
+      <img src="docs/images/screenshot-placeholder.svg" alt="Screenshot placeholder: Later manager with active items and completed history" width="100%" />
+      <p><strong>Make space for what's next.</strong><br />One place to organize ideas and revisit finished items.</p>
+    </td>
+  </tr>
+</table>
+
+[Explore Later →](plugins/later/README.md)
+
+## Context — know what's taking up space
+
+Long session? Get a clearer picture before deciding what to trim or carry forward. See recorded token usage, estimated context utilization, cache efficiency, and the biggest visible contributors—without asking a model to explain them.
+
+**Get the overview → find the heavy parts.** Look beyond the totals to retained content and the instructions, skills, and tools available to your session. Estimates are labeled; this isn't a claim to see every hidden part of a provider request.
+
+<table>
+  <tr>
+    <td width="50%">
+      <!-- Replace with docs/images/context-overview.png -->
+      <img src="docs/images/screenshot-placeholder.svg" alt="Screenshot placeholder: Context overview with token usage, estimated utilization, and cache efficiency" width="100%" />
+      <p><strong>The session at a glance.</strong><br />Usage, context estimates, and activity together.</p>
+    </td>
+    <td width="50%">
+      <!-- Replace with docs/images/context-content.png -->
+      <img src="docs/images/screenshot-placeholder.svg" alt="Screenshot placeholder: Context Content tab ranking the largest retained contributors" width="100%" />
+      <p><strong>See what's taking up room.</strong><br />Find the largest observable context contributors.</p>
+    </td>
+  </tr>
+</table>
+
+[Explore Context →](plugins/context/README.md)
+
+## Cost — see where the usage goes
+
+Turn scattered sessions into a readable picture of your usage. See recorded costs and tokens across projects and models, with daily activity to show how things change over time.
+
+**Start with the total → narrow by date, project, or model.** Costs come from OpenCode's provider-reported records, not a separate pricing calculator. Useful perspective—not a replacement for your provider's invoice.
+
+<!-- Replace with docs/images/cost-dashboard.png -->
+![Screenshot placeholder: Cost dashboard with totals, model and project breakdowns, and daily activity](docs/images/screenshot-placeholder.svg)
+
+*The big picture and the breakdowns, in one view.*
+
+[Explore Cost →](plugins/cost/README.md)
+
+## Sessions — find the conversation, not just the project
+
+Remember the discussion but not where it happened? Search session titles, project paths, and indexed message text across your OpenCode projects, then preview the match before picking it up again.
+
+**Remember a phrase → find the session → get back to it.** Filter by project, include subagents when you need them, and see a matching message alongside the results. Same-directory sessions open directly; other directories offer a resume command to copy.
+
+<!-- Replace with docs/images/sessions-browser.png -->
+![Screenshot placeholder: Sessions search results across projects with a matching message preview](docs/images/screenshot-placeholder.svg)
+
+*Less hunting through projects. More getting back to the useful part.*
+
+[Explore Sessions →](plugins/sessions/README.md)
+
+## Install
+
+Requires the **OpenCode 2.1.1+ terminal UI, within the 2.x release line**.
+
+Pick the plugins you want and run their install commands:
 
 ```sh
-mise run dev
+opencode plugin add @lidtop/opencode-later
+opencode plugin add @lidtop/opencode-context
+opencode plugin add @lidtop/opencode-cost
+opencode plugin add @lidtop/opencode-sessions
 ```
 
-Requires mise and OpenCode V2. This command installs checkout dependencies,
-builds all four plugins, and opens OpenCode with them enabled. **No manual config
-editing or publishing is needed.** To try just one:
+**Prefer editing your config?** Instead, add the packages you want to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `opencode.json`), keeping your existing entries:
 
-```sh
-mise run dev cost
-# Or, with Bun already installed:
-bun run dev
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    "@lidtop/opencode-later",
+    "@lidtop/opencode-context",
+    "@lidtop/opencode-cost",
+    "@lidtop/opencode-sessions"
+  ]
+}
 ```
 
-Try `/context`, `/cost`, `/later`, and `/opcode-sessions` (avoids the built-in
-`/sessions` command). Relaunch the command after
-editing code to rebuild. Preview plugin databases persist in `.release/dev/data`
-and are separate from the original plugins' databases. The launcher does not edit
-global configuration; it temporarily replaces the four originals and uses
-the preview extensions instead of your CLI-only plugin list. Later is configured
-on the CLI side so its client-local database option reaches the TUI.
+OpenCode installs the packages and loads their terminal views. Restart OpenCode if they don't appear. Using a remote server? Configure the plugins there; each plugin's guide covers the details.
 
-OpenCode uses a private server but **your normal OpenCode login/session database**.
-This is a convenient preview, not a sandbox: prompts you submit behave normally
-and may incur model costs. For an isolated, noninteractive check, see
-[verification](docs/verification.md).
+Replacing the original plugins? Remove their old configuration entries rather than loading both versions. See the [migration notes](docs/migration.md).
 
-## Development checks
+---
 
-```sh
-mise run check
-```
+**Make it yours:** [Later guide](plugins/later/README.md) · [Context guide](plugins/context/README.md) · [Cost guide](plugins/cost/README.md) · [Sessions guide](plugins/sessions/README.md)
 
-Mise pins Bun 1.4.3 and Node 24.22.0 (for npm packing/release tooling). The root
-workspace catalog is the single source of third-party dependency versions;
-update the OpenCode packages together. Public npm installation instructions live
-in each plugin's README; external testers need a published version, not this
-checkout's workspace manifests.
-
-## Layout
-
-```text
-plugins/             Independently versioned, public @lidtop/opencode-* packages
-packages/ui/         Private shared terminal components and semantic styling
-packages/core/       Private host-independent utilities
-scripts/             Shared build, package validation, and release tooling
-```
-
-Shared workspaces are bundled into each plugin. OpenCode, OpenTUI, and Solid stay
-external so the host owns their runtime instances. Plugins do not import one
-another, and installing one does not install the rest.
-
-See each plugin's README for setup and commands, and
-[release instructions](docs/releases.md) for GitHub Actions and npm setup.
-The [architecture](docs/architecture.md), [migration notes](docs/migration.md), and
-[verification checklist](docs/verification.md) describe ownership and validation
-boundaries.
-
-## Rewrite policy
-
-The sibling repositories are behavioral references, not runtime dependencies.
-Domain logic, OpenCode adapters, and UI stay separate. Host dialogs handle common
-search/selection tasks; custom views use shared components and theme tokens.
-Existing package state is not silently overwritten or imported. See
-[migration notes](docs/migration.md) for compatibility details.
+**Working on Opcode?** [Local development](docs/development.md) · [Architecture](docs/architecture.md) · [Verification](docs/verification.md) · [Releases](docs/releases.md)
