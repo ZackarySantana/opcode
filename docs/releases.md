@@ -46,6 +46,13 @@ Packaging tests unpack actual tarballs into an isolated directory. They resolve
 every export and declaration import, verify private imports are gone, and inspect
 source-map inputs to ensure no third-party runtime was bundled.
 
+Fixture factories use `join(tmpdir(), prefix)` from `node:os`, including standalone
+smoke entrypoints. The existing test preload and standalone bootstraps ensure
+that the selected temp parent exists; they do not depend on `/tmp/opencode`.
+To check portability, create a new owned temporary directory, set `TMPDIR` to it,
+and run the existing checks. Never delete or rename a shared temp directory to
+simulate a fresh runner. Cleanup must remain confined to each owned fixture.
+
 ## Choosing releases
 
 ```sh
@@ -79,25 +86,117 @@ that PR's changed consumers; unrelated plugins retain their versions.
 
 ## GitHub and npm setup
 
-1. Enable GitHub Actions and allow Actions to create pull requests. Protect `main`
-   and require CI. Create the GitHub environment `npm`, restrict it to `main`, and
-   preferably require maintainer approval. Release PRs created with `github.token`
-   may need a maintainer to select **Approve workflows to run** before CI starts.
-   For fully automatic release-PR CI, an appropriately scoped GitHub App token is
-   optional; pass it to the Changesets action's `github-token` input instead.
-2. Make sure each public package's `repository.url` exactly matches this GitHub
-   repository. Repository metadata is copied unchanged into each staged manifest.
-3. Bootstrap package ownership on npm if necessary. A brand-new package may need
-   one initial authenticated/manual publish before its settings expose a trusted
-   publisher. Use a locally packed artifact; do not put an initial-publish token
-   into this workflow or commit credentials.
-4. Configure **each package's** npm trusted publisher with the exact GitHub owner,
-   repository, workflow filename `release.yml`, and environment `npm`. Allow
-   direct `npm publish` (new configurations can default to staged publishing only).
-   Follow npm's current validation/expiry requirements and perform the first
-   authorized release promptly.
-5. Once trusted publishing works, disallow token publishing and revoke bootstrap
-   tokens. No `NPM_TOKEN` or `NODE_AUTH_TOKEN` is used by this workflow.
+### Repository preflight (read first; settings changes require owner approval)
+
+Discover the actual target from a real checkout, rather than assuming package
+metadata is current:
+
+```sh
+git remote get-url origin
+gh repo view --json nameWithOwner --jq .nameWithOwner
+```
+
+If Git metadata is absent, confirm initialization and the target with the owner
+before any push. Inspect existing CI/release runs, failed-job logs/annotations,
+and release PRs. An empty repository has no remote checks to verify yet.
+
+Read the Actions setting, using the confirmed `OWNER/REPO`:
+
+```sh
+gh api repos/OWNER/REPO/actions/permissions/workflow
+```
+
+If `can_approve_pull_request_reviews` is false, request permission to enable
+**Allow GitHub Actions to create and approve pull requests**. Preserve the current
+default token permission; do not broaden it to fix PR creation. After approval:
+
+```sh
+default_permissions=$(gh api repos/OWNER/REPO/actions/permissions/workflow --jq .default_workflow_permissions)
+gh api --method PUT repos/OWNER/REPO/actions/permissions/workflow \
+  -f default_workflow_permissions="$default_permissions" \
+  -F can_approve_pull_request_reviews=true
+gh api repos/OWNER/REPO/actions/permissions/workflow
+```
+
+This repository-level setting permits the operation; the `version` job separately
+requests only its needed `contents: write` and `pull-requests: write`. OIDC remains
+exclusive to the separate publish job. A mise action Node-runtime deprecation
+warning is not a PR-permission or fixture failure; do not upgrade unrelated pins
+as a workaround.
+
+### Release-PR CI and publication instructions
+
+Protect `main` and require the actual PR CI check from the expected GitHub App.
+Release PRs created/updated with `github.token` can have approval-required
+`pull_request` runs. A maintainer should select **Approve workflows to run** on
+the PR, inspect the resulting CI run, and check the latest PR commit/test-merge
+SHA. Changesets updates invalidate older results. A separately approved GitHub
+App installation token can enable automatic PR events without this approval;
+no App/token setup is added by these workflows.
+
+For **supplementary validation only**, CI also supports manual dispatch:
+
+```sh
+gh workflow run ci.yml --repo OWNER/REPO --ref changeset-release/main
+```
+
+Use the release PR's actual head branch, not `main`, and ensure it contains the
+updated workflow. Dispatch is available only after the workflow exists on the
+default branch. Confirm the run's head SHA matches the reviewed PR head. Manual
+CI runs the same checks **and affected-consumer policy**, using `main` as its base.
+However, GitHub does **not** evaluate `workflow_dispatch` job checks as required
+PR checks, even on that same SHA. Manual validation does not replace the approved
+`pull_request` run, satisfy branch protection, or authorize bypassing it.
+
+Changesets has no `publish` input here because publishing is a separate job. The
+`version` job corrects only the pinned action's misleading manual-publication
+sentence after each PR creation/update; it preserves the rest of the body and
+changelog. The corrected instructions say that merging makes reviewed versions
+eligible for automatic publication, subject to environment protections and
+validation. Obtain explicit release approval **before merging**. Workflow-run
+approval and deployment/release approval are different gates; never self-approve
+a release on the maintainer's behalf.
+
+### npm environment and trusted publishers
+
+With owner approval, create/verify the GitHub environment **`npm`** and its branch
+policy: it must permit `main` and should restrict publishing to that branch.
+Inspect `repos/OWNER/REPO/environments/npm` and its `deployment-branch-policies`;
+do not treat a workflow reference to the environment as proof it is configured.
+Retain required reviewers where configured; a reviewer gate adds a separate
+deployment approval. Environment changes require owner confirmation too.
+
+Each public package needs its own npm trusted-publisher configuration:
+
+| npm setting | Required value |
+| --- | --- |
+| Organization or user | Exact confirmed GitHub owner |
+| Repository | Exact confirmed GitHub repository name |
+| Workflow filename | `release.yml` (not the display name or full path) |
+| Environment | `npm` |
+| Allowed action | **Allow npm publish** |
+
+Check all four packages: `opcode-context`, `opcode-cost`, `opcode-later`, and
+`opcode-sessions`. Their staged `repository.url` metadata must match the actual
+repository. Newly created trusted publishers can default to stage-only access;
+that does not authorize this workflow's direct `npm publish`. Standalone
+`npm dist-tag` permission is unnecessary: this flow does not call it.
+
+A new package may need an initial, separately authorized manual publish before
+its npm settings expose trusted publishing. Bootstrap ownership only with release
+approval and a packed staged artifact, never the workspace manifest. Do not add
+bootstrap/write tokens to this workflow or commit credentials.
+
+A new trusted-publisher configuration must complete its first successful publish
+within **two days**, or it expires. Schedule configuration around an approved
+release; never publish merely to test authentication. After an authorized OIDC
+publish verifies the configuration, disallow traditional token publishing and
+revoke bootstrap tokens. No `NPM_TOKEN` or `NODE_AUTH_TOKEN` is used here.
+
+Package settings are not proven by public registry metadata. A dry run,
+`npm whoami`, successful PR creation, or a skipped publish job does **not** verify
+npm trusted-publisher authentication. Report it as unverified until an explicitly
+authorized publish succeeds.
 
 The release workflow runs only on `main`. Its Changesets job can write release
 PRs but has no OIDC permission. A separate GitHub-hosted, environment-gated publish
@@ -117,3 +216,5 @@ restore dependency caches. No publish was performed during implementation.
 References: [Changesets action v1](https://github.com/changesets/action/tree/maintenance/v1),
 [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/), and
 [OpenCode V2 package entrypoints](https://opencode.ai/v2/docs/build/plugins/cli).
+See also [bot-token workflow approvals](https://docs.github.com/en/actions/how-tos/writing-workflows/choosing-when-your-workflow-runs/triggering-a-workflow)
+and [required-check event restrictions](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks).

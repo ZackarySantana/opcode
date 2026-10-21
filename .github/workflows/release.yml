@@ -41,6 +41,33 @@ jobs:
           title: 'Release plugins'
           commit: 'chore: version plugins'
           createGithubReleases: false
+      - name: Clarify separate automatic publishing in the release PR
+        if: steps.changesets.outputs.pullRequestNumber != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.changesets.outputs.pullRequestNumber }}
+          OLD_SENTENCE: >-
+            When you're ready to do a release, you can merge this and publish to npm yourself or [setup this action to publish automatically](https://github.com/changesets/action#with-publishing).
+          NEW_SENTENCE: >-
+            Merging this PR makes the reviewed plugin versions eligible for automatic publishing by the separate publish job in release.yml, subject to the configured npm environment protections and validation. Obtain release approval before merging.
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" |
+            mise exec -- bun -e '
+              const pr = JSON.parse(await Bun.stdin.text())
+              const previous = process.env.OLD_SENTENCE
+              const replacement = process.env.NEW_SENTENCE
+              if (typeof pr.body !== "string" || !previous || !replacement) {
+                throw new Error("Unexpected Changesets PR body")
+              }
+              if (!pr.body.includes(previous) && !pr.body.includes(replacement)) {
+                throw new Error("Expected Changesets publication instructions were not found")
+              }
+              console.log(JSON.stringify({ body: pr.body.replace(previous, replacement) }))
+            ' |
+            gh api --method PATCH \
+              "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
+              --input - --silent
 
   publish:
     needs: version
