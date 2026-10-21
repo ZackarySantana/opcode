@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  version:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      hasChangesets: ${{ steps.changesets.outputs.hasChangesets }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          cache: false
+      - run: mise exec -- bun install --frozen-lockfile --ignore-scripts
+      - name: Open or update independent release PR
+        id: changesets
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1 (Changesets CLI 2)
+        with:
+          github-token: ${{ github.token }}
+          version: mise exec -- bun scripts/version.ts
+          commitMode: github-api
+          title: 'Release plugins'
+          commit: 'chore: version plugins'
+          createGithubReleases: false
+
+  publish:
+    needs: version
+    if: needs.version.outputs.hasChangesets == 'false'
+    runs-on: ubuntu-latest
+    environment: npm
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          cache: false
+      - run: mise exec -- bun install --frozen-lockfile --ignore-scripts
+      - run: mise exec -- bun run check
+      - name: Publish only unpublished staged versions using npm OIDC
+        run: mise exec -- bun scripts/publish.ts --publish
