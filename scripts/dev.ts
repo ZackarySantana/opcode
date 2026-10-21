@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
-import { pluginIDs, repositoryRoot } from "./packaging"
+import { pluginIDs, publicPackageName, repositoryRoot } from "./packaging"
 
 type PluginID = typeof pluginIDs[number]
 type Environment = Record<string, string | undefined>
@@ -10,9 +10,9 @@ const originals = ["opencode-context-tui", "opencode-cost", "opencode-later", "o
 export function selectPlugins(arguments_: string[]): PluginID[] {
   if (!arguments_.length) return [...pluginIDs]
   return [...new Set(arguments_.map((argument) => {
-    const id = argument.replace(/^opcode-/, "")
-    if (!pluginIDs.includes(id as PluginID)) throw new Error(`Unknown plugin '${argument}'. Choose: ${pluginIDs.join(", ")}`)
-    return id as PluginID
+    const id = pluginIDs.find((id) => argument === id || argument === `opcode-${id}` || argument === publicPackageName(id))
+    if (!id) throw new Error(`Unknown plugin '${argument}'. Choose: ${pluginIDs.join(", ")}`)
+    return id
   }))]
 }
 

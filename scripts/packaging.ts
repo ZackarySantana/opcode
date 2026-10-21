@@ -3,6 +3,10 @@ import { readFile } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 
 export const pluginIDs = ["context", "cost", "later", "sessions"] as const
+export function publicPackageName(id: typeof pluginIDs[number]) {
+  return `@lidtop/opencode-${id}`
+}
+
 export const dependencyFields = ["dependencies", "peerDependencies", "optionalDependencies"] as const
 export type Manifest = {
   name: string

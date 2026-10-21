@@ -1,8 +1,11 @@
 # Builds and independent releases
 
-The public packages are `opcode-context`, `opcode-cost`, `opcode-later`, and
-`opcode-sessions`. Each has its own version and changelog. Changesets has no fixed
-or linked groups. Private `@opcode/core` and `@opcode/ui` are never published.
+The public packages are `@lidtop/opencode-context`, `@lidtop/opencode-cost`,
+`@lidtop/opencode-later`, and `@lidtop/opencode-sessions`. Each has its own version and
+changelog; their current workspace versions are all `0.1.0`. Changesets has no
+fixed or linked groups. Private `@opcode/core` and `@opcode/ui` are never published.
+Each public manifest keeps `publishConfig.access: "public"`; scoped packages must
+not fall back to npm's private-access default.
 
 Changesets' `privatePackages.version` is enabled only because CLI 2.31 rejects
 public packages depending on skipped private packages. The release-policy check
@@ -46,6 +49,32 @@ Packaging tests unpack actual tarballs into an isolated directory. They resolve
 every export and declaration import, verify private imports are gone, and inspect
 source-map inputs to ensure no third-party runtime was bundled.
 
+### First manual 0.1.0 publication
+
+All four public manifests currently remain at **0.1.0**. For the initial manual
+bootstrap, do not run Changesets versioning first: it would propose a later
+version. Build and pack with the non-publishing command, then authenticate in
+your own terminal with an npm account authorized to publish under `@lidtop`:
+
+```sh
+mise exec -- bun scripts/publish.ts --dry-run
+mise exec -- npm login --registry https://registry.npmjs.org/
+
+mise exec -- npm publish .release/tarballs/lidtop-opencode-context-0.1.0.tgz --access public --ignore-scripts
+mise exec -- npm publish .release/tarballs/lidtop-opencode-cost-0.1.0.tgz --access public --ignore-scripts
+mise exec -- npm publish .release/tarballs/lidtop-opencode-later-0.1.0.tgz --access public --ignore-scripts
+mise exec -- npm publish .release/tarballs/lidtop-opencode-sessions-0.1.0.tgz --access public --ignore-scripts
+```
+
+Each publish is independent; complete any browser/2FA prompts npm requires.
+Publish these packed staged artifacts, **not `plugins/*`**. Scoped packages need
+`--access public`. A local manual bootstrap does not use CI OIDC/provenance flags.
+Afterward configure each package's trusted publisher as described below.
+
+The initial Changeset still represents a subsequent **0.2.0 proposal**, not this
+manual 0.1.0 bootstrap. Do not merge the old release PR until an approved push has
+regenerated it with the final scoped names and a subsequent release is intended.
+
 Fixture factories use `join(tmpdir(), prefix)` from `node:os`, including standalone
 smoke entrypoints. The existing test preload and standalone bootstraps ensure
 that the selected temp parent exists; they do not depend on `/tmp/opencode`.
@@ -73,8 +102,8 @@ unpublished `0.0.0` version. For example:
 
 ```md
 ---
-"opcode-context": patch
-"opcode-cost": patch
+"@lidtop/opencode-context": patch
+"@lidtop/opencode-cost": patch
 ---
 
 Fix the shared helper used by these two plugins.
@@ -170,16 +199,19 @@ Each public package needs its own npm trusted-publisher configuration:
 
 | npm setting | Required value |
 | --- | --- |
-| Organization or user | Exact confirmed GitHub owner |
-| Repository | Exact confirmed GitHub repository name |
+| Organization or user | `ZackarySantana` (GitHub owner, not npm scope `lidtop`) |
+| Repository | `opcode` |
 | Workflow filename | `release.yml` (not the display name or full path) |
 | Environment | `npm` |
 | Allowed action | **Allow npm publish** |
 
-Check all four packages: `opcode-context`, `opcode-cost`, `opcode-later`, and
-`opcode-sessions`. Their staged `repository.url` metadata must match the actual
-repository. Newly created trusted publishers can default to stage-only access;
-that does not authorize this workflow's direct `npm publish`. Standalone
+These values identify the actual GitHub origin, `ZackarySantana/opcode`; the npm
+organization `@lidtop` is not the GitHub owner. Confirm the origin during preflight.
+Check all four packages: `@lidtop/opencode-context`, `@lidtop/opencode-cost`,
+`@lidtop/opencode-later`, and `@lidtop/opencode-sessions`. Their staged `repository.url`
+metadata must match the actual repository. Newly created trusted publishers can
+default to stage-only access; that does not authorize this workflow's direct
+`npm publish`. Standalone
 `npm dist-tag` permission is unnecessary: this flow does not call it.
 
 A new package may need an initial, separately authorized manual publish before

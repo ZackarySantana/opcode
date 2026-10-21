@@ -23,7 +23,7 @@ async function fixture() {
 
 test("preview defaults to the suite and accepts individual package names", () => {
   expect(selectPlugins([])).toEqual(["context", "cost", "later", "sessions"])
-  expect(selectPlugins(["opcode-cost", "later", "cost"])).toEqual(["cost", "later"])
+  expect(selectPlugins(["opcode-cost", "later", "cost", "@lidtop/opencode-cost", "@lidtop/opencode-sessions"])).toEqual(["cost", "later", "sessions"])
   expect(() => selectPlugins(["../../outside"])).toThrow("Unknown plugin")
 })
 

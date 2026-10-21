@@ -4,10 +4,10 @@ A cohesive set of independently installable plugins for **OpenCode V2**.
 
 | Package | Purpose | Replaces |
 | --- | --- | --- |
-| `opcode-context` | Inspect the current session's context budget | `opencode-context-tui` |
-| `opcode-cost` | Track persistent token usage and costs | `opencode-cost` |
-| `opcode-later` | Save, organize, and paste deferred prompts | `opencode-later` |
-| `opcode-sessions` | Browse sessions across projects | `opencode-sessions-all` |
+| `@lidtop/opencode-context` | Inspect the current session's context budget | `opencode-context-tui` |
+| `@lidtop/opencode-cost` | Track persistent token usage and costs | `opencode-cost` |
+| `@lidtop/opencode-later` | Save, organize, and paste deferred prompts | `opencode-later` |
+| `@lidtop/opencode-sessions` | Browse sessions across projects | `opencode-sessions-all` |
 
 ## Try it locally
 
@@ -53,7 +53,7 @@ checkout's workspace manifests.
 ## Layout
 
 ```text
-plugins/             Independently versioned, public opcode-* packages
+plugins/             Independently versioned, public @lidtop/opencode-* packages
 packages/ui/         Private shared terminal components and semantic styling
 packages/core/       Private host-independent utilities
 scripts/             Shared build, package validation, and release tooling

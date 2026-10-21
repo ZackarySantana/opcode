@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { manifestAt, pluginIDs } from "../scripts/packaging"
+import { manifestAt, pluginIDs, publicPackageName } from "../scripts/packaging"
 import { publish, type PublishOperations } from "../scripts/publish"
 
 const temporary: string[] = []
@@ -16,7 +16,7 @@ async function fixture() {
   for (const [index, id] of pluginIDs.entries()) {
     const stage = join(root, ".release", `opcode-${id}`)
     await mkdir(stage, { recursive: true })
-    await writeFile(join(stage, "package.json"), JSON.stringify({ name: `opcode-${id}`, version: `${index + 1}.2.3` }))
+    await writeFile(join(stage, "package.json"), JSON.stringify({ name: publicPackageName(id), version: `${index + 1}.2.3` }))
   }
   const commands: string[][] = []
   const lookups: string[] = []
@@ -35,10 +35,10 @@ async function fixture() {
       if (args[0] === "npm" && args[1] === "--version") return "11.6.2\n"
       if (args[0] === "node" && args[1] === "--version") return "v24.1.0\n"
       const manifest = await manifestAt(cwd)
-      if (args[0] === "npm" && args[1] === "pack") return JSON.stringify([{ filename: `packed-${manifest.name}-${manifest.version}.tgz` }])
+      if (args[0] === "npm" && args[1] === "pack") return JSON.stringify([{ filename: `packed-${manifest.name.replace(/^@/, "").replace("/", "-")}-${manifest.version}.tgz` }])
       if (args[0] === "npm" && args[1] === "publish") {
         published.push(`${manifest.name}@${manifest.version}`)
-        statuses.set(`https://registry.npmjs.org/${manifest.name}/${manifest.version}`, 200)
+        statuses.set(`https://registry.npmjs.org/${encodeURIComponent(manifest.name)}/${encodeURIComponent(manifest.version)}`, 200)
         return "Published (test double only)"
       }
       throw new Error(`Unexpected command: ${args.join(" ")}`)
@@ -59,16 +59,16 @@ describe("publish safety (all external operations injected; no network or publis
 
   test("checks exact versions, skips existing ones, and publishes only 404 results", async () => {
     const run = await fixture()
-    run.statuses.set("https://registry.npmjs.org/opcode-context/1.2.3", 200)
+    run.statuses.set("https://registry.npmjs.org/%40lidtop%2Fopencode-context/1.2.3", 200)
     const result = await publish(run.root, true, run.operations)
-    expect(run.lookups).toEqual(pluginIDs.map((id, index) => `https://registry.npmjs.org/opcode-${id}/${index + 1}.2.3`))
-    expect(run.published).toEqual(["opcode-cost@2.2.3", "opcode-later@3.2.3", "opcode-sessions@4.2.3"])
+    expect(run.lookups).toEqual(pluginIDs.map((id, index) => `https://registry.npmjs.org/%40lidtop%2Fopencode-${id}/${index + 1}.2.3`))
+    expect(run.published).toEqual(["@lidtop/opencode-cost@2.2.3", "@lidtop/opencode-later@3.2.3", "@lidtop/opencode-sessions@4.2.3"])
     expect(result.map(({ name, version }) => `${name}@${version}`)).toEqual(run.published)
     const publishCommands = run.commands.filter((command) => command[1] === "publish")
     expect(publishCommands.map((args) => args[2])).toEqual([
-      join(run.root, ".release/tarballs/packed-opcode-cost-2.2.3.tgz"),
-      join(run.root, ".release/tarballs/packed-opcode-later-3.2.3.tgz"),
-      join(run.root, ".release/tarballs/packed-opcode-sessions-4.2.3.tgz"),
+      join(run.root, ".release/tarballs/packed-lidtop-opencode-cost-2.2.3.tgz"),
+      join(run.root, ".release/tarballs/packed-lidtop-opencode-later-3.2.3.tgz"),
+      join(run.root, ".release/tarballs/packed-lidtop-opencode-sessions-4.2.3.tgz"),
     ])
     for (const args of publishCommands) {
       expect(args).toContain("--ignore-scripts")
@@ -79,7 +79,7 @@ describe("publish safety (all external operations injected; no network or publis
   test("registry failures and transport errors fail closed", async () => {
     for (const status of [401, 403, 429, 500, 503]) {
       const run = await fixture()
-      run.statuses.set("https://registry.npmjs.org/opcode-context/1.2.3", status)
+      run.statuses.set("https://registry.npmjs.org/%40lidtop%2Fopencode-context/1.2.3", status)
       await expect(publish(run.root, true, run.operations)).rejects.toThrow(`HTTP ${status}`)
       expect(run.published).toEqual([])
       expect(run.lookups).toHaveLength(1)
@@ -91,13 +91,13 @@ describe("publish safety (all external operations injected; no network or publis
 
   test("partial-release retries skip successful versions and resume the remaining packages", async () => {
     const run = await fixture()
-    run.statuses.set("https://registry.npmjs.org/opcode-cost/2.2.3", 503)
+    run.statuses.set("https://registry.npmjs.org/%40lidtop%2Fopencode-cost/2.2.3", 503)
     await expect(publish(run.root, true, run.operations)).rejects.toThrow("HTTP 503")
-    expect(run.published).toEqual(["opcode-context@1.2.3"])
-    run.statuses.delete("https://registry.npmjs.org/opcode-cost/2.2.3")
+    expect(run.published).toEqual(["@lidtop/opencode-context@1.2.3"])
+    run.statuses.delete("https://registry.npmjs.org/%40lidtop%2Fopencode-cost/2.2.3")
     const retry = await publish(run.root, true, run.operations)
-    expect(run.published).toEqual(["opcode-context@1.2.3", "opcode-cost@2.2.3", "opcode-later@3.2.3", "opcode-sessions@4.2.3"])
-    expect(retry.map(({ name }) => name)).toEqual(["opcode-cost", "opcode-later", "opcode-sessions"])
+    expect(run.published).toEqual(["@lidtop/opencode-context@1.2.3", "@lidtop/opencode-cost@2.2.3", "@lidtop/opencode-later@3.2.3", "@lidtop/opencode-sessions@4.2.3"])
+    expect(retry.map(({ name }) => name)).toEqual(["@lidtop/opencode-cost", "@lidtop/opencode-later", "@lidtop/opencode-sessions"])
   })
 
   test("invalid live environments fail before commands, builds, registry access, or publishing", async () => {

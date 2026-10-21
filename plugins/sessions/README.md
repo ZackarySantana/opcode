@@ -1,4 +1,4 @@
-# opcode-sessions
+# @lidtop/opencode-sessions
 
 Search recorded OpenCode sessions across projects, including message text, from a shared terminal UI. Requires OpenCode **2.1.1 or newer within 2.x**, and its Bun runtime.
 
@@ -9,7 +9,7 @@ Configure once in your global `~/.config/opencode/opencode.jsonc` so opened proj
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["opcode-sessions"]
+  "plugins": ["@lidtop/opencode-sessions"]
 }
 ```
 
@@ -60,7 +60,7 @@ ${XDG_STATE_HOME || ~/.local/state}/opencode/opencode-sessions-all/sessions.sqli
 {
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
-    { "package": "opcode-sessions", "options": { "database": "/absolute/server/path/sessions.sqlite" } }
+    { "package": "@lidtop/opencode-sessions", "options": { "database": "/absolute/server/path/sessions.sqlite" } }
   ]
 }
 ```

@@ -1,5 +1,5 @@
 {
-  "name": "opcode-later",
+  "name": "@lidtop/opencode-later",
   "version": "0.1.0",
   "description": "Save, organize, and paste deferred OpenCode prompts",
   "type": "module",

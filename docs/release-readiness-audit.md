@@ -1,5 +1,17 @@
 # CI/release readiness audit — 2026-10-21
 
+> Naming follow-up: the owner's initial scoped `@lidtop/opcode-*` choice was
+> superseded, before publication, by `@lidtop/opencode-context`,
+> `@lidtop/opencode-cost`, `@lidtop/opencode-later`, and
+> `@lidtop/opencode-sessions`. The unscoped registry observations and release-branch
+> versions below describe the earlier audit, not these new package identities.
+> npm organization publishing rights/trusted-publisher settings remain unverified.
+> Runtime IDs and existing data paths are unchanged. The owner requested a local
+> rename commit and manual 0.1.0 bootstrap commands, not a push or publication by
+> the agent. Release PR #1 still uses the previous names until an approved rename
+> push regenerates it; do not merge it before the scoped configuration and release
+> approval are ready.
+
 ## Scope and boundaries
 
 Audited against `../loadout/docs/opcode-release-handoff.md`. No new test cases,

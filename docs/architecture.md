@@ -45,7 +45,11 @@ catalog centralizes compatible peer ranges separately from development pins.
 Private workspace source is bundled into each package. Host runtimes and all
 third-party dependencies stay external.
 
-Each public plugin has its own version and changeset history. Shared-source or
+The public npm packages are `@lidtop/opencode-context`, `@lidtop/opencode-cost`,
+`@lidtop/opencode-later`, and `@lidtop/opencode-sessions`. Each has its own version
+and changeset history; the current workspace versions are all `0.1.0`, not a
+permanent lockstep group. The npm scope does not rename runtime plugin, command,
+or RPC IDs, nor existing database paths. Shared-source or
 catalog updates require releases of affected consumers, not a forced permanent
 lockstep version. Build and publication operate on self-contained staged
 artifacts; private workspace names must never reach npm as dependencies.

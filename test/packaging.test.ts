@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path"
 import { isBuiltin } from "node:module"
 import ts from "typescript"
 import { buildPlugin } from "../scripts/build"
-import { declarationFile, dependencyFields, inside, manifestAt, packageName, pluginIDs, repositoryRoot, resolveCatalog, type Manifest } from "../scripts/packaging"
+import { declarationFile, dependencyFields, inside, manifestAt, packageName, pluginIDs, publicPackageName, repositoryRoot, resolveCatalog, type Manifest } from "../scripts/packaging"
 import { assertReleaseCoverage, checkReleasePolicy, parseChangeset, requiredConsumers } from "../scripts/release-policy"
 
 const temporary: string[] = []
@@ -51,8 +51,9 @@ async function packAndInspect(stage: string) {
   for (const host of ["@opentui/core", "@opentui/solid", "solid-js"]) {
     if (manifest.peerDependencies?.[host]) expect(manifest.dependencies?.[host]).toBeUndefined()
   }
-  await mkdir(join(isolated, "node_modules"))
-  await symlink(directory, join(isolated, "node_modules", manifest.name))
+  const installed = join(isolated, "node_modules", manifest.name)
+  await mkdir(dirname(installed), { recursive: true })
+  await symlink(directory, installed)
   for (const [key, value] of Object.entries(manifest.exports ?? {})) {
     const entry = value as { types: string; import: string; default: string }
     expect(entry.types).toEndWith(".d.ts")
@@ -121,29 +122,29 @@ async function fixture() {
   await put("packages/core/src/rpc.ts", 'export type RpcResult = { ready: boolean }')
   await put("packages/ui/package.json", { name: "@opcode/ui", version: "0.0.0", private: true, type: "module", exports: { ".": "./src/index.tsx" }, dependencies: { "@opcode/core": "workspace:*", "@opentui/solid": "catalog:", "solid-js": "catalog:" } })
   await put("packages/ui/src/index.tsx", 'import { decorate } from "@opcode/core"; import { createMemo } from "solid-js"; export const Label = () => { const label = createMemo(() => decorate("hello").value); return <text>{label()}</text> }')
-  await put("plugins/fixture/package.json", { name: "opcode-fixture", version: "1.2.3", description: "Packaging regression fixture", type: "module", dependencies: { "@opcode/core": "workspace:*", "@opcode/ui": "workspace:*", "@opencode/plugin": "catalog:" }, peerDependencies: { "@opentui/solid": "catalog:host", "solid-js": "catalog:host" } })
-  await put("plugins/fixture/src/index.ts", 'import { Plugin } from "@opencode/plugin"; import { decorate } from "@opcode/core"; export { decorate }; export default Plugin.define({ id: "fixture", setup() {} })')
-  await put("plugins/fixture/src/tui.tsx", 'import { Plugin } from "@opencode/plugin/tui"; import { Label } from "@opcode/ui"; export default Plugin.define({ id: "fixture.tui", setup(ctx) { ctx.ui.slot({ append: "home.footer", render: () => <Label /> }) } })')
-  await put("plugins/fixture/src/rpc.ts", 'export type { RpcResult } from "@opcode/core/rpc"; export { decorate } from "@opcode/core"')
+  await put("plugins/context/package.json", { name: publicPackageName("context"), version: "1.2.3", description: "Packaging regression fixture", type: "module", dependencies: { "@opcode/core": "workspace:*", "@opcode/ui": "workspace:*", "@opencode/plugin": "catalog:" }, peerDependencies: { "@opentui/solid": "catalog:host", "solid-js": "catalog:host" } })
+  await put("plugins/context/src/index.ts", 'import { Plugin } from "@opencode/plugin"; import { decorate } from "@opcode/core"; export { decorate }; export default Plugin.define({ id: "opcode-context", setup() {} })')
+  await put("plugins/context/src/tui.tsx", 'import { Plugin } from "@opencode/plugin/tui"; import { Label } from "@opcode/ui"; export default Plugin.define({ id: "opcode-context.tui", setup(ctx) { ctx.ui.slot({ append: "home.footer", render: () => <Label /> }) } })')
+  await put("plugins/context/src/rpc.ts", 'export type { RpcResult } from "@opcode/core/rpc"; export { decorate } from "@opcode/core"')
   return root
 }
 
 describe("npm artifacts", () => {
   test("private source and JSX are bundled, host runtimes stay external, and private declarations resolve in the tarball", async () => {
     const root = await fixture()
-    const stage = await buildPlugin(root, "fixture")
+    const stage = await buildPlugin(root, "context")
     const { directory, externals, manifest } = await packAndInspect(stage)
     expect(Object.keys(manifest.exports!).sort()).toEqual([".", "./rpc", "./tui"])
     expect(externals.has("solid-js")).toBe(true)
     expect(externals.has("@opentui/solid")).toBe(true)
     expect(manifest.peerDependencies?.["solid-js"]).toBeDefined()
-    const workspace = await manifestAt(join(root, "plugins/fixture"))
+    const workspace = await manifestAt(join(root, "plugins/context"))
     expect(workspace.dependencies?.["@opencode/client"]).toBeUndefined()
     expect(manifest.dependencies?.["@opencode/client"]).toBe(resolveCatalog("catalog:", "@opencode/client", await manifestAt(root)))
     const consumerRoot = dirname(directory)
-    expect(JSON.parse(await command([process.execPath, "-e", 'import { decorate } from "opcode-fixture/rpc"; console.log(JSON.stringify(decorate("packed")))'], consumerRoot))).toEqual({ value: "bundled:packed" })
+    expect(JSON.parse(await command([process.execPath, "-e", 'import { decorate } from "@lidtop/opencode-context/rpc"; console.log(JSON.stringify(decorate("packed")))'], consumerRoot))).toEqual({ value: "bundled:packed" })
     const consumer = join(consumerRoot, "consumer.ts")
-    await writeFile(consumer, `import { decorate, type RpcResult } from "opcode-fixture/rpc"
+    await writeFile(consumer, `import { decorate, type RpcResult } from "@lidtop/opencode-context/rpc"
 const value: string = decorate("typed").value
 const result: RpcResult = { ready: true }
 // @ts-expect-error The packed declaration must retain the string result, not any.
@@ -162,9 +163,9 @@ void [value, result, invalidValue, invalidResult]
     })
     expect(ts.getPreEmitDiagnostics(program).map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"))).toEqual([])
     // Staging must not rewrite workspace source manifests.
-    expect((await manifestAt(join(root, "plugins/fixture"))).dependencies?.["@opcode/core"]).toBe("workspace:*")
-    await rm(join(root, "plugins/fixture/src/rpc.ts"))
-    const rebuilt = await buildPlugin(root, "fixture")
+    expect((await manifestAt(join(root, "plugins/context"))).dependencies?.["@opcode/core"]).toBe("workspace:*")
+    await rm(join(root, "plugins/context/src/rpc.ts"))
+    const rebuilt = await buildPlugin(root, "context")
     expect((await manifestAt(rebuilt)).exports?.["./rpc"]).toBeUndefined()
     expect(existsSync(join(rebuilt, "dist/rpc.js"))).toBe(false)
   }, 120_000)
@@ -172,7 +173,7 @@ void [value, result, invalidValue, invalidResult]
   test("all four real packages pack with resolvable exports and self-contained private code/types", async () => {
     for (const id of pluginIDs) {
       const { manifest } = await packAndInspect(await buildPlugin(repositoryRoot, id))
-      expect(manifest.name).toBe(`opcode-${id}`)
+      expect(manifest.name).toBe(`@lidtop/opencode-${id}`)
       expect(manifest.version).toBe((await manifestAt(join(repositoryRoot, "plugins", id))).version)
     }
   }, 180_000)
@@ -182,16 +183,16 @@ describe("independent release policy", () => {
   const manifests = new Map<string, Manifest>([
     ["@opcode/core", { name: "@opcode/core", version: "0.0.0", private: true }],
     ["@opcode/ui", { name: "@opcode/ui", version: "0.0.0", private: true, dependencies: { "@opcode/core": "workspace:*" } }],
-    ["opcode-one", { name: "opcode-one", version: "1.0.0", dependencies: { "@opcode/ui": "workspace:*" } }],
-    ["opcode-two", { name: "opcode-two", version: "2.0.0", dependencies: { "@opcode/core": "workspace:*" } }],
-    ["opcode-unrelated", { name: "opcode-unrelated", version: "8.0.0" }],
+    ["@lidtop/opencode-context", { name: "@lidtop/opencode-context", version: "1.0.0", dependencies: { "@opcode/ui": "workspace:*" } }],
+    ["@lidtop/opencode-cost", { name: "@lidtop/opencode-cost", version: "2.0.0", dependencies: { "@opcode/core": "workspace:*" } }],
+    ["@lidtop/opencode-sessions", { name: "@lidtop/opencode-sessions", version: "8.0.0" }],
   ])
   test("shared changes require explicit transitive public consumers, not synchronized unrelated versions", () => {
     const required = requiredConsumers(new Set(["@opcode/core"]), manifests)
-    expect([...required].sort()).toEqual(["opcode-one", "opcode-two"])
-    expect(() => assertReleaseCoverage(required, [{ name: "opcode-one", type: "patch" }])).toThrow("opcode-two")
-    expect(() => assertReleaseCoverage(required, parseChangeset('---\n"opcode-one": patch\n"opcode-two": minor\n---\nFix shared behavior.'))).not.toThrow()
-    expect([...requiredConsumers(new Set(["@opcode/ui"]), manifests)]).toEqual(["opcode-one"])
+    expect([...required].sort()).toEqual(["@lidtop/opencode-context", "@lidtop/opencode-cost"])
+    expect(() => assertReleaseCoverage(required, [{ name: "@lidtop/opencode-context", type: "patch" }])).toThrow("@lidtop/opencode-cost")
+    expect(() => assertReleaseCoverage(required, parseChangeset('---\n"@lidtop/opencode-context": patch\n"@lidtop/opencode-cost": minor\n---\nFix shared behavior.'))).not.toThrow()
+    expect([...requiredConsumers(new Set(["@opcode/ui"]), manifests)]).toEqual(["@lidtop/opencode-context"])
   })
   test("default/named catalogs materialize and invalid release specs fail closed", () => {
     const root: Manifest = { name: "root", version: "0.0.0", workspaces: { catalog: { host: "2.1.1" }, catalogs: { peers: { host: "^2.1.1" } } } }
@@ -206,15 +207,15 @@ describe("independent release policy", () => {
     const root = await fixture()
     await mkdir(join(root, ".changeset"))
     await cp(join(repositoryRoot, ".changeset/config.json"), join(root, ".changeset/config.json"))
-    await writeFile(join(root, ".changeset/fix.md"), '---\n"opcode-fixture": patch\n---\nFix fixture behavior.\n')
-    await mkdir(join(root, "plugins/unrelated"), { recursive: true })
-    await writeFile(join(root, "plugins/unrelated/package.json"), JSON.stringify({ name: "opcode-unrelated", version: "7.4.0", dependencies: { "@opcode/core": "workspace:*" } }))
+    await writeFile(join(root, ".changeset/fix.md"), '---\n"@lidtop/opencode-context": patch\n---\nFix fixture behavior.\n')
+    await mkdir(join(root, "plugins/sessions"), { recursive: true })
+    await writeFile(join(root, "plugins/sessions/package.json"), JSON.stringify({ name: publicPackageName("sessions"), version: "7.4.0", dependencies: { "@opcode/core": "workspace:*" } }))
     await command([process.execPath, join(repositoryRoot, "node_modules/@changesets/cli/bin.js"), "version"], root)
-    expect((await manifestAt(join(root, "plugins/fixture"))).version).toBe("1.2.4")
-    expect((await manifestAt(join(root, "plugins/unrelated"))).version).toBe("7.4.0")
+    expect((await manifestAt(join(root, "plugins/context"))).version).toBe("1.2.4")
+    expect((await manifestAt(join(root, "plugins/sessions"))).version).toBe("7.4.0")
     expect((await manifestAt(join(root, "packages/core"))).version).toBe("0.0.0")
     expect((await manifestAt(join(root, "packages/ui"))).version).toBe("0.0.0")
-    expect(existsSync(join(root, "plugins/fixture/CHANGELOG.md"))).toBe(true)
+    expect(existsSync(join(root, "plugins/context/CHANGELOG.md"))).toBe(true)
     expect(existsSync(join(root, ".changeset/fix.md"))).toBe(false)
   }, 30_000)
 
@@ -223,7 +224,7 @@ describe("independent release policy", () => {
     for (const id of pluginIDs) {
       const directory = join(root, "plugins", id)
       await mkdir(directory, { recursive: true })
-      await writeFile(join(directory, "package.json"), JSON.stringify({ name: `opcode-${id}`, version: "1.0.0", dependencies: { "@opcode/core": "workspace:*", "@opcode/ui": "workspace:*", "@opencode/plugin": "catalog:" } }))
+      await writeFile(join(directory, "package.json"), JSON.stringify({ name: publicPackageName(id), version: "1.0.0", dependencies: { "@opcode/core": "workspace:*", "@opcode/ui": "workspace:*", "@opencode/plugin": "catalog:" } }))
     }
     await mkdir(join(root, ".changeset"))
     const git = (...args: string[]) => command(["git", ...args], root)
@@ -236,8 +237,8 @@ describe("independent release policy", () => {
     await git("branch", "baseline")
     await writeFile(join(root, "packages/core/src/index.ts"), 'export const updated = true\n')
     await commit()
-    await expect(checkReleasePolicy(root, "baseline")).rejects.toThrow("opcode-context, opcode-cost, opcode-later, opcode-sessions")
-    await writeFile(join(root, ".changeset/fix.md"), `---\n${pluginIDs.map((id) => `"opcode-${id}": patch`).join("\n")}\n---\nUpdate shared behavior.\n`)
+    await expect(checkReleasePolicy(root, "baseline")).rejects.toThrow("@lidtop/opencode-context, @lidtop/opencode-cost, @lidtop/opencode-later, @lidtop/opencode-sessions")
+    await writeFile(join(root, ".changeset/fix.md"), `---\n${pluginIDs.map((id) => `"${publicPackageName(id)}": patch`).join("\n")}\n---\nUpdate shared behavior.\n`)
     await commit()
     await expect(checkReleasePolicy(root, "baseline")).resolves.toBeUndefined()
     await git("branch", "before-version")
@@ -254,7 +255,7 @@ describe("independent release policy", () => {
     }
     await writeFile(join(root, "package.json"), JSON.stringify(manifest))
     await commit()
-    await expect(checkReleasePolicy(root, "before-host-upgrade")).rejects.toThrow("opcode-context, opcode-cost, opcode-later, opcode-sessions")
+    await expect(checkReleasePolicy(root, "before-host-upgrade")).rejects.toThrow("@lidtop/opencode-context, @lidtop/opencode-cost, @lidtop/opencode-later, @lidtop/opencode-sessions")
   }, 30_000)
 
   test("catalog policy precisely covers named peers and inherited SDK/optional dependencies, not dev-only entries", async () => {
@@ -269,15 +270,16 @@ describe("independent release policy", () => {
     ui.optionalDependencies = { "@opencode/theme": "catalog:sdk" }
     await writeFile(join(root, "packages/ui/package.json"), JSON.stringify(ui))
     const plugins = [
-      { name: "opcode-context", dependencies: { "@opcode/ui": "workspace:*" }, peerDependencies: { "solid-js": "catalog:host" } },
-      { name: "opcode-cost", dependencies: { "@opcode/core": "workspace:*" } },
-      { name: "opcode-later", dependencies: { "@opencode/plugin": "catalog:" } },
-      { name: "opcode-sessions" },
-    ]
+      { id: "context", dependencies: { "@opcode/ui": "workspace:*" }, peerDependencies: { "solid-js": "catalog:host" } },
+      { id: "cost", dependencies: { "@opcode/core": "workspace:*" } },
+      { id: "later", dependencies: { "@opencode/plugin": "catalog:" } },
+      { id: "sessions" },
+    ] as const
     for (const plugin of plugins) {
-      const directory = join(root, "plugins", plugin.name.slice("opcode-".length))
+      const { id, ...manifest } = plugin
+      const directory = join(root, "plugins", id)
       await mkdir(directory, { recursive: true })
-      await writeFile(join(directory, "package.json"), JSON.stringify({ version: "1.0.0", ...plugin }))
+      await writeFile(join(directory, "package.json"), JSON.stringify({ name: publicPackageName(id), version: "1.0.0", ...manifest }))
     }
     await mkdir(join(root, ".changeset"))
     const git = (...args: string[]) => command(["git", ...args], root)
@@ -301,8 +303,8 @@ describe("independent release policy", () => {
       } else await expect(checkReleasePolicy(root, "baseline")).resolves.toBeUndefined()
     }
     await checkCatalogChange((manifest) => { manifest.workspaces!.catalog!.typescript = "5.9.0" }, [])
-    await checkCatalogChange((manifest) => { manifest.workspaces!.catalogs!.host!["solid-js"] = ">=1.9.15 <2" }, ["opcode-context"])
-    await checkCatalogChange((manifest) => { manifest.workspaces!.catalogs!.sdk!["@opencode/client"] = "2.2.0" }, ["opcode-context", "opcode-cost"])
-    await checkCatalogChange((manifest) => { manifest.workspaces!.catalogs!.sdk!["@opencode/theme"] = "2.2.0" }, ["opcode-context"])
+    await checkCatalogChange((manifest) => { manifest.workspaces!.catalogs!.host!["solid-js"] = ">=1.9.15 <2" }, ["@lidtop/opencode-context"])
+    await checkCatalogChange((manifest) => { manifest.workspaces!.catalogs!.sdk!["@opencode/client"] = "2.2.0" }, ["@lidtop/opencode-context", "@lidtop/opencode-cost"])
+    await checkCatalogChange((manifest) => { manifest.workspaces!.catalogs!.sdk!["@opencode/theme"] = "2.2.0" }, ["@lidtop/opencode-context"])
   }, 30_000)
 })

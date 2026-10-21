@@ -12,8 +12,8 @@ test.each(["SIGINT", "SIGTERM"] as const)("host smoke confines its database and 
   let serverPID: number | undefined
   try {
     await mkdir(bin)
-    await Bun.write(join(fixture, "package.json"), JSON.stringify({ name: "opcode-smoke-safety", exports: { ".": "./index.js" } }))
-    await Bun.write(join(fixture, "index.js"), "export default { id: 'opcode-smoke-safety', setup() {} }")
+    await Bun.write(join(fixture, "package.json"), JSON.stringify({ name: "@lidtop/opencode-cost", exports: { ".": "./index.js" } }))
+    await Bun.write(join(fixture, "index.js"), "throw new Error('Smoke identification must not evaluate the entrypoint'); export default { id: 'opcode-cost', setup() { throw new Error('Smoke identification must not call setup') } }")
     await Bun.write(join(bin, "opencode"), `#!${process.execPath}\nawait Bun.write(${JSON.stringify(control)}, JSON.stringify({ pid: process.pid, directory: process.cwd(), database: process.env.OPENCODE_DB }));\nsetInterval(() => {}, 1000);\n`)
     await chmod(join(bin, "opencode"), 0o700)
     const running = Bun.spawn([process.execPath, fileURLToPath(new URL("./host-smoke.ts", import.meta.url)), fixture], {

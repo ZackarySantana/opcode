@@ -1,7 +1,7 @@
 import { appendFile, mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { buildAll } from "./build"
-import { manifestAt, pluginIDs, repositoryRoot } from "./packaging"
+import { manifestAt, pluginIDs, publicPackageName, repositoryRoot } from "./packaging"
 
 async function command(args: string[], cwd: string): Promise<string> {
   const child = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "pipe" })
@@ -45,6 +45,7 @@ export async function publish(root = repositoryRoot, live = false, overrides: Pa
   for (const id of pluginIDs) {
     const directory = join(root, ".release", `opcode-${id}`)
     const manifest = await manifestAt(directory)
+    if (manifest.name !== publicPackageName(id) || manifest.private) throw new Error(`Invalid public plugin manifest: ${directory}`)
     const packed = JSON.parse(await npm(["pack", "--json", "--ignore-scripts", "--pack-destination", tarballs], directory)) as { filename: string }[]
     const tarball = join(tarballs, packed[0]!.filename)
     if (!live) {

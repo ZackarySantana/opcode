@@ -1,4 +1,4 @@
-# opcode-cost
+# @lidtop/opencode-cost
 
 Persistent, provider-reported cost and token usage for OpenCode **2.1.1+ within 2.x**. `/cost` opens a native terminal dashboard built with Opcode's shared UI.
 
@@ -9,7 +9,7 @@ Add the package globally in `~/.config/opencode/opencode.json(c)` so its server 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["opcode-cost"]
+  "plugins": ["@lidtop/opencode-cost"]
 }
 ```
 
@@ -53,7 +53,7 @@ Override the path on the **server**:
 ```jsonc
 {
   "plugins": [
-    { "package": "opcode-cost", "options": { "database": "/absolute/path/cost.sqlite" } }
+    { "package": "@lidtop/opencode-cost", "options": { "database": "/absolute/path/cost.sqlite" } }
   ]
 }
 ```

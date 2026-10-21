@@ -1,6 +1,6 @@
 import { readFile, readdir } from "node:fs/promises"
-import { join } from "node:path"
-import { dependencyFields, manifestAt, pluginIDs, privateWorkspaces, repositoryRoot, runtimeDependencies, type Manifest } from "./packaging"
+import { join, relative } from "node:path"
+import { dependencyFields, manifestAt, pluginIDs, privateWorkspaces, publicPackageName, repositoryRoot, runtimeDependencies, type Manifest } from "./packaging"
 
 export type ReleaseChange = { name: string; type: "patch" | "minor" | "major" }
 
@@ -47,28 +47,32 @@ export async function checkReleasePolicy(root = repositoryRoot, base = "origin/m
   const changed = (await git(root, ["diff", "--name-only", ancestor, "HEAD"])).split("\n")
   const privateMap = await privateWorkspaces(root)
   const manifests = new Map([...privateMap].map(([name, workspace]) => [name, workspace.manifest]))
+  const manifestPaths = new Map([...privateMap].map(([name, workspace]) => [name, `${relative(root, workspace.directory)}/package.json`]))
   for (const id of pluginIDs) {
-    const manifest = await manifestAt(join(root, "plugins", id))
+    const directory = join(root, "plugins", id)
+    const manifest = await manifestAt(directory)
+    if (manifest.name !== publicPackageName(id) || manifest.private) throw new Error(`Invalid public plugin manifest: ${directory}`)
     manifests.set(manifest.name, manifest)
+    manifestPaths.set(manifest.name, `plugins/${id}/package.json`)
   }
   const privateChanges = new Set([...privateMap].filter(([, workspace]) => changed.some((file) => file.startsWith(`packages/${workspace.manifest.name.split("/")[1]}/src/`) || file === `packages/${workspace.manifest.name.split("/")[1]}/package.json`)).map(([name]) => name))
   const required = requiredConsumers(privateChanges, manifests)
   for (const id of pluginIDs) {
-    if (changed.some((file) => file.startsWith(`plugins/${id}/src/`))) required.add(`opcode-${id}`)
+    const name = publicPackageName(id)
+    if (changed.some((file) => file.startsWith(`plugins/${id}/src/`))) required.add(name)
     if (changed.includes(`plugins/${id}/package.json`)) {
       // The Changesets release PR itself changes versions after consuming its changesets.
       let previous: Manifest | undefined
       try { previous = JSON.parse(await git(root, ["show", `${ancestor}:plugins/${id}/package.json`])) } catch { /* New plugin. */ }
       const withoutVersion = (manifest: Manifest | undefined) => JSON.stringify(manifest && Object.fromEntries(Object.entries(manifest).filter(([key]) => key !== "version")))
-      if (withoutVersion(previous) !== withoutVersion(manifests.get(`opcode-${id}`))) required.add(`opcode-${id}`)
+      if (withoutVersion(previous) !== withoutVersion(manifests.get(name))) required.add(name)
     }
   }
   if (changed.includes("package.json")) {
     const previous: Manifest = JSON.parse(await git(root, ["show", `${ancestor}:package.json`]))
     const previousManifests = new Map<string, Manifest>()
-    for (const [name, manifest] of manifests) {
-      const path = manifest.private ? `packages/${name.split("/")[1]}` : `plugins/${name.slice("opcode-".length)}`
-      try { previousManifests.set(name, JSON.parse(await git(root, ["show", `${ancestor}:${path}/package.json`]))) }
+    for (const [name, path] of manifestPaths) {
+      try { previousManifests.set(name, JSON.parse(await git(root, ["show", `${ancestor}:${path}`]))) }
       catch { /* Newly introduced workspace: its current consumers already require a release. */ }
     }
     // Compare what each tarball actually declares, not just selected catalog entries.

@@ -1,5 +1,5 @@
 {
-  "name": "opcode-sessions",
+  "name": "@lidtop/opencode-sessions",
   "version": "0.1.0",
   "description": "Browse OpenCode sessions across projects",
   "type": "module",

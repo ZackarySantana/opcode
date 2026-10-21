@@ -1,4 +1,4 @@
-# opcode-context
+# @lidtop/opencode-context
 
 Inspect the current OpenCode session with `/context`, without invoking a model.
 
@@ -7,7 +7,7 @@ Inspect the current OpenCode session with `/context`, without invoking a model.
 Requires **OpenCode 2.1.1 or newer in the 2.x line**. This is a V2-only plugin; it does not support V1.
 
 ```sh
-opencode plugin add opcode-context
+opencode plugin add @lidtop/opencode-context
 ```
 
 Or preserve existing entries and add it to `plugins` in `~/.config/opencode/opencode.jsonc`:
@@ -15,7 +15,7 @@ Or preserve existing entries and add it to `plugins` in `~/.config/opencode/open
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["opcode-context"]
+  "plugins": ["@lidtop/opencode-context"]
 }
 ```
 

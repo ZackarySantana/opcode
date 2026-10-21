@@ -1,4 +1,4 @@
-# opcode-later
+# @lidtop/opencode-later
 
 A client-local, persistent Later list for the OpenCode V2 terminal UI. `/later` manages active items and completed history; active items also appear in the session sidebar when it is visible.
 
@@ -11,7 +11,7 @@ Requires OpenCode **2.1.1 or newer in the 2.x line**, with its Bun terminal plug
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["opcode-later"]
+  "plugins": ["@lidtop/opencode-later"]
 }
 ```
 
@@ -58,7 +58,7 @@ $XDG_STATE_HOME/opencode/opencode-later/later.sqlite
 
 The existing `items` and `metadata` SQLite schema is unchanged. IDs, active order, timestamps, completed history, and the revision counter are retained without conversion. WAL and transactions support multiple local clients. The plugin does not use OpenCode's own database or server RPC.
 
-To replace `opencode-later`, remove its configuration entry and install `opcode-later` instead. Keep any custom `database` path unchanged and configure it on the CLI side as below. Do not run both UI plugins together: they share `/later`, sidebar content, and the default database.
+To replace `opencode-later`, remove its configuration entry and install `@lidtop/opencode-later` instead. Keep any custom `database` path unchanged and configure it on the CLI side as below. Do not run both UI plugins together: they share `/later`, sidebar content, and the default database.
 
 ### Custom database
 
@@ -71,7 +71,7 @@ in OpenCode 2.1.1 do not reliably receive server plugin options.
   "$schema": "https://opencode.ai/v2/cli.json",
   "plugins": [
     {
-      "package": "opcode-later",
+      "package": "@lidtop/opencode-later",
       "options": { "database": "/absolute/path/later.sqlite" }
     }
   ]

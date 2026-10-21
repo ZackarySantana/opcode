@@ -7,13 +7,20 @@ The original repositories are unchanged.
 
 | Original | Opcode |
 | --- | --- |
-| `opencode-context-tui` | `opcode-context` |
-| `opencode-cost` | `opcode-cost` |
-| `opencode-later` | `opcode-later` |
-| `opencode-sessions-all` | `opcode-sessions` |
+| `opencode-context-tui` | `@lidtop/opencode-context` |
+| `opencode-cost` | `@lidtop/opencode-cost` |
+| `opencode-later` | `@lidtop/opencode-later` |
+| `opencode-sessions-all` | `@lidtop/opencode-sessions` |
 
 Remove the old package entry when enabling its replacement to avoid duplicate
 commands or tracking. Use the new plugin README's V2 configuration example.
+
+Earlier Opcode drafts used the unscoped npm names `opcode-context`, `opcode-cost`,
+`opcode-later`, and `opcode-sessions`. Replace those package entries with the
+corresponding `@lidtop/` names too, including any object-form `package` fields.
+This changes npm package names only: runtime plugin, command, and RPC IDs remain
+`opcode-*`, and legacy `opencode-*` database paths remain unchanged. Do not add the
+npm scope to slash commands, RPC IDs, or filesystem paths.
 
 ## Data
 

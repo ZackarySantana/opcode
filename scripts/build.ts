@@ -3,12 +3,12 @@ import { cp, mkdir, rm, writeFile } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { join, relative } from "node:path"
 import ts from "typescript"
-import { inside, manifestAt, packageName, pluginIDs, privateWorkspaces, relativeModule, repositoryRoot, stagedManifest, workspaceSource } from "./packaging"
+import { inside, manifestAt, packageName, pluginIDs, privateWorkspaces, publicPackageName, relativeModule, repositoryRoot, stagedManifest, workspaceSource } from "./packaging"
 
-export async function buildPlugin(root: string, id: string, destination = join(root, ".release", `opcode-${id}`)) {
+export async function buildPlugin(root: string, id: typeof pluginIDs[number], destination = join(root, ".release", `opcode-${id}`)) {
   const directory = join(root, "plugins", id)
   const manifest = await manifestAt(directory)
-  if (manifest.name !== `opcode-${id}` || manifest.private) throw new Error(`Invalid public plugin manifest: ${directory}`)
+  if (manifest.name !== publicPackageName(id) || manifest.private) throw new Error(`Invalid public plugin manifest: ${directory}`)
   const workspaceMap = await privateWorkspaces(root)
   const entries = ["index.ts", "tui.tsx", ...(existsSync(join(directory, "src/rpc.ts")) ? ["rpc.ts"] : [])]
   const entrypoints = entries.map((entry) => join(directory, "src", entry))

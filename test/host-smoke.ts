@@ -3,17 +3,21 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
+import { pluginIDs, publicPackageName } from "../scripts/packaging"
 
 const directories = process.argv.slice(2).map((path) => resolve(path))
 if (directories.length === 0) throw new Error("Usage: bun test/host-smoke.ts <built-package-directory> […]")
 const packages = await Promise.all(directories.map(async (directory) => {
   const manifest = await Bun.file(`${directory}/package.json`).json() as { name: string; exports: Record<string, string | { import?: string; default?: string }> }
+  // Package names identify npm artifacts; the host and RPC keep stable runtime IDs.
+  const id = pluginIDs.find((id) => publicPackageName(id) === manifest.name)
+  if (!id) throw new Error(`Unknown Opcode package ${manifest.name}`)
   const target = manifest.exports["."]
   const entry = typeof target === "string" ? target : target?.import ?? target?.default
   if (!entry) throw new Error(`No server export for ${manifest.name}`)
-  return { name: manifest.name, entry: resolve(directory, entry) }
+  return { id: `opcode-${id}`, entry: resolve(directory, entry) }
 }))
-const expected = packages.map(({ name }) => name)
+const expected = packages.map(({ id }) => id)
 const executable = Bun.which("opencode")
 if (!executable) throw new Error("Install OpenCode V2 to run the optional host smoke check")
 
@@ -48,8 +52,8 @@ try {
   await Promise.all(Object.values(paths).map((path) => mkdir(path, { recursive: true })))
   // Local V2 directories discover root index files, unlike installed npm exports.
   // Bridge to each packed server export without changing its generated artifact.
-  const entries = await Promise.all(packages.map(async ({ name, entry }) => {
-    const directory = `${root}/plugins/${name}`
+  const entries = await Promise.all(packages.map(async ({ id, entry }) => {
+    const directory = `${root}/plugins/${id}`
     await mkdir(directory, { recursive: true })
     await Bun.write(`${directory}/index.js`, `export { default } from ${JSON.stringify(pathToFileURL(entry).href)}\n`)
     return directory

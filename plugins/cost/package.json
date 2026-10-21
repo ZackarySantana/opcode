@@ -1,5 +1,5 @@
 {
-  "name": "opcode-cost",
+  "name": "@lidtop/opencode-cost",
   "version": "0.1.0",
   "description": "Persistent OpenCode cost and token usage dashboard",
   "type": "module",

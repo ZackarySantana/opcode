@@ -1,5 +1,5 @@
 {
-  "name": "opcode-context",
+  "name": "@lidtop/opencode-context",
   "version": "0.1.0",
   "description": "Inspect OpenCode session context usage",
   "type": "module",
