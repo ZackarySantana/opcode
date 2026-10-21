@@ -113,6 +113,15 @@ CI checks this policy on PRs. The release PR consumes changesets, updates select
 versions/changelogs, and refreshes `bun.lock` with `scripts/version.ts`. Review
 that PR's changed consumers; unrelated plugins retain their versions.
 
+After Changesets creates or regenerates the PR, the workflow updates its title
+and publishing instructions together. Titles list only public plugins with a
+proposed version different from the workflow's starting commit, in stable package
+order, for example `chore(release): publish context@0.1.1 cost@0.2.1`. All four
+packages are included when all four change. The private root/core/ui versions
+never contribute, and release notes remain intact. This is a presentation change,
+not approval to merge or publish; the npm environment protections and validation
+still apply.
+
 ## GitHub and npm setup
 
 ### Repository preflight (read first; settings changes require owner approval)

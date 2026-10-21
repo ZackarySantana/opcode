@@ -38,33 +38,20 @@ jobs:
           github-token: ${{ github.token }}
           version: mise exec -- bun scripts/version.ts
           commitMode: github-api
-          title: 'Release plugins'
+          title: 'chore(release): publish plugins'
           commit: 'chore: version plugins'
           createGithubReleases: false
-      - name: Clarify separate automatic publishing in the release PR
+      - name: Update release PR title and publishing instructions
+        id: release-pr
         if: steps.changesets.outputs.pullRequestNumber != ''
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ steps.changesets.outputs.pullRequestNumber }}
-          OLD_SENTENCE: >-
-            When you're ready to do a release, you can merge this and publish to npm yourself or [setup this action to publish automatically](https://github.com/changesets/action#with-publishing).
-          NEW_SENTENCE: >-
-            Merging this PR makes the reviewed plugin versions eligible for automatic publishing by the separate publish job in release.yml, subject to the configured npm environment protections and validation. Obtain release approval before merging.
+          BASE_SHA: ${{ github.sha }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" |
-            mise exec -- bun -e '
-              const pr = JSON.parse(await Bun.stdin.text())
-              const previous = process.env.OLD_SENTENCE
-              const replacement = process.env.NEW_SENTENCE
-              if (typeof pr.body !== "string" || !previous || !replacement) {
-                throw new Error("Unexpected Changesets PR body")
-              }
-              if (!pr.body.includes(previous) && !pr.body.includes(replacement)) {
-                throw new Error("Expected Changesets publication instructions were not found")
-              }
-              console.log(JSON.stringify({ body: pr.body.replace(previous, replacement) }))
-            ' |
+            mise exec -- bun scripts/release-pr.ts "$BASE_SHA" |
             gh api --method PATCH \
               "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
               --input - --silent
