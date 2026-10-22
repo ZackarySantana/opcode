@@ -35,6 +35,12 @@ const usage = `cost=excluded.cost, input_tokens=excluded.input_tokens, output_to
   reasoning_tokens=excluded.reasoning_tokens, cache_read_tokens=excluded.cache_read_tokens, cache_write_tokens=excluded.cache_write_tokens`
 const historical = `WHERE NOT EXISTS (SELECT 1 FROM opcode_cost_live WHERE message_id = excluded.message_id)
   AND excluded.completed_at IS NOT NULL AND (usage.completed_at IS NULL OR usage.completed_at < excluded.completed_at)`
+const sums = `COALESCE(SUM(cost), 0) AS cost, COUNT(*) AS messages,
+  COALESCE(SUM(input_tokens + output_tokens + reasoning_tokens + cache_read_tokens + cache_write_tokens), 0) AS tokens`
+const filtered = "created_at >= $since AND ($projectID IS NULL OR project_id = $projectID) AND ($model IS NULL OR provider_id || '/' || model_id = $model)"
+
+type Filter = { since: number; projectID: string | null; model: string | null }
+type Sums = Pick<Breakdown, "cost" | "messages" | "tokens">
 
 export class CostLedger {
   private readonly db: Database
@@ -89,55 +95,53 @@ export class CostLedger {
 
   dashboard(filter: DashboardFilter, now = Date.now()): Dashboard {
     const since = rangeStart(filter.range, now)
-    const total: Totals = { cost: 0, messages: 0, tokens: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 }
-    const projects = new Map<string, Breakdown>()
-    const models = new Map<string, Breakdown>()
-    const days = new Map<string, Breakdown>()
-    const directories = new Map<string, string>()
-    const modelIDs = new Set<string>()
-    // Stream one indexed date-range query. No per-group arrays or copied message history.
-    const rows = this.db.query<Omit<UsageRecord, "messageID" | "sessionID" | "completedAt">, [number]>(`SELECT project_id AS projectID, directory, provider_id AS providerID,
-      model_id AS modelID, created_at AS createdAt, cost, input_tokens AS input, output_tokens AS output,
-      reasoning_tokens AS reasoning, cache_read_tokens AS cacheRead, cache_write_tokens AS cacheWrite
-      FROM usage WHERE created_at >= ?`).iterate(since)
-    for (const row of rows) {
-      const model = `${row.providerID}/${row.modelID}`
-      const prior = directories.get(row.projectID)
-      if (!prior || row.directory < prior) directories.set(row.projectID, row.directory)
-      modelIDs.add(model)
-      if (filter.projectID && row.projectID !== filter.projectID) continue
-      if (filter.model && model !== filter.model) continue
-      const count = row.input + row.output + row.reasoning + row.cacheRead + row.cacheWrite
-      total.cost += row.cost
-      total.messages++
-      total.tokens += count
-      for (const key of ["input", "output", "reasoning", "cacheRead", "cacheWrite"] as const) total[key] += row[key]
-      addGroup(projects, row.projectID, row.cost, count)
-      addGroup(models, model, row.cost, count)
-      // Use the same JS local calendar as rangeStart, rather than SQLite/libc's potentially different timezone.
-      const date = new Date(row.createdAt)
-      const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
-      addGroup(days, day, row.cost, count)
-    }
-    const projectOptions = [...directories].map(([id, directory]) => ({ id, label: basename(directory) || directory, directory }))
+    const params: Filter = { since, projectID: filter.projectID ?? null, model: filter.model ?? null }
+    const total = this.db.query<Totals, Filter>(`SELECT ${sums}, COALESCE(SUM(input_tokens), 0) AS input,
+      COALESCE(SUM(output_tokens), 0) AS output, COALESCE(SUM(reasoning_tokens), 0) AS reasoning,
+      COALESCE(SUM(cache_read_tokens), 0) AS cacheRead, COALESCE(SUM(cache_write_tokens), 0) AS cacheWrite
+      FROM usage WHERE ${filtered}`).get(params)!
+    // Options ignore entity filters. SQLite takes a bare column from the MAX() row: the latest-used directory labels a project.
+    const projectOptions = this.db.query<{ id: string; directory: string }, [number]>(`SELECT project_id AS id, directory, MAX(created_at)
+      FROM usage WHERE created_at >= ? GROUP BY project_id`).all(since)
+      .map(({ id, directory }) => ({ id, label: basename(directory) || directory, directory }))
       .sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id))
-    for (const option of projectOptions) {
-      const group = projects.get(option.id)
-      if (group) group.label = option.label
-    }
-    const ranked = (groups: Map<string, Breakdown>) => [...groups.values()].sort((a, b) => b.cost - a.cost || a.label.localeCompare(b.label)).slice(0, 8)
+    const labels = new Map(projectOptions.map((option) => [option.id, option.label]))
+    const group = (key: string) => this.db.query<Sums & { id: string }, Filter>(`SELECT ${key} AS id, ${sums}
+      FROM usage WHERE ${filtered} GROUP BY 1`).all(params)
+    const ranked = (rows: Breakdown[]) => rows.sort((a, b) => b.cost - a.cost || a.label.localeCompare(b.label)).slice(0, 8)
     return {
-      total, projects: ranked(projects), models: ranked(models),
-      daily: [...days.values()].sort((a, b) => b.id.localeCompare(a.id)).slice(0, 14),
-      projectOptions, modelOptions: [...modelIDs].sort().map((id) => ({ id, label: id })),
+      total,
+      projects: ranked(group("project_id").map((row) => ({ ...row, label: labels.get(row.id) ?? row.id }))),
+      models: ranked(group("provider_id || '/' || model_id").map((row) => ({ ...row, label: row.id }))),
+      daily: this.daily(params),
+      projectOptions,
+      modelOptions: this.db.query<{ id: string }, [number]>("SELECT DISTINCT provider_id || '/' || model_id AS id FROM usage WHERE created_at >= ?")
+        .all(since).map(({ id }) => id).sort().map((id) => ({ id, label: id })),
     }
   }
-}
 
-function addGroup(groups: Map<string, Breakdown>, id: string, cost: number, tokens: number) {
-  let group = groups.get(id)
-  if (!group) { group = { id, label: id, cost: 0, messages: 0, tokens: 0 }; groups.set(id, group) }
-  group.cost += cost
-  group.messages++
-  group.tokens += tokens
+  /**
+   * The newest 14 local dates with usage. Day boundaries come from the same JS local calendar as
+   * rangeStart (DST-aware), rather than SQLite/libc's potentially different timezone.
+   */
+  private daily(params: Filter) {
+    const latest = this.db.query<{ at: number | null }, Filter & { before: number }>(`SELECT MAX(created_at) AS at FROM usage
+      WHERE ${filtered} AND created_at < $before`)
+    const day = this.db.query<Sums, Filter & { start: number; end: number }>(`SELECT ${sums} FROM usage
+      WHERE ${filtered} AND created_at >= $start AND created_at < $end`)
+    const days: Breakdown[] = []
+    let before = Number.MAX_SAFE_INTEGER
+    while (days.length < 14) {
+      const at = latest.get({ ...params, before })?.at
+      if (at === null || at === undefined) break
+      const date = new Date(at)
+      date.setHours(0, 0, 0, 0)
+      const start = date.getTime()
+      const id = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+      date.setDate(date.getDate() + 1)
+      days.push({ id, label: id, ...day.get({ ...params, start, end: date.getTime() })! })
+      before = start
+    }
+    return days
+  }
 }
