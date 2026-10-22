@@ -21,8 +21,9 @@ sensitive.
 and CenterEmpty components. All plugins compose these same semantic surfaces,
 rather than maintaining their own header, panel, and footer styling.
 OpenCode remains responsible for actual rendering, sizing, and native dialogs.
-Terminal-cell measurement and grapheme-safe truncation are shared here too, so
-wide labels behave consistently across Context and Sessions.
+Terminal-cell measurement and grapheme-safe truncation are shared here too;
+`useText()` binds them to the host renderer's width method, so wide labels
+behave consistently across Context, Cost, and Sessions.
 
 The shared palette reads the active V2 theme, not fixed RGB colors. Page/dialog
 titles, sidebar titles, and shortcut keys use normal `text.base` (not literal
@@ -47,7 +48,9 @@ transitions from mouse input. The host's `router.current()`
 is a live store proxy, never a safe value to save directly as a return destination.
 Persistence, domain actions, and their cancellable I/O remain plugin-specific.
 
-`@opcode/core` contains small host-independent utilities. Domain models stay in
+`@opcode/core` contains small host-independent utilities, including the XDG
+state directory and owner-only WAL SQLite setup shared by Cost, Later, and
+Sessions. Domain models stay in
 their plugin. Share recurring behavior after it appears, rather than building a
 general plugin framework or repository abstraction.
 
