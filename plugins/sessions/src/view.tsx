@@ -67,13 +67,13 @@ export function SessionsView(props: { model: BrowserModel; currentSession: () =>
             <FilterChip label="query" value={shorten(state().query || ".*", Math.max(3, Math.min(24, Math.floor(dimensions().width * 0.13))))} />
             <Show when={dimensions().width >= 60}><FilterChip label="project" value={shorten(project(), Math.max(3, Math.min(22, Math.floor(dimensions().width * 0.18))))} /></Show>
             <Show when={dimensions().width >= 90}><FilterChip label="subagents" value={state().showSubagents ? "shown" : "hidden"} /></Show>
-            <text height={1} fg={palette.muted}>{formatCount(state().rows.length)} sessions</text>
+            <text height={1} fg={state().truncated ? palette.warning : palette.muted}>{formatCount(state().rows.length)}{state().truncated ? "+" : ""} sessions{state().truncated ? " (partial: scan budget reached)" : ""}</text>
           </box>
         }
         footer={
           <box flexDirection="row" justifyContent="space-between" gap={1} flexGrow={1} minWidth={0}>
             <text height={1} width={footerWidth()} fg={state().syncError ? palette.error : palette.muted}>
-              {shorten(state().syncError || `${state().syncing ? "Syncing · " : state().loading ? "Searching · " : ""}${sourceInfo()}`, footerWidth())}
+              {shorten(state().syncError || `${state().syncing ? "Syncing · " : state().loading ? "Searching · " : ""}${state().syncNotice ? `${state().syncNotice} · ` : ""}${sourceInfo()}`, footerWidth())}
             </text>
             <text height={1} fg={palette.value}>{selectedProject()}</text>
           </box>

@@ -1,0 +1,4 @@
+---
+"@lidtop/opencode-sessions": patch
+---
+Make session indexing resilient. A busy or failing session no longer aborts a refresh or skips deletion reconciliation; busy sessions are retried quietly once idle, and counts are reported. History import skips deleted or changed sessions and leaves out (and counts) messages over 1 MiB instead of stopping. Unchanged sessions are skipped on refresh and history import, overlapping refreshes are coalesced, and history now synchronizes the first time the browser opens rather than on every TUI launch. Reverted messages are removed from the index while compacted history stays searchable. Index writes use immediate SQLite transactions, so a second writer cannot abort them; descendants of deleted sessions stay deleted; and tombstones no longer hide a session the server later returns. The index enables SQLite `secure_delete`.

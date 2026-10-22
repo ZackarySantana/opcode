@@ -29,7 +29,7 @@ export function registerBrowserCommands(api: Context, model: BrowserModel, scree
     run() {
       if (!alive()) return
       if (screen.owns()) return
-      void model.reset()
+      void model.activate()
       screen.open()
     },
   }] }))
@@ -59,7 +59,8 @@ export function registerBrowserCommands(api: Context, model: BrowserModel, scree
       if (!active()) return
       const value = model.state()
       const row = value.rows[value.selected]
-      if (!row || value.loading) return
+      // Rows stay valid while a re-query runs; filter changes clear them first.
+      if (!row) return
       const location = api.location ?? api.data.location.default()
       if (row.directory === location.directory) { invalidate(); api.ui.router.navigate({ type: "session", sessionID: row.id }); return }
       const current = invocation()
@@ -90,7 +91,6 @@ export default Plugin.define({
       void model.dispose()
       throw error
     }
-    void model.refresh()
     return async () => {
       active = false
       invalidate()

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { Plugin } from "@opencode/plugin"
-import type { Context, Destination, Route } from "@opencode/plugin/tui/context"
+import type { Context, Destination, KeymapLayer, Route } from "@opencode/plugin/tui/context"
 import { createRoot, createSignal } from "solid-js"
 import { sleep } from "@opcode/core/live"
 import server from "../src/index"
@@ -32,7 +32,7 @@ test("server unload aborts initial indexing and stream, unregistering RPC before
   expect(disposed).toBe(true)
 })
 
-test("TUI setup pins history and RPC to one connection and leaves a foreign same-name route alone", async () => {
+test("TUI setup defers sync to the first browser opening, pins it to one connection, and restores a foreign same-name route", async () => {
   const searched = Promise.withResolvers<void>()
   const calls: string[] = []
   const locations: string[] = []
@@ -44,15 +44,19 @@ test("TUI setup pins history and RPC to one connection and leaves a foreign same
       calls.push(`${server}:rpc:${definition.id}`)
       const called = (method: string, options: { location: { directory: string } }) => { calls.push(`${server}:${method}`); locations.push(options.location.directory) }
       return {
-        refresh: async (_input: unknown, options: { location: { directory: string } }) => { called("refresh", options); return { sessions: 1 } },
-        begin: async (_input: unknown, options: { location: { directory: string } }) => { called("begin", options); return { token: server } },
+        refresh: async (_input: unknown, options: { location: { directory: string } }) => { called("refresh", options); return { sessions: 1, deferred: 0, failed: 0 } },
+        begin: async (_input: unknown, options: { location: { directory: string } }) => { called("begin", options); return { current: false, token: server } },
         import: async (input: { messages: Array<{ text: string }> }, options: { location: { directory: string } }) => {
           called("import", options)
           uploaded.push(...input.messages.map((message) => ({ server, text: message.text })))
           return { accepted: input.messages.length }
         },
         finish: async (_input: unknown, options: { location: { directory: string } }) => { called("finish", options); return {} },
-        search: async (_input: unknown, options: { location: { directory: string } }) => { called("search", options); searched.resolve(); return { rows: [], projects: [] } },
+        search: async (_input: unknown, options: { location: { directory: string } }) => {
+          called("search", options)
+          if (calls.includes(`${server}:finish`)) searched.resolve()
+          return { rows: [], projects: [], truncated: false }
+        },
       }
     },
   })
@@ -60,10 +64,11 @@ test("TUI setup pins history and RPC to one connection and leaves a foreign same
   const [route, setRoute] = createSignal<Route>({ type: "plugin", id: "another-plugin", name: BROWSER_ROUTE })
   const navigations: Destination[] = []
   let unregistered = false
+  const layers: KeymapLayer[] = []
   const api = {
     location: { directory: "/connected/A" }, get client() { return connected },
     data: { location: { command: { list: () => [] } } },
-    keymap: { layer() {}, commands: () => [] },
+    keymap: { layer: (factory: () => KeymapLayer) => { layers.push(factory()) }, commands: () => [] },
     ui: { router: {
       register: () => () => { unregistered = true }, current: route,
       navigate: (next: Destination) => { navigations.push(next); setRoute(next as Route) },
@@ -73,6 +78,9 @@ test("TUI setup pins history and RPC to one connection and leaves a foreign same
   connected = makeClient("B") // The original setup must not start reading this replacement client.
   const cleanup = await owner.cleanup
   try {
+    await sleep(10)
+    expect(calls.filter((call) => !call.endsWith(":rpc:opcode-sessions"))).toEqual([])
+    await layers.flatMap((layer) => layer.commands ?? []).find((command) => command.id === "opcode-sessions.open")!.run()
     await searched.promise
     expect(calls.every((call) => call.startsWith("A:"))).toBe(true)
     expect(calls).toContain("A:messages:A")
@@ -80,6 +88,6 @@ test("TUI setup pins history and RPC to one connection and leaves a foreign same
     expect(locations.every((directory) => directory === "/connected/A")).toBe(true)
   } finally { await cleanup?.(); owner.dispose() }
   expect(unregistered).toBe(true)
-  expect(navigations).toEqual([])
-  expect(route()).toEqual({ type: "plugin", id: "another-plugin", name: BROWSER_ROUTE })
+  expect(navigations.at(-1)).toEqual({ type: "plugin", id: "another-plugin", name: BROWSER_ROUTE, data: undefined })
+  expect(route()).toMatchObject({ type: "plugin", id: "another-plugin", name: BROWSER_ROUTE })
 })

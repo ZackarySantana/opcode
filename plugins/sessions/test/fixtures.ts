@@ -17,8 +17,8 @@ export const record = (id = "s1", updated = 100) => sessionRecord(session(id, "/
 export const message = (id = "m1", text = "Historical JWT refresh") => messageRecord(user(id, text))!
 export function remoteStub(overrides: Partial<SessionsRemote> = {}): SessionsRemote {
   return {
-    search: async () => ({ rows: [], projects: [] }), refresh: async () => ({ sessions: 0 }),
-    begin: async () => ({ token: "token" }), import: async (input) => ({ accepted: input.messages.length }), finish: async () => {},
+    search: async () => ({ rows: [], projects: [], truncated: false }), refresh: async () => ({ sessions: 0, deferred: 0, failed: 0 }),
+    begin: async () => ({ current: false, token: "token" }), import: async (input) => ({ accepted: input.messages.length }), finish: async () => {},
     ...overrides,
   }
 }

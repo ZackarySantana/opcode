@@ -1,6 +1,7 @@
 import { Rpc } from "@opencode/plugin/rpc"
 import type { OpenCodeClient } from "@opencode/client"
-import type { MessageRecord, SearchInput, SearchOutput } from "./domain"
+import type { MessageRecord, RefreshOutput, SearchInput, SearchOutput } from "./domain"
+import { MAX_QUERY, MAX_SNIPPET } from "./regex"
 
 export const MAX_BATCH_MESSAGES = 32
 export const MAX_MESSAGE_TEXT = 1_048_576
@@ -14,12 +15,14 @@ const messageProperties = {
 } as const
 const resultProperties = {
   id, projectID: id, directory: { type: "string" }, title: { type: "string" }, parentID: id,
-  createdAt: number, updatedAt: number, snippet: { type: "string", maxLength: 4096 },
+  createdAt: number, updatedAt: number, snippet: { type: "string", maxLength: MAX_SNIPPET },
   messageCount: number, providerID: id, modelID: id, modelCount: number,
   cost: number, input: number, output: number, reasoning: number, cacheRead: number, cacheWrite: number,
 } as const
 const object = (properties: Record<string, unknown>, required: string[]) => ({ type: "object", properties, required, additionalProperties: false })
-const errors = { failed: object({}, []) }
+/** `missing`: deleted or never existed. `stale`: changed since the caller's revision; retry later. */
+const errors = { failed: object({}, []), missing: object({}, []), stale: object({}, []) }
+export type SessionErrorType = keyof typeof errors
 
 export const SessionsRpc = Rpc.define({
   id: "opcode-sessions",
@@ -27,34 +30,43 @@ export const SessionsRpc = Rpc.define({
   methods: {
     search: {
       errors,
-      input: object({ query: { type: "string", maxLength: 256 }, projectID: id, showSubagents: { type: "boolean" }, limit: { type: "integer", minimum: 1, maximum: 200 } }, ["query", "showSubagents"]),
+      input: object({ query: { type: "string", maxLength: MAX_QUERY }, projectID: id, showSubagents: { type: "boolean" }, limit: { type: "integer", minimum: 1, maximum: 200 } }, ["query", "showSubagents"]),
       output: object({
         rows: { type: "array", maxItems: 200, items: object(resultProperties, Object.keys(resultProperties).filter((key) => !["parentID", "providerID", "modelID"].includes(key))) },
         projects: { type: "array", items: object({ id, directory: { type: "string" }, label: { type: "string" } }, ["id", "directory", "label"]) },
-      }, ["rows", "projects"]),
+        truncated: { type: "boolean" },
+      }, ["rows", "projects", "truncated"]),
     },
-    refresh: { input: object({}, []), output: object({ sessions: number }, ["sessions"]), errors },
+    refresh: { input: object({}, []), output: object({ sessions: number, deferred: number, failed: number }, ["sessions", "deferred", "failed"]), errors },
     begin: {
       errors,
       input: object({ sessionID: id, updatedAt: number }, ["sessionID", "updatedAt"]),
-      output: object({ token: id }, ["token"]),
+      // `current`: history at this revision was already imported; no token is issued.
+      output: object({ current: { type: "boolean" }, token: id }, ["current"]),
     },
     import: {
       errors,
       input: object({ token: id, messages: { type: "array", minItems: 1, maxItems: MAX_BATCH_MESSAGES, items: object(messageProperties, Object.keys(messageProperties).filter((key) => !["providerID", "modelID"].includes(key))) } }, ["token", "messages"]),
       output: object({ accepted: number }, ["accepted"]),
     },
-    finish: { input: object({ token: id }, ["token"]), output: object({}, []), errors },
+    finish: { input: object({ token: id, complete: { type: "boolean" } }, ["token", "complete"]), output: object({}, []), errors },
   },
 })
 
 /** Explicit types at the JSON-Schema boundary; the host validates both directions. */
 export interface SessionsRemote {
   search(input: SearchInput, signal?: AbortSignal): Promise<SearchOutput>
-  refresh(signal?: AbortSignal): Promise<{ sessions: number }>
-  begin(input: { sessionID: string; updatedAt: number }, signal?: AbortSignal): Promise<{ token: string }>
+  refresh(signal?: AbortSignal): Promise<RefreshOutput>
+  begin(input: { sessionID: string; updatedAt: number }, signal?: AbortSignal): Promise<{ current: boolean; token?: string }>
   import(input: { token: string; messages: MessageRecord[] }, signal?: AbortSignal): Promise<{ accepted: number }>
-  finish(token: string, signal?: AbortSignal): Promise<void>
+  /** `complete` records the token's revision as imported; otherwise the token is only released. */
+  finish(input: { token: string; complete: boolean }, signal?: AbortSignal): Promise<void>
+}
+
+/** Typed RPC failures arrive as plain `{ type, message }` objects. */
+export function sessionErrorType(error: unknown): SessionErrorType | undefined {
+  const type = error && typeof error === "object" && "type" in error ? error.type : undefined
+  return type === "missing" || type === "stale" || type === "failed" ? type : undefined
 }
 
 export function sessionsRemote(client: OpenCodeClient, directory: string): SessionsRemote {
@@ -62,10 +74,10 @@ export function sessionsRemote(client: OpenCodeClient, directory: string): Sessi
   const options = (signal?: AbortSignal) => ({ location: { directory }, signal })
   return {
     search: async (input, signal) => await rpc.search(input, options(signal)) as SearchOutput,
-    refresh: async (signal) => await rpc.refresh({}, options(signal)) as { sessions: number },
-    begin: async (input, signal) => await rpc.begin(input, options(signal)) as { token: string },
+    refresh: async (signal) => await rpc.refresh({}, options(signal)) as RefreshOutput,
+    begin: async (input, signal) => await rpc.begin(input, options(signal)) as { current: boolean; token?: string },
     import: async (input, signal) => await rpc.import(input, options(signal)) as { accepted: number },
-    finish: async (token, signal) => { await rpc.finish({ token }, options(signal)) },
+    finish: async (input, signal) => { await rpc.finish(input, options(signal)) },
   }
 }
 

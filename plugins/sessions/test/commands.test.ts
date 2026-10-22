@@ -9,8 +9,9 @@ import { record, remoteStub } from "./fixtures"
 import { BROWSER_ROUTE } from "../src/view"
 
 function fixture() {
+  const searchGate: { current?: Promise<void> } = {}
   const rows: SessionResult[] = ["s1", "s2"].map((id) => ({ ...record(id), directory: id === "s1" ? "/work/alpha" : "/work/sam's app", snippet: "", messageCount: 0, modelCount: 0, cost: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 }))
-  const model = createBrowser({ session: { list: async () => ({ data: [], cursor: {} }) }, message: { list: async () => ({ data: [], cursor: {} }) } }, remoteStub({ search: async () => ({ rows, projects: [] }) }))
+  const model = createBrowser({ session: { list: async () => ({ data: [], cursor: {} }) }, message: { list: async () => ({ data: [], cursor: {} }) } }, remoteStub({ search: async () => { await searchGate.current; return { rows, projects: [], truncated: false } } }))
   const [route, setRoute] = createSignal<Route>({ type: "session", sessionID: "origin" })
   const layers: KeymapLayer[] = []
   const copied: string[] = []
@@ -33,7 +34,7 @@ function fixture() {
     registerBrowserCommands(api, model, screen, () => true)
     return dispose
   })
-  return { api, model, replies, dialogs, copied, toasts, layers, route,
+  return { api, model, searchGate, replies, dialogs, copied, toasts, layers, route,
     run: async (name: string) => { await layers.flatMap((layer) => layer.commands ?? []).find((command) => command.id === `opcode-sessions.${name}`)!.run() },
     async [Symbol.asyncDispose]() { dispose(); await model.dispose() },
   }
@@ -64,6 +65,18 @@ test("browser preserves return route, cancellation, local opening, and confirmed
   await ui.model.filters({ query: "keep" })
   await ui.run("search")
   expect(ui.model.state().query).toBe("keep")
+})
+
+test("enter opens the selected row while a background re-query is in flight", async () => {
+  await using ui = fixture()
+  await ui.run("open"); await ui.model.load()
+  const gate = Promise.withResolvers<void>()
+  ui.searchGate.current = gate.promise
+  const reload = ui.model.load() // As the open browser's periodic re-query does.
+  expect(ui.model.state().loading).toBe(true)
+  await ui.run("select")
+  expect(ui.route()).toEqual({ type: "session", sessionID: "s1" })
+  gate.resolve(); await reload
 })
 
 test("pending search and project dialogs cannot mutate a later browser activation", async () => {
