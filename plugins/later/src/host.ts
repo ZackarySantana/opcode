@@ -55,22 +55,21 @@ export class LaterController {
       id: `opcode-later.${action}`,
       title,
       bind,
-      enabled: () => !this.disposed && (action === "close" || !this.busy),
+      enabled: () => !this.disposed && (action === "close" || action === "open" || !this.busy),
       run: () => this.run(action),
     }
   }
 
+  /** Native dialogs may never settle, so they never hold busy; interaction() rejects their stale results. */
   async run(action: Action): Promise<void> {
-    if (this.disposed || (this.busy && action !== "close") || (action !== "open" && !this.screen.active())) return
+    if (this.disposed) return
     if (action === "close") { this.screen.close(); return }
-    this.busy = true
-    this.changed()
+    if (action !== "open" && (this.busy || !this.screen.active())) return
     try {
       await this.perform(action)
     } catch (error) {
       if (!this.disposed) this.toast(errorMessage(error), "error")
     } finally {
-      this.busy = false
       if (!this.disposed) this.changed()
     }
   }
@@ -147,12 +146,18 @@ export class LaterController {
       this.toast("Open Later from home or a session to paste into its prompt.", "warning")
       return
     }
-    const result = await pasteIntoPrompt(
-      this.api, back, item.message,
-      () => !this.disposed,
-      () => sameItem(this.database.get(item.id), item),
-      { signal: this.lifetime.signal },
-    )
+    // Delivery always settles (readiness timeout), so it alone holds busy to prevent a second paste.
+    this.busy = true
+    this.changed()
+    let result
+    try {
+      result = await pasteIntoPrompt(
+        this.api, back, item.message,
+        () => !this.disposed,
+        () => sameItem(this.database.get(item.id), item),
+        { signal: this.lifetime.signal },
+      )
+    } finally { this.busy = false }
     if (this.disposed || result === "cancelled") return
     if (result === "unavailable") {
       this.toast("The prompt is not ready. The item is still active; open /later and try again.", "error")

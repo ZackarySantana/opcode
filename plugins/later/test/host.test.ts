@@ -310,6 +310,28 @@ test("leaving the manager while adding cancels admission", async () => {
   expect(h.database.revision()).toBe(0)
 })
 
+test("a dialog the host never settles does not disable /later or later actions", async () => {
+  const h = harness()
+  const id = h.database.add("original", 1)
+  await h.host.run("open")
+  h.promptPending(new Promise(() => {}))
+  void h.host.run("edit")
+  h.confirmPending(new Promise(() => {}))
+  void h.host.run("delete")
+  h.navigate({ type: "home" })
+  const open = h.host.command("open", "Later")
+  expect((open.enabled as () => boolean)()).toBe(true)
+  await h.host.run("open")
+  expect(h.route()).toMatchObject({ type: "plugin", id: "opcode-later", name: MANAGER_ROUTE })
+  h.prompt("added")
+  await h.host.run("add")
+  h.prompt("edited")
+  await h.host.run("edit")
+  expect(h.database.snapshot().active.map((item) => item.message)).toEqual(["edited", "added"])
+  await h.host.run("complete")
+  expect(h.database.get(id)?.completedAt).toBeDefined()
+})
+
 test("stale edit and delete dialogs do not overwrite newer content", async () => {
   const h = harness()
   const id = h.database.add("original", 1)
