@@ -13,7 +13,8 @@ import plugin, { currentSessionID } from "../src/tui"
 import server from "../src/index"
 import { ContextRpc } from "../src/rpc"
 import { cellWidth, shorten } from "@opcode/ui"
-import { deferred, mockHost } from "./helpers"
+import { mockTheme } from "@opcode/ui/test-support/host"
+import { mockHost } from "./helpers"
 
 async function openDialog(options: {
   width?: number; height?: number; modalWidth?: number; failContext?: boolean; noSession?: boolean
@@ -53,16 +54,14 @@ async function openDialog(options: {
   let render: (() => JSX.Element) | undefined, onClose: (() => void) | undefined
   let listener: ((event: { details: { data: { sessionID: string } } }) => void) | undefined
   let stopped = false, cleared = false
-  const theme = {
-    hue: { accent: { 300: "#77cccc", 600: "#336666" }, interactive: { 300: "cyan" } },
-    background: { base: "#171717", raised: { base: "#262626" }, action: { primary: { selected: "#ffaf87" } } }, border: { base: "#666666" },
-    text: { base: "white", muted: "#808080", action: { primary: { base: "white", selected: "#171717" } },
-      feedback: { success: { base: "green" }, warning: { base: "yellow" }, error: { base: "red" } } },
-  }
+  const theme = mockTheme({
+    text: "#ffffff", muted: "#808080", value: "#00ffff", border: "#666666", background: "#171717", panel: "#262626",
+    selectedText: "#171717", selectedBackground: "#ffaf87",
+  })
   const context = {
     ...host,
     renderer: { widthMethod: "unicode" },
-    theme: { ...theme, background: { base: "#080808", raised: { base: "#101010" } }, surface: () => theme },
+    theme: { ...mockTheme({ background: "#080808", panel: "#101010" }), surface: () => theme },
     keymap: {
       layer: (factory: () => KeymapLayer) => {
         const index = layers.length
@@ -320,7 +319,7 @@ test("home route shows an empty state without requesting session data", async ()
 test("export command guards loading and stale data, writes private metadata, and reports filesystem failure", async () => {
   const root = await mkdtemp(join(tmpdir(), "context-command-"))
   const previous = process.env.XDG_STATE_HOME
-  const pending = deferred<SessionMessageInfo[]>()
+  const pending = Promise.withResolvers<SessionMessageInfo[]>()
   let dialog: Awaited<ReturnType<typeof openDialog>> | undefined
   process.env.XDG_STATE_HOME = root
   try {

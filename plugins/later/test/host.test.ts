@@ -3,9 +3,8 @@ import { Database } from "bun:sqlite"
 import type { Context, Destination, Route } from "@opencode/plugin/tui/context"
 import { CliRenderEvents } from "@opentui/core"
 import { EventEmitter } from "node:events"
-import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { tempDir } from "@opcode/ui/test-support/host"
 import { LaterController, MANAGER_ROUTE } from "../src/host"
 import { LaterDatabase } from "../src/sqlite"
 import plugin from "../src/index"
@@ -13,16 +12,10 @@ import plugin from "../src/index"
 const cleanup: Array<() => void> = []
 afterEach(() => { for (const stop of cleanup.splice(0).reverse()) stop() })
 
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => { resolve = done })
-  return { promise, resolve }
-}
-
 function harness(initial: Route = { type: "home" }, sharedPath?: string) {
-  const directory = mkdtempSync(join(tmpdir(), "opcode-later-host-"))
-  cleanup.push(() => rmSync(directory, { recursive: true, force: true }))
-  const path = sharedPath ?? join(directory, "later.sqlite")
+  const directory = tempDir("opcode-later-host-")
+  cleanup.push(directory.remove)
+  const path = sharedPath ?? join(directory.path, "later.sqlite")
   const database = new LaterDatabase(path)
   const external = new LaterDatabase(path)
   cleanup.push(() => database.close(), () => external.close())
@@ -167,7 +160,7 @@ test("a destination change during mounting cancels paste", async () => {
   const h = harness({ type: "session", sessionID: "one" })
   h.database.add("keep me")
   await h.host.run("open")
-  const frame = deferred<void>()
+  const frame = Promise.withResolvers<void>()
   h.frame(frame.promise)
   const pending = h.host.run("paste")
   h.navigate({ type: "session", sessionID: "two" })
@@ -181,7 +174,7 @@ test.each(["edit", "delete", "complete"])("an external %s during mounting cancel
   const h = harness()
   const id = h.database.add("old text", 1)
   await h.host.run("open")
-  const frame = deferred<void>()
+  const frame = Promise.withResolvers<void>()
   h.frame(frame.promise)
   const pending = h.host.run("paste")
   const item = h.external.get(id)!
@@ -198,7 +191,7 @@ test("repeated paste while mounting delivers once", async () => {
   const h = harness()
   h.database.add("once")
   await h.host.run("open")
-  const frame = deferred<void>()
+  const frame = Promise.withResolvers<void>()
   h.frame(frame.promise)
   const pending = h.host.run("paste")
   await h.host.run("paste")
@@ -211,7 +204,7 @@ test("unloading a pending paste never accesses the closed database", async () =>
   const h = harness()
   h.database.add("keep me")
   await h.host.run("open")
-  const frame = deferred<void>()
+  const frame = Promise.withResolvers<void>()
   h.frame(frame.promise)
   const pending = h.host.run("paste")
   h.host.dispose()
@@ -266,7 +259,7 @@ test("pending edit is cancelled on unload, even if the database is closed", asyn
   const h = harness()
   h.database.add("original")
   await h.host.run("open")
-  const prompt = deferred<string | undefined>()
+  const prompt = Promise.withResolvers<string | undefined>()
   h.promptPending(prompt.promise)
   const pending = h.host.run("edit")
   h.host.dispose()
@@ -279,7 +272,7 @@ test("pending edit is cancelled on unload, even if the database is closed", asyn
 test("leaving the manager while adding cancels admission", async () => {
   const h = harness()
   await h.host.run("open")
-  const prompt = deferred<string | undefined>()
+  const prompt = Promise.withResolvers<string | undefined>()
   h.promptPending(prompt.promise)
   const pending = h.host.run("add")
   h.navigate({ type: "home" })
@@ -292,14 +285,14 @@ test("stale edit and delete dialogs do not overwrite newer content", async () =>
   const h = harness()
   const id = h.database.add("original", 1)
   await h.host.run("open")
-  const prompt = deferred<string | undefined>()
+  const prompt = Promise.withResolvers<string | undefined>()
   h.promptPending(prompt.promise)
   const editing = h.host.run("edit")
   h.external.edit(h.external.get(id)!, "newer", 2)
   prompt.resolve("stale edit")
   await editing
   expect(h.database.get(id)?.message).toBe("newer")
-  const confirm = deferred<boolean | undefined>()
+  const confirm = Promise.withResolvers<boolean | undefined>()
   h.confirmPending(confirm.promise)
   const deleting = h.host.run("delete")
   h.external.edit(h.external.get(id)!, "newest", 3)
@@ -360,7 +353,7 @@ test("another plugin's same-name route is never treated as Later's manager", asy
   await h.host.run("close")
   expect(h.route()).toEqual(other)
   await h.host.run("open")
-  const prompt = deferred<string | undefined>()
+  const prompt = Promise.withResolvers<string | undefined>()
   h.promptPending(prompt.promise)
   const editing = h.host.run("edit")
   h.navigate(other)

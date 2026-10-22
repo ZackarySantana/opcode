@@ -4,16 +4,14 @@ import { testRender } from "@opentui/solid"
 import { RGBA, TextAttributes } from "@opentui/core"
 import { PluginContextProvider } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
-import { mkdtemp, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { mockTheme, tempDir } from "@opcode/ui/test-support/host"
 import { createBrowser } from "../src/browser"
 import type { SessionResult } from "../src/domain"
 import { record, remoteStub } from "./fixtures"
 import type { SessionsView } from "../src/view"
 
 test("original-style shared browser preserves layout, selected previews, viewport, Unicode, and resize", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "opcode-sessions-render-"))
+  const directory = tempDir("opcode-sessions-render-")
   let rows: SessionResult[] = Array.from({ length: 40 }, (_, index) => ({ ...record(`row-${index}`), updatedAt: Date.now() - 3_600_000, snippet: index === 35 ? "Preview selected" : "Preview first", providerID: "test", modelID: `model-${index}`, messageCount: 1, modelCount: 1, cost: index === 35 ? 35.35 : 1.11, input: index === 35 ? 3535 : 111, output: 22, reasoning: 0, cacheRead: 0, cacheWrite: 0 }))
   rows[0]!.title += " 研究 👩‍💻"
   rows[1]!.parentID = "row-0"
@@ -22,16 +20,11 @@ test("original-style shared browser preserves layout, selected previews, viewpor
   const api = {
     renderer: { widthMethod: "unicode" },
     keymap: { mode: { push: () => () => {} } }, ui: { format: { path: (path: string) => path } },
-    theme: {
-      hue: { accent: { 300: "#77cccc", 600: "#336666" }, interactive: { 300: "#55aaff" } },
-      background: { base: "#101010", raised: { base: "#202020" }, action: { primary: { selected: "#ffaf87" } } },
-      border: { base: "#555555" },
-      text: { base: "#ffffff", muted: "#aaaaaa", action: { primary: { base: "#55aaff", selected: "#171717" }, secondary: { base: "#aaaaee" } }, feedback: { success: { base: "#00ff00" }, error: { base: "#ff5555" } } },
-    },
+    theme: mockTheme({ panel: "#202020", text: "#ffffff", value: "#55aaff", selectedBackground: "#ffaf87", selectedText: "#171717" }),
   } as unknown as Context
   try {
     const build = await Bun.build({
-      entrypoints: [new URL("../src/view.tsx", import.meta.url).pathname], outdir: directory, target: "bun", format: "esm",
+      entrypoints: [new URL("../src/view.tsx", import.meta.url).pathname], outdir: directory.path, target: "bun", format: "esm",
       plugins: [{ name: "host-peers", setup(builder) {
         builder.onResolve({ filter: /^(?:@opencode\/|@opentui\/|solid-js(?:\/|$))/ }, (args) => ({ path: Bun.resolveSync(args.path, args.resolveDir), external: true }))
       } }, solidPlugin],
@@ -121,5 +114,5 @@ test("original-style shared browser preserves layout, selected previews, viewpor
       expect(view.captureCharFrame()).toContain("Search unavailable")
       expect(view.captureCharFrame()).toContain("query: [")
     } finally { await view.dispose() }
-  } finally { await model.dispose(); await rm(directory, { recursive: true, force: true }) }
+  } finally { await model.dispose(); directory.remove() }
 })

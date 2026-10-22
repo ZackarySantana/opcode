@@ -2,13 +2,12 @@ import "@opentui/solid/preload"
 import { afterEach, expect, test } from "bun:test"
 import { PluginContextProvider } from "@opencode/plugin/tui"
 import type { Context, Destination, KeymapLayer, Page, Route, SlotClaim } from "@opencode/plugin/tui/context"
-import { RGBA, TextareaRenderable } from "@opentui/core"
+import { TextareaRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { testRender } from "@opentui/solid"
-import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createComponent } from "solid-js"
+import { mockTheme, tempDir } from "@opcode/ui/test-support/host"
 import { LaterDatabase } from "../src/sqlite"
 
 // Load JSX after installing the OpenTUI Solid transform. This file itself has no JSX.
@@ -17,9 +16,9 @@ const cleanup: Array<() => void> = []
 afterEach(() => { for (const stop of cleanup.splice(0).reverse()) stop() })
 
 function harness() {
-  const directory = mkdtempSync(join(tmpdir(), "opcode-later-tui-"))
-  cleanup.push(() => rmSync(directory, { recursive: true, force: true }))
-  const path = join(directory, "later.sqlite")
+  const directory = tempDir("opcode-later-tui-")
+  cleanup.push(directory.remove)
+  const path = join(directory.path, "later.sqlite")
   const external = new LaterDatabase(path)
   cleanup.push(() => external.close())
   let route: Route = { type: "home" }
@@ -28,16 +27,10 @@ function harness() {
   const layers: Array<() => KeymapLayer> = []
   const routes: Page[] = []
   const slots: SlotClaim[] = []
-  const color = RGBA.fromHex("#aabbcc")
   const api = {
     options: { database: path },
     renderer: { isDestroyed: false, once: () => {}, off: () => {}, requestRender: () => {} },
-    theme: {
-      hue: { accent: { 300: RGBA.fromHex("#77cccc"), 600: RGBA.fromHex("#336666") }, interactive: { 300: RGBA.fromHex("#77aaff") } },
-      background: { base: RGBA.fromHex("#000000"), raised: { base: RGBA.fromHex("#111111") }, action: { primary: { selected: RGBA.fromHex("#ffaf87") } } },
-      border: { base: color },
-      text: { base: color, muted: RGBA.fromHex("#778899"), action: { primary: { base: color, selected: RGBA.fromHex("#171717") } }, feedback: { error: { base: color }, warning: { base: color }, success: { base: RGBA.fromHex("#77cc88") } } },
-    },
+    theme: mockTheme(),
     ui: {
       router: {
         current: () => route,

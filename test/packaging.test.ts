@@ -75,12 +75,14 @@ async function packAndInspect(stage: string) {
   const externals = new Set<string>()
   for (const file of allFiles) {
     expect(file).not.toContain("/node_modules/")
+    expect(file.slice(directory.length)).not.toMatch(/[/\\]test(?:-support)?[/\\]/)
     if (file.endsWith(".map")) {
       const map = JSON.parse(await readFile(file, "utf8")) as { sources: string[] }
       sourceCount += map.sources.length
       for (const source of map.sources) {
         expect(source).not.toContain("node_modules")
         expect(source).not.toMatch(/(?:@opencode|@opentui|solid-js)[/\\]/)
+        expect(source).not.toMatch(/[/\\]test(?:-support)?[/\\]/)
       }
     }
     if (file.endsWith(".js") || file.endsWith(".d.ts")) {
