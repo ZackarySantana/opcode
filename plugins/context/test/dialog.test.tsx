@@ -102,8 +102,9 @@ async function openDialog(options: {
   // The native host installs its dialog mode after the dialog component mounts.
   currentMode = "modal"
   const handleKey = (event: KeyEvent) => {
-    if (event.ctrl || event.meta || event.shift) return
-    const command = reachable().find((command) => typeof command.bind === "string" && command.bind.split(",").includes(event.name))
+    if (event.ctrl || event.meta) return
+    const name = event.shift ? `shift+${event.name}` : event.name
+    const command = reachable().find((command) => typeof command.bind === "string" && command.bind.split(",").includes(name))
     if (command?.id) { event.preventDefault(); void dispatch(command.id) }
   }
   view.renderer.keyInput.on("keypress", handleKey)
@@ -123,6 +124,10 @@ async function openDialog(options: {
     view, run, click, history, tools, toasts, setModalWidth, layerRuns, scopes, reads: () => reads, toolReads: () => toolReads,
     mode: () => currentMode,
     reachable: () => reachable().map((command) => command.id),
+    async tab(shift = false) {
+      view.mockInput.pressTab({ shift })
+      await flushCommands()
+    },
     async press(key: string) {
       await view.mockInput.pressKeys([key])
       if (key === "ESCAPE") await Bun.sleep(150) // Allow the terminal parser to disambiguate a lone Escape.
@@ -188,7 +193,7 @@ test("92×38 initially shows the complete Overview, activity values, provenance,
     for (const text of ["p/m", "Context limit", "Estimated utilization", "ACTIVITY", "Messages: 0 user / 1 assistant",
       "Tools / compactions: 60 / 0", "Latest checkpoint: unavailable", "History: live", "Retained: estimated",
       "Provider tokens are recorded", "retained size and utilization are estimated", "Excludes hidden instructions, tool schemas & attachment payloads.",
-      "h/l tabs", "r refresh", "e export"]) expect(frame).toContain(text)
+      "tab/shift+tab tabs", "r refresh", "e export"]) expect(frame).toContain(text)
   } finally { await dialog.dispose() }
 })
 
@@ -198,17 +203,21 @@ test("real key events reach dialog commands while the native dialog mode is curr
     await dialog.view.waitForFrame((frame) => frame.includes("RECORDED INPUT"))
     expect(dialog.mode()).toBe("modal")
     expect(dialog.scopes.entered).toEqual([])
+    // Tabs moved to Tab/Shift+Tab; the old keys no longer switch.
     await dialog.press("l")
+    await dialog.press("ARROW_RIGHT")
+    expect(dialog.view.captureCharFrame()).toContain("RECORDED INPUT")
+    await dialog.tab()
     await dialog.view.waitForFrame((frame) => frame.includes("LARGEST RETAINED CONTRIBUTORS"))
     await dialog.press("j")
     await dialog.view.waitForFrame((frame) => frame.includes("> Tool: tool-01"))
     await dialog.press("k")
     await dialog.view.waitForFrame((frame) => frame.includes("> Tool: tool-00"))
-    await dialog.press("ARROW_RIGHT")
+    await dialog.tab()
     await dialog.view.waitForFrame((frame) => frame.includes("OBSERVABLE ENVIRONMENT"))
-    await dialog.press("h")
+    await dialog.tab(true)
     await dialog.view.waitForFrame((frame) => frame.includes("LARGEST RETAINED CONTRIBUTORS"))
-    await dialog.press("ARROW_LEFT")
+    await dialog.tab(true)
     await dialog.view.waitForFrame((frame) => frame.includes("RECORDED INPUT"))
     await dialog.press("r")
     expect(dialog.reads()).toBe(2)
@@ -228,7 +237,7 @@ test("rendered tab pills, footer hints, and close affordance handle actual left 
     expect(dialog.view.captureCharFrame()).toContain("OBSERVABLE ENVIRONMENT")
     await dialog.click("Overview")
     await dialog.view.waitForFrame((frame) => frame.includes("RECORDED INPUT"))
-    await dialog.click("h/l tabs")
+    await dialog.click("tab/shift+tab tabs")
     await dialog.view.waitForFrame((frame) => frame.includes("LARGEST RETAINED CONTRIBUTORS"))
     await dialog.click("j/k rows")
     await dialog.view.waitForFrame((frame) => frame.includes("> Tool: tool-01"))
@@ -274,7 +283,7 @@ test("bordered Overview cards stack narrowly and restore the original two-by-two
     expect(bottom).toContain("Tools / compactions:")
     expect(bottom).toContain("History: live")
     expect(bottom).toContain("Retained: estimated")
-    expect(bottom).toContain("h/l tabs")
+    expect(bottom).toContain("tab/shift+tab tabs")
     expect(bottom).toContain("r refresh")
     expect(bottom).toContain("e export")
     await dialog.run("next")

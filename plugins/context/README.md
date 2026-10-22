@@ -29,7 +29,7 @@ No plugin options are currently supported. There is no normal-use persistence or
 - **Content:** largest observable retained text, reasoning, summaries, tool outputs, and attachment metadata, ranked by estimated tokens.
 - **Environment:** configured instruction/skill sources, available agents/skills, MCP statuses, and tool descriptions. This is an inventory, not a reconstruction of the exact provider request.
 
-Use `h`/`l` or left/right to switch tabs, `j`/`k` or up/down to select rows (or scroll Overview), `r` to refresh, `e` to export, and Escape to close. Overview also supports normal scrollbox scrolling. Open the modal again to inspect another session. It also appears as **Context** in the command palette.
+Use Tab/Shift+Tab to switch tabs, `j`/`k` or up/down to select rows (or scroll Overview), `r` to refresh, `e` to export, and Escape to close. Overview also supports normal scrollbox scrolling. Open the modal again to inspect another session. It also appears as **Context** in the command palette.
 
 Completed session events (not streaming deltas) trigger coalesced refreshes of session data while open; environment and catalog data reload on open and `r`. Degraded sources are visibly marked; details appear in Overview and exports. History totals can use explicitly labeled cached data. **If retained context is unavailable, retained size/utilization remain unavailable—full history is never relabeled as retained context.**
 

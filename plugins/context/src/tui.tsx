@@ -63,8 +63,8 @@ export function ContextDialog(props: { sessionID?: string }) {
   }
   useDialogCommands(context, () => [
       { id: "opcode-context.close", bind: "escape", run: () => context.ui.dialog.clear() },
-      { id: "opcode-context.next", bind: "right,l", run: () => switchTab(1) },
-      { id: "opcode-context.previous", bind: "left,h", run: () => switchTab(-1) },
+      { id: "opcode-context.next", bind: "tab", run: () => switchTab(1) },
+      { id: "opcode-context.previous", bind: "shift+tab", run: () => switchTab(-1) },
       { id: "opcode-context.down", bind: "down,j", run: () => move(1) },
       { id: "opcode-context.up", bind: "up,k", run: () => move(-1) },
       { id: "opcode-context.refresh", bind: "r", run: () => refresh.refresh(true) },
@@ -130,7 +130,7 @@ export function ContextDialog(props: { sessionID?: string }) {
           </Show>
         </box>
         <box paddingTop={1}><KeyHints items={[
-          { key: "h/l", label: "tabs", command: "opcode-context.next" },
+          { key: "tab/shift+tab", label: "tabs", command: "opcode-context.next" },
           { key: "j/k", label: "rows", command: "opcode-context.down" },
           { key: "r", label: "refresh", command: "opcode-context.refresh" },
           { key: "e", label: "export", command: "opcode-context.export" },
