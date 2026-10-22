@@ -86,8 +86,8 @@ test("shared source message IDs in forked history never steal or duplicate anoth
 })
 
 test("path defaults retain legacy data and additive migration preserves old text", async () => {
-  expect(databasePath(undefined, {}, "/home/test")).toBe("/home/test/.local/state/opencode/opencode-sessions-all/sessions.sqlite")
-  expect(databasePath("custom.sqlite", { XDG_STATE_HOME: "/state" }, "/home/test")).toBe("/state/opencode/custom.sqlite")
+  expect(databasePath(undefined, "/state")).toBe("/state/opencode-sessions-all/sessions.sqlite")
+  expect(databasePath("custom.sqlite", "/state")).toBe("/state/custom.sqlite")
   const dir = await mkdtemp(join(tmpdir(), "opcode-sessions-legacy-"))
   try {
     const path = join(dir, "sessions.sqlite")

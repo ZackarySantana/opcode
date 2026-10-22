@@ -3,13 +3,13 @@
 import { Plugin } from "@opencode/plugin/tui"
 import { createSignal } from "solid-js"
 import { LaterController, MANAGER_ROUTE } from "./host"
-import { databasePath, LaterDatabase, stateDirectory } from "./sqlite"
+import { databasePath, LaterDatabase } from "./sqlite"
 import { Manager, Sidebar } from "./view"
 
 export default Plugin.define({
   id: "opcode-later",
   setup(api) {
-    const database = new LaterDatabase(databasePath(stateDirectory(), api.options.database))
+    const database = new LaterDatabase(databasePath(api.options.database))
     let controller: LaterController | undefined
     let timer: ReturnType<typeof setInterval> | undefined
     let unregisterRoute: (() => void) | undefined

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, writeFile } from "node:fs/promises"
-import { homedir } from "node:os"
 import { join } from "node:path"
+import { stateDirectory } from "@opcode/core/state"
 import type { Snapshot } from "./snapshot"
 
 export function redact(text: string): string {
@@ -20,7 +20,7 @@ export function exportPayload(snapshot: Snapshot): Snapshot {
 }
 
 export function exportDirectory(env: NodeJS.ProcessEnv = process.env) {
-  return join(env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "opencode", "opcode-context", "exports")
+  return join(stateDirectory(env), "opcode-context", "exports")
 }
 
 export async function writeSnapshot(snapshot: Snapshot, directory = exportDirectory()) {

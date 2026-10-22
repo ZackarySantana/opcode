@@ -1,16 +1,11 @@
-import { Database } from "bun:sqlite"
-import { mkdirSync } from "node:fs"
-import { homedir } from "node:os"
-import { basename, dirname, isAbsolute, join, resolve } from "node:path"
+import type { Database } from "bun:sqlite"
+import { basename, join } from "node:path"
+import { openDatabase, resolveStatePath, stateDirectory } from "@opcode/core/state"
 import { rangeStart, type Breakdown, type Dashboard, type DashboardFilter, type Totals, type UsageRecord } from "./domain.js"
 
-export function databasePath(configured?: unknown, stateDirectory = join(process.env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "opencode")) {
-  if (typeof configured === "string" && configured.trim()) {
-    const path = configured.trim()
-    return path === ":memory:" || isAbsolute(path) ? path : resolve(stateDirectory, path)
-  }
-  // Deliberately retain opencode-cost's path, including after the package rename.
-  return join(stateDirectory, "opencode-cost", "cost.sqlite")
+// Deliberately retain opencode-cost's path, including after the package rename.
+export function databasePath(configured?: unknown, state = stateDirectory()) {
+  return resolveStatePath(configured, join("opencode-cost", "cost.sqlite"), state)
 }
 
 const schema = `
@@ -43,11 +38,7 @@ export class CostLedger {
   private readonly db: Database
 
   constructor(path: string) {
-    if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true })
-    this.db = new Database(path, { create: true, readwrite: true, strict: true })
-    this.db.run("PRAGMA journal_mode = WAL")
-    this.db.run("PRAGMA busy_timeout = 5000")
-    this.db.run(schema)
+    this.db = openDatabase(path, (db) => db.run(schema))
   }
 
   close() { this.db.close(false) }

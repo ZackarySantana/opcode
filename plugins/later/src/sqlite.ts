@@ -1,18 +1,11 @@
-import { Database } from "bun:sqlite"
-import { mkdirSync } from "node:fs"
-import { homedir } from "node:os"
-import { dirname, isAbsolute, join, resolve } from "node:path"
+import type { Database } from "bun:sqlite"
+import { join } from "node:path"
+import { openDatabase, resolveStatePath, stateDirectory } from "@opcode/core/state"
 import { messageText, sameItem, type LaterItem, type LaterSnapshot } from "./domain"
 
 /** Intentionally retain opencode-later's location and SQL schema. */
-export function stateDirectory(env: NodeJS.ProcessEnv = process.env, home = homedir()): string {
-  return join(env.XDG_STATE_HOME || join(home, ".local", "state"), "opencode")
-}
-
-export function databasePath(state: string, option?: unknown): string {
-  if (typeof option !== "string" || !option.trim()) return join(state, "opencode-later", "later.sqlite")
-  const path = option.trim()
-  return path === ":memory:" || isAbsolute(path) ? path : resolve(state, path)
+export function databasePath(option?: unknown, state = stateDirectory()): string {
+  return resolveStatePath(option, join("opencode-later", "later.sqlite"), state)
 }
 
 type Row = Omit<LaterItem, "completedAt"> & { completedAt: number | null }
@@ -24,30 +17,22 @@ export class LaterDatabase {
   private closed = false
 
   constructor(path: string) {
-    if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true })
-    this.db = new Database(path, { create: true, readwrite: true, strict: true })
-    try {
-      this.db.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;")
-      this.db.exec(`
-        CREATE TABLE IF NOT EXISTS items (
-          id TEXT PRIMARY KEY,
-          message TEXT NOT NULL,
-          position INTEGER NOT NULL,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          completed_at INTEGER
-        );
-        CREATE INDEX IF NOT EXISTS items_active_position ON items(completed_at, position);
-        CREATE TABLE IF NOT EXISTS metadata (
-          id INTEGER PRIMARY KEY CHECK (id = 1),
-          revision INTEGER NOT NULL
-        );
-        INSERT OR IGNORE INTO metadata (id, revision) VALUES (1, 0);
-      `)
-    } catch (error) {
-      this.db.close()
-      throw error
-    }
+    this.db = openDatabase(path, (db) => db.exec(`
+      CREATE TABLE IF NOT EXISTS items (
+        id TEXT PRIMARY KEY,
+        message TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        completed_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS items_active_position ON items(completed_at, position);
+      CREATE TABLE IF NOT EXISTS metadata (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        revision INTEGER NOT NULL
+      );
+      INSERT OR IGNORE INTO metadata (id, revision) VALUES (1, 0);
+    `))
   }
 
   close(): void {
