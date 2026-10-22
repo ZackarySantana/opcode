@@ -267,6 +267,7 @@ test("rendered requests reject stale responses; usage events refresh, and unmoun
     expect(harness.intervals.size).toBe(1)
     const beforeTick = harness.queries.length
     harness.tick()
+    harness.settle()
     await scene.waitFor(() => harness.queries.length > beforeTick)
     const pending = harness.queries.at(-1)!
     harness.emitUsage() // A debounce is also pending when the route leaves.
@@ -354,6 +355,7 @@ test("same-query streaming refreshes keep cards and scroll mounted, coalesce req
 
     request.resolve(dashboard(3))
     await scene.waitForFrame((frame) => frame.includes("$3.00"))
+    harness.settle() // The follow-up is debounced too.
     await scene.waitFor(() => harness.queries.length === beforeRefresh + 2)
     const followUp = harness.queries.at(-1)!
     expect(followUp.signal.aborted).toBe(false)
@@ -369,6 +371,7 @@ test("same-query streaming refreshes keep cards and scroll mounted, coalesce req
     expect(scene.renderer.root.findDescendantById("opcode-cost.totals")).toBe(totals)
 
     harness.tick()
+    harness.settle()
     await scene.waitFor(() => harness.queries.length === beforeRefresh + 3)
     await scene.flush()
     expect(scene.captureCharFrame()).toContain("Refresh failed: offline")

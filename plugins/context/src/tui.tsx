@@ -1,5 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { errorMessage, formatCount } from "@opcode/core"
+import { createRefresh, type RefreshState } from "@opcode/core/refresh"
 import { Card, CenterEmpty, KeyHints, StatCard, ThemeSurface, usePalette, useText } from "@opcode/ui"
 import { useDialogCommands } from "@opcode/ui/screen"
 import { Plugin, usePlugin } from "@opencode/plugin/tui"
@@ -9,7 +10,7 @@ import { useTerminalDimensions } from "@opentui/solid"
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { writeSnapshot } from "./export"
 import { createSnapshotLoader } from "./load"
-import { createSnapshotRefresh, refreshesSnapshot, type RefreshState } from "./refresh"
+import { refreshesSnapshot } from "./refresh"
 import type { Snapshot } from "./snapshot"
 import { listWindow, percent } from "./view"
 
@@ -31,12 +32,13 @@ export function ContextDialog(props: { sessionID?: string }) {
   const detailWidth = (value: string) => Math.min(text.cellWidth(value), detailBudget())
   const [tab, setTab] = createSignal(0)
   const [selection, setSelection] = createSignal(0)
-  const [state, setState] = createSignal<RefreshState>({ loading: true })
+  const [state, setState] = createSignal<RefreshState<Snapshot>>({ loading: true })
   let overview: ScrollBoxRenderable | undefined
-  const refresh = createSnapshotRefresh(createSnapshotLoader(context, props.sessionID), setState)
+  // Open and r reload the environment too (`full`); completed-event refreshes do not.
+  const refresh = createRefresh<Snapshot, boolean>(createSnapshotLoader(context, props.sessionID), setState)
   const bodyHeight = () => Math.max(4, Math.min(28, dimensions().height - 10
-    - Number(Boolean(state().error)) - Number(Boolean(state().snapshot?.warnings.length))))
-  const snapshot = () => state().snapshot
+    - Number(Boolean(state().error)) - Number(Boolean(state().value?.warnings.length))))
+  const snapshot = () => state().value
   const rows = createMemo(() => tab() === 1
     ? snapshot()?.retained?.contributors.map((row) => ({ id: row.id, label: row.label, detail: `~${formatCount(row.estimatedTokens)} tok` })) ?? []
     : tab() === 2 ? snapshot()?.environment.map((row) => ({ id: `${row.category}:${row.name}`, label: `${row.category}: ${row.name}`, detail: row.detail ?? "configured" })) ?? [] : [])
@@ -65,13 +67,13 @@ export function ContextDialog(props: { sessionID?: string }) {
       { id: "opcode-context.previous", bind: "left,h", run: () => switchTab(-1) },
       { id: "opcode-context.down", bind: "down,j", run: () => move(1) },
       { id: "opcode-context.up", bind: "up,k", run: () => move(-1) },
-      { id: "opcode-context.refresh", bind: "r", run: () => refresh.refresh() },
+      { id: "opcode-context.refresh", bind: "r", run: () => refresh.refresh(true) },
       { id: "opcode-context.export", bind: "e", run: exportCurrent },
   ])
   const stop = context.data.listen(({ details }) => {
-    if (refreshesSnapshot(details, props.sessionID)) refresh.schedule()
+    if (refreshesSnapshot(details, props.sessionID)) refresh.schedule(false)
   })
-  onMount(() => void refresh.refresh())
+  onMount(() => void refresh.refresh(true))
   onCleanup(() => { refresh.dispose(); stop() })
 
   return (

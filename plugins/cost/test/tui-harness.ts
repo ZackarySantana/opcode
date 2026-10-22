@@ -33,13 +33,13 @@ export async function createTuiHarness(initial: Route = { type: "home" }, mutabl
   const usageListeners = new Set<() => void>()
   const toasts: string[] = []
   let modes = 0
-  // Test-driven clocks: `tick` fires active refresh intervals, `settle` fires pending debounces.
+  // Test-driven clocks: `tick` fires active refresh intervals, `settle` fires pending debounces; read timeouts never fire.
   const intervals = new Set<() => void>()
-  const debounces = new Set<() => void>()
+  const debounces = new Set<{ run: () => void; ms: number }>()
   const timers: Timers = {
     interval: (run) => { const entry = () => run(); intervals.add(entry); return () => { intervals.delete(entry) } },
-    debounce: (run) => {
-      const entry = () => { debounces.delete(entry); run() }
+    timer: (run, ms) => {
+      const entry = { run: () => { debounces.delete(entry); run() }, ms }
       debounces.add(entry)
       return () => { debounces.delete(entry) }
     },
@@ -112,6 +112,6 @@ export async function createTuiHarness(initial: Route = { type: "home" }, mutabl
     emitUsage: () => { for (const callback of usageListeners) callback() },
     intervals, debounces,
     tick: () => { for (const run of [...intervals]) run() },
-    settle: () => { for (const run of [...debounces]) run() },
+    settle: () => { for (const entry of [...debounces]) if (entry.ms === 100) entry.run() },
   }
 }

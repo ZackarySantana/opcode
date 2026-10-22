@@ -3,10 +3,11 @@
 import { errorMessage, formatCount, formatMoney } from "@opcode/core"
 import { Card, CenterEmpty, FilterChip, KeyHints, Page, StatCard, usePalette, useText } from "@opcode/ui"
 import { createScreen } from "@opcode/ui/screen"
+import { createRefresh, type RefreshState, type SetTimer } from "@opcode/core/refresh"
 import { Plugin } from "@opencode/plugin/tui"
 import type { LocationRef } from "@opencode/client"
 import { useTerminalDimensions } from "@opentui/solid"
-import { batch, createComputed, createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
+import { createComputed, createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack } from "solid-js"
 import { createCostService } from "./client.js"
 import { DATE_RANGES, rangeLabel, type Breakdown, type Dashboard } from "./domain.js"
 import { importProject } from "./importer.js"
@@ -15,12 +16,13 @@ import { dashboardSections, MODE, parseRoute, PLUGIN_ID, ROUTE, type RouteState 
 /** Injectable so tests drive refreshes without real timers. Each returns its cancel function. */
 export interface Timers {
   interval(run: () => void): () => void
-  debounce(run: () => void): () => void
+  /** One-shot debounce and timeout timers for dashboard reads. */
+  timer: SetTimer
 }
 
 const timers: Timers = {
   interval: (run) => { const id = setInterval(run, 5_000); return () => clearInterval(id) },
-  debounce: (run) => { const id = setTimeout(run, 100); return () => clearTimeout(id) },
+  timer: (run, ms) => { const id = setTimeout(run, ms); return () => clearTimeout(id) },
 }
 
 type ImportState = { type: "idle" } | { type: "running" } | { type: "failed"; message: string }
@@ -38,54 +40,16 @@ interface ScreenProps {
 const backHint = { key: "esc", label: "back", command: "opcode-cost.close" }
 const refreshHint = { key: "r", label: "refresh", command: "opcode-cost.refresh" }
 
-/**
- * One query's reads, adapted from Context's snapshot refresh. Refreshes coalesce behind the in-flight read
- * (at most one follow-up) rather than cancelling it, so streaming bursts cannot starve the dashboard.
- */
-function createRefresh(
-  load: (signal: AbortSignal) => Promise<Dashboard>,
-  publish: (result: { data: Dashboard } | { error: string }) => void,
-  debounce: Timers["debounce"],
-) {
-  const controller = new AbortController()
-  let active = false
-  let queued = false
-  let cancel: (() => void) | undefined
-  const refresh = () => {
-    if (controller.signal.aborted) return
-    cancel?.()
-    cancel = undefined
-    if (active) { queued = true; return }
-    active = true
-    void load(controller.signal).then((data) => ({ data }), (error: unknown) => ({ error: errorMessage(error) })).then((result) => {
-      active = false
-      if (controller.signal.aborted) return
-      publish(result)
-      if (queued) { queued = false; refresh() }
-    })
-  }
-  return {
-    refresh,
-    schedule() {
-      if (controller.signal.aborted) return
-      if (active) queued = true
-      else cancel ??= debounce(() => { cancel = undefined; refresh() })
-    },
-    dispose() {
-      controller.abort()
-      cancel?.()
-    },
-  }
-}
-
 function DashboardScreen(props: ScreenProps) {
   props.mount()
   const dimensions = useTerminalDimensions()
   const palette = usePalette()
   const { shorten } = useText()
-  const [data, setData] = createSignal<Dashboard>()
-  const [error, setError] = createSignal("")
-  const [refreshWarning, setRefreshWarning] = createSignal("")
+  const [read, setRead] = createSignal<RefreshState<Dashboard>>({ loading: true })
+  const data = () => read().value
+  // A failure with loaded data is a stale-data warning; without it, the dashboard has nothing honest to show.
+  const error = () => data() ? "" : read().error ?? ""
+  const refreshWarning = () => data() ? read().error ?? "" : ""
   const state = createMemo(() => parseRoute(props.params))
   const sections = createMemo(() => dashboardSections(state()))
   const query = createMemo(() => {
@@ -97,25 +61,20 @@ function DashboardScreen(props: ScreenProps) {
       location: { directory: location.directory, workspaceID: location.workspaceID },
     }
   }, undefined, { equals: (previous, next) => previous.key === next.key })
-  let refresh: ReturnType<typeof createRefresh> | undefined
-  createEffect(on(query, (next) => {
-    // Clear stale values only for a different filter/location, not a background refresh.
-    batch(() => { setData(undefined); setError(""); setRefreshWarning("") })
-    const current = createRefresh((signal) => createCostService(props.api.client, next.location).dashboard(next.filter, signal), (result) => {
-      if ("data" in result) batch(() => { setData(result.data); setError(""); setRefreshWarning("") })
-      else if (data()) setRefreshWarning(result.error)
-      else setError(result.error)
-    }, props.timers.debounce)
-    refresh = current
-    current.refresh()
-    onCleanup(() => {
-      current.dispose()
-      if (refresh === current) refresh = undefined
-    })
+  // Polls, usage events, and import revisions coalesce behind the in-flight read.
+  const refresh = createRefresh((signal) => {
+    const { filter, location } = untrack(query)
+    return createCostService(props.api.client, location).dashboard(filter, signal)
+  }, setRead, { delay: 100, timer: props.timers.timer })
+  createEffect(on(query, () => {
+    // Drop stale values only for a different filter/location, not a background refresh.
+    refresh.reset()
+    void refresh.refresh()
   }))
-  createEffect(on(props.revision, () => refresh?.refresh(), { defer: true }))
-  onCleanup(props.timers.interval(() => refresh?.refresh()))
-  onCleanup(props.api.data.on("session.usage.updated", () => refresh?.schedule()))
+  createEffect(on(props.revision, () => refresh.schedule(), { defer: true }))
+  onCleanup(() => refresh.dispose())
+  onCleanup(props.timers.interval(() => refresh.schedule()))
+  onCleanup(props.api.data.on("session.usage.updated", () => refresh.schedule()))
   const importFailure = () => {
     const current = props.importState()
     return current.type === "failed" ? current.message : undefined
