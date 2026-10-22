@@ -43,9 +43,10 @@ OpenTUI, and Solid remain external. See [architecture](architecture.md) and
 
 ## README screenshots
 
-The root README reserves six screenshot slots using a shared placeholder. Capture
-the actual V2 views, without private session text or paths, then replace each
-image source with the path in its adjacent HTML comment:
+The root README uses six PNG captures under `docs/images/`. They show real V2
+terminal views with fictional demo data, not UI mockups. See the
+[capture notes](images/README.md) for the theme, dimensions, and data boundaries.
+When updating them, keep private session text and paths out of the images:
 
 | File under `docs/images/` | Capture |
 | --- | --- |
@@ -56,5 +57,6 @@ image source with the path in its adjacent HTML comment:
 | `cost-dashboard.png` | Nonzero usage across several models, projects, and dates |
 | `sessions-browser.png` | Search matches across projects with a message preview |
 
-Use the same theme and terminal font throughout. The paired Later/Context images
-should have matching dimensions; landscape captures fit the reserved spaces.
+Use the same theme and terminal font throughout. Each Later/Context pair should
+have matching dimensions. Crop Context to the actual dialog so its text remains
+readable in the paired README layout. Cost must show newest-first daily activity.

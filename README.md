@@ -1,37 +1,31 @@
 # Opcode
 
-**Stay in flow. Keep the ideas, understand the usage, find the work.**
-
-Four plugins that make [OpenCode](https://opencode.ai) feel a little more like your workspace. Save a thought without changing tasks, see what's filling your context, track usage, and pick up a conversation you thought you'd lost.
-
 [![CI](https://github.com/ZackarySantana/opcode/actions/workflows/ci.yml/badge.svg)](https://github.com/ZackarySantana/opcode/actions/workflows/ci.yml)
 [![Release](https://github.com/ZackarySantana/opcode/actions/workflows/release.yml/badge.svg)](https://github.com/ZackarySantana/opcode/actions/workflows/release.yml)
 
 | Plugin | Make room for… | npm |
 | --- | --- | --- |
-| [Later](#later--save-the-thought-keep-the-flow) | The next idea, without interrupting this one | [![Later version](https://img.shields.io/npm/v/@lidtop/opencode-later?label=later)](https://www.npmjs.com/package/@lidtop/opencode-later) |
-| [Context](#context--know-whats-taking-up-space) | A clearer picture of your current session | [![Context version](https://img.shields.io/npm/v/@lidtop/opencode-context?label=context)](https://www.npmjs.com/package/@lidtop/opencode-context) |
-| [Cost](#cost--see-where-the-usage-goes) | Perspective on costs, tokens, and activity | [![Cost version](https://img.shields.io/npm/v/@lidtop/opencode-cost?label=cost)](https://www.npmjs.com/package/@lidtop/opencode-cost) |
-| [Sessions](#sessions--find-the-conversation-not-just-the-project) | Work worth coming back to | [![Sessions version](https://img.shields.io/npm/v/@lidtop/opencode-sessions?label=sessions)](https://www.npmjs.com/package/@lidtop/opencode-sessions) |
+| [Later](#later-save-the-thought-keep-the-flow) | The next idea, without interrupting this one | [![Later version](https://img.shields.io/npm/v/@lidtop/opencode-later?label=later)](https://www.npmjs.com/package/@lidtop/opencode-later) |
+| [Context](#context-know-whats-taking-up-space) | A clearer picture of your current session | [![Context version](https://img.shields.io/npm/v/@lidtop/opencode-context?label=context)](https://www.npmjs.com/package/@lidtop/opencode-context) |
+| [Cost](#cost-see-where-the-usage-goes) | Perspective on costs, tokens, and activity | [![Cost version](https://img.shields.io/npm/v/@lidtop/opencode-cost?label=cost)](https://www.npmjs.com/package/@lidtop/opencode-cost) |
+| [Sessions](#sessions-find-the-conversation-not-just-the-project) | Work worth coming back to | [![Sessions version](https://img.shields.io/npm/v/@lidtop/opencode-sessions?label=sessions)](https://www.npmjs.com/package/@lidtop/opencode-sessions) |
 
-Install one or all four. They share a consistent look that follows your OpenCode theme, in light or dark mode.
+*Screenshots show the OpenCode terminal UI with fictional demo data.*
 
-## Later — save the thought, keep the flow
+## Later: save the thought, keep the flow
 
 “After this, we should…” doesn't have to become a distraction. Keep a shared Later list across your local projects and sessions, with your next ideas visible in the sidebar.
 
-**Capture → organize → bring it back when you're ready.** Reorder what matters, keep completed history, and put an item into your prompt when it's time. You review and submit it yourself—nothing runs automatically.
+**Capture → organize → bring it back when you're ready.** Reorder what matters, keep completed history, and put an item into your prompt when it's time. Nothing runs automatically. You review the prompt and decide when to submit it.
 
 <table>
   <tr>
     <td width="50%">
-      <!-- Replace with docs/images/later-sidebar.png -->
-      <img src="docs/images/screenshot-placeholder.svg" alt="Screenshot placeholder: Later list alongside an active OpenCode session" width="100%" />
+      <img src="docs/images/later-sidebar.png" alt="Later list alongside an OpenCode session, keeping follow-up ideas visible in the sidebar" width="100%" />
       <p><strong>Keep the next idea in sight.</strong><br />Your list, right beside the conversation.</p>
     </td>
     <td width="50%">
-      <!-- Replace with docs/images/later-manager.png -->
-      <img src="docs/images/screenshot-placeholder.svg" alt="Screenshot placeholder: Later manager with active items and completed history" width="100%" />
+      <img src="docs/images/later-manager.png" alt="Later manager with four active items, a selected follow-up, and completed history" width="100%" />
       <p><strong>Make space for what's next.</strong><br />One place to organize ideas and revisit finished items.</p>
     </td>
   </tr>
@@ -39,22 +33,20 @@ Install one or all four. They share a consistent look that follows your OpenCode
 
 [Explore Later →](plugins/later/README.md)
 
-## Context — know what's taking up space
+## Context: know what's taking up space
 
-Long session? Get a clearer picture before deciding what to trim or carry forward. See recorded token usage, estimated context utilization, cache efficiency, and the biggest visible contributors—without asking a model to explain them.
+Long session? Get a clearer picture before deciding what to trim or carry forward. See recorded token usage, estimated context utilization, cache efficiency, and the biggest visible contributors. The report doesn't need a model call.
 
 **Get the overview → find the heavy parts.** Look beyond the totals to retained content and the instructions, skills, and tools available to your session. Estimates are labeled; this isn't a claim to see every hidden part of a provider request.
 
 <table>
   <tr>
     <td width="50%">
-      <!-- Replace with docs/images/context-overview.png -->
-      <img src="docs/images/screenshot-placeholder.svg" alt="Screenshot placeholder: Context overview with token usage, estimated utilization, and cache efficiency" width="100%" />
+      <img src="docs/images/context-overview.png" alt="Context overview with recorded token usage, estimated utilization, cache efficiency, and session activity" width="100%" />
       <p><strong>The session at a glance.</strong><br />Usage, context estimates, and activity together.</p>
     </td>
     <td width="50%">
-      <!-- Replace with docs/images/context-content.png -->
-      <img src="docs/images/screenshot-placeholder.svg" alt="Screenshot placeholder: Context Content tab ranking the largest retained contributors" width="100%" />
+      <img src="docs/images/context-content.png" alt="Context Content tab ranking retained tool outputs and messages by estimated tokens" width="100%" />
       <p><strong>See what's taking up room.</strong><br />Find the largest observable context contributors.</p>
     </td>
   </tr>
@@ -62,27 +54,25 @@ Long session? Get a clearer picture before deciding what to trim or carry forwar
 
 [Explore Context →](plugins/context/README.md)
 
-## Cost — see where the usage goes
+## Cost: see where the usage goes
 
 Turn scattered sessions into a readable picture of your usage. See recorded costs and tokens across projects and models, with daily activity to show how things change over time.
 
-**Start with the total → narrow by date, project, or model.** Costs come from OpenCode's provider-reported records, not a separate pricing calculator. Useful perspective—not a replacement for your provider's invoice.
+**Start with the total → narrow by date, project, or model.** Costs come from OpenCode's provider-reported records, not a separate pricing calculator. Use them to understand your usage, but check your provider's invoice for billing.
 
-<!-- Replace with docs/images/cost-dashboard.png -->
-![Screenshot placeholder: Cost dashboard with totals, model and project breakdowns, and daily activity](docs/images/screenshot-placeholder.svg)
+![Cost dashboard with usage totals, model and project breakdowns, and daily activity ordered newest first](docs/images/cost-dashboard.png)
 
 *The big picture and the breakdowns, in one view.*
 
 [Explore Cost →](plugins/cost/README.md)
 
-## Sessions — find the conversation, not just the project
+## Sessions: find the conversation, not just the project
 
 Remember the discussion but not where it happened? Search session titles, project paths, and indexed message text across your OpenCode projects, then preview the match before picking it up again.
 
 **Remember a phrase → find the session → get back to it.** Filter by project, include subagents when you need them, and see a matching message alongside the results. Same-directory sessions open directly; other directories offer a resume command to copy.
 
-<!-- Replace with docs/images/sessions-browser.png -->
-![Screenshot placeholder: Sessions search results across projects with a matching message preview](docs/images/screenshot-placeholder.svg)
+![Sessions browser searching for cache discussions across projects with a selected message preview](docs/images/sessions-browser.png)
 
 *Less hunting through projects. More getting back to the useful part.*
 
