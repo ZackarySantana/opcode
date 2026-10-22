@@ -1,5 +1,11 @@
 # @lidtop/opencode-feed
 
+## 0.1.1
+
+### Patch Changes
+
+- a8e520d: Standardize the package READMEs: install with `opencode plugin add` first, show screenshots, and use the same sections and wording across every plugin.
+
 ## 0.1.0
 
 ### Minor Changes

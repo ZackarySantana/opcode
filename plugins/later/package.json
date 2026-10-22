@@ -1,6 +1,6 @@
 {
   "name": "@lidtop/opencode-later",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Save, organize, and paste deferred OpenCode prompts",
   "type": "module",
   "license": "MIT",

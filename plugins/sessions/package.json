@@ -1,6 +1,6 @@
 {
   "name": "@lidtop/opencode-sessions",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Browse OpenCode sessions across projects",
   "type": "module",
   "license": "MIT",
