@@ -1,5 +1,4 @@
-import { join } from "node:path"
-import { manifestAt, pluginIDs, publicPackageName, repositoryRoot } from "./packaging"
+import { pluginIDs, publicManifest, publicPackageName, repositoryRoot, run } from "./packaging"
 
 export const previousInstructions = "When you're ready to do a release, you can merge this and publish to npm yourself or [setup this action to publish automatically](https://github.com/changesets/action#with-publishing)."
 export const publishingInstructions = "Merging this PR makes the reviewed plugin versions eligible for automatic publishing by the separate publish job in release.yml, subject to the configured npm environment protections and validation. Obtain release approval before merging."
@@ -18,16 +17,14 @@ export async function proposedReleases(root = repositoryRoot, base: string): Pro
   const releases: ProposedRelease[] = []
   for (const id of pluginIDs) {
     const path = `plugins/${id}/package.json`
-    const current = await manifestAt(join(root, "plugins", id))
-    const name = publicPackageName(id)
-    if (current.name !== name || current.private) throw new Error(`Expected public package ${name}`)
+    const current = await publicManifest(root, id)
+    const name = current.name
     if (typeof current.version !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(current.version)) {
       throw new Error(`Unexpected proposed version for ${name}`)
     }
-    const child = Bun.spawn(["git", "show", `${base}:${path}`], { cwd: root, stdout: "pipe", stderr: "pipe" })
-    const [text, error, status] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
-    if (status) throw new Error(`Cannot read ${path} at the workflow base: ${error}`)
-    const previous = JSON.parse(text)
+    const previous = JSON.parse(await run(["git", "show", `${base}:${path}`], root).catch((error) => {
+      throw new Error(`Cannot read ${path} at the workflow base: ${error.message}`)
+    }))
     if (previous.name !== name || typeof previous.version !== "string") throw new Error(`Unexpected base manifest for ${name}`)
     if (current.version !== previous.version) releases.push({ name, version: current.version })
   }
@@ -40,7 +37,12 @@ export function releasePRUpdate(body: unknown, releases: readonly ProposedReleas
     throw new Error("Expected Changesets publication instructions were not found")
   }
   if (!releases.length) throw new Error("Expected at least one changed public package")
-  const title = `chore(release): publish ${releases.map(({ name, version }) => `${name.replace("@lidtop/opencode-", "")}@${version}`).join(" ")}`
+  const id = (name: string) => {
+    const match = pluginIDs.find((id) => publicPackageName(id) === name)
+    if (!match) throw new Error(`Unexpected release package ${name}`)
+    return match
+  }
+  const title = `chore(release): publish ${releases.map(({ name, version }) => `${id(name)}@${version}`).join(" ")}`
   return { title, body: body.replace(previousInstructions, publishingInstructions) }
 }
 
