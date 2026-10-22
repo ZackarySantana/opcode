@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { fileURLToPath } from "node:url"
+import { assertCatalogInvariants } from "../scripts/release-policy"
 
 const root = fileURLToPath(new URL("../", import.meta.url))
 const manifest = await Bun.file(new URL("../package.json", import.meta.url)).json()
@@ -16,21 +17,8 @@ function resolveCatalog(name: string, reference: string): string | undefined {
   return catalog?.[name]
 }
 
-test("OpenCode SDK packages move as one catalog version", () => {
-  const versions = new Set<string | undefined>()
-  const names = new Set<string>()
-  for (const { value } of manifests) {
-    for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
-      for (const [name, reference] of Object.entries(value[field] ?? {}) as [string, string][]) {
-        if (!name.startsWith("@opencode/")) continue
-        names.add(name)
-        versions.add(resolveCatalog(name, reference))
-      }
-    }
-  }
-  for (const name of ["@opencode/client", "@opencode/plugin", "@opencode/theme"]) expect(names.has(name)).toBe(true)
-  expect(versions.has(undefined)).toBe(false)
-  expect(versions.size).toBe(1)
+test("OpenCode SDK packages move together and host peer floors match the development pins", () => {
+  expect(() => assertCatalogInvariants(manifest, manifests.map(({ value }) => value))).not.toThrow()
 })
 
 test("workspace dependencies use the shared catalog rather than drifting per plugin", async () => {

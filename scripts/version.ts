@@ -1,7 +1,8 @@
 import { repositoryRoot } from "./packaging"
-import { checkReleasePolicy } from "./release-policy"
+import { validatePendingChangesets } from "./release-policy"
 
-await checkReleasePolicy(repositoryRoot)
+// Coverage was enforced on each PR; on main, only re-validate what is about to be consumed.
+await validatePendingChangesets(repositoryRoot)
 
 for (const command of [
   [process.execPath, "run", "changeset", "version"],
