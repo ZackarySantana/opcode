@@ -1,12 +1,20 @@
 # @lidtop/opencode-later
 
-A client-local, persistent Later list for the OpenCode V2 terminal UI. `/later` manages active items and completed history; active items also appear in the session sidebar when it is visible.
+Save the next idea without interrupting the current one. Keep a shared Later list across your local projects and sessions, visible in the sidebar, and paste an item into your prompt when it's time. Nothing runs automatically.
 
-**Enter pastes an item into the originating prompt and marks it complete. It never submits the prompt or executes work.** Text is inserted using normal paste behavior; existing prompt text is not cleared.
+![Later list alongside an OpenCode session, keeping follow-up ideas visible in the sidebar](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/later-sidebar.png)
+
+![Later manager with four active items, a selected follow-up, and completed history](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/later-manager.png)
 
 ## Install
 
-Requires OpenCode **2.1.1 or newer in the 2.x line**, with its Bun terminal plugin runtime. Add the package to your global `~/.config/opencode/opencode.jsonc`, preserving existing settings:
+Requires OpenCode **2.1.1 or newer in the 2.x line**.
+
+```sh
+opencode plugin add @lidtop/opencode-later
+```
+
+Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `opencode.json`), keeping your existing entries:
 
 ```jsonc
 {
@@ -15,9 +23,7 @@ Requires OpenCode **2.1.1 or newer in the 2.x line**, with its Bun terminal plug
 }
 ```
 
-The main entrypoint is inert. OpenCode automatically loads its `./tui` extension. Alternatively, put the same plugin entry in global `~/.config/opencode/cli.json` for client-only loading independent of server configuration. **Do not configure both.** Restart the terminal client if necessary.
-
-The database is always on the **terminal client's filesystem**, including when connected to a remote OpenCode server. Clients on different machines do not share a list automatically. This is a terminal UI plugin, not a desktop, Mini, or headless task runner.
+**Where it runs.** Later is a terminal UI plugin; its server entrypoint does nothing. You can instead put the same entry in global `~/.config/opencode/cli.json` to load it on the client only, independent of server configuration. **Do not configure both.** The list is stored on the **terminal client's filesystem**, including when connected to a remote server, so clients on different machines do not share a list.
 
 ## Use
 
@@ -25,70 +31,60 @@ Run `/later` or select **Later** in the command palette.
 
 | Key | Action |
 | --- | --- |
+| `↑` / `↓`, `j` / `k` | Move selection |
 | `a` | Add an item |
 | `e` | Edit the selected active or completed item |
 | `space` | Complete an active item, or restore a completed item |
-| `enter` | Return to the originating home/session prompt, paste, and complete |
-| `d` | Permanently delete after confirmation |
-| `J` / `K` | Move an active item down/up |
-| `j` / `k`, arrows | Move selection |
-| `h` | Show/hide completed history |
-| `r` | Refresh immediately |
+| `enter` | Return to the originating prompt, paste the item, and complete it |
+| `d` | Delete permanently, after confirmation |
+| `J` / `K` | Move an active item down / up |
+| `h` | Show or hide completed history |
+| `r` | Refresh now |
 | `esc` | Return to the originating screen |
 
-Duplicates are allowed. Messages are trimmed and cannot be empty. Active numbers follow display order and are reassigned after removal/reordering. History is newest-completed first; restoring appends to the active list. Nothing is automatically captured from sessions.
+**`enter` pastes an item into the prompt and marks it complete. It never submits the prompt or runs anything.** The text is inserted with normal paste behavior; existing prompt text is kept.
 
-The sidebar is omitted when there are no active items; the plugin never forces it open. Changes made by another local client using the same database refresh automatically, normally within 350 ms. Selection is reconciled when items disappear. Stale edit/delete/paste operations are rejected rather than silently changing a different or newer item.
+Duplicates are allowed. Items are trimmed and cannot be empty. Active numbers follow display order and are reassigned after removing or reordering. History is newest-completed first; restoring an item appends it to the active list. Nothing is captured from sessions automatically.
+
+The sidebar is omitted when there are no active items; the plugin never forces it open. Changes from another local client using the same database appear automatically, normally within 350 ms. Edits, deletes, and pastes of an item that changed elsewhere are rejected rather than applied to a newer version.
 
 ### Paste limitations
 
-Paste-and-complete is available only when the manager was opened from home or a session. It waits up to one second for a destination frame with the documented prompt-paste command reachable and enabled; it does not wait for animations or other live rendering to stop. Disposal cancels the wait and removes its listeners/timer. If readiness times out, the destination changes, the plugin unloads, or the item changes while waiting, nothing is pasted or completed.
+Paste-and-complete works only when the manager was opened from home or a session. It waits up to one second for the destination prompt's paste command to be ready; if that times out, the destination changes, the plugin unloads, or the item changes while waiting, nothing is pasted or completed.
 
-OpenCode V2 currently exposes no prompt-text setter or paste-delivery acknowledgement. The isolated bridge uses the public OpenTUI paste pipeline and marks the item complete after dispatch, not after model execution. Review the prompt before submitting it yourself. This is not an exclusive multi-client task-claiming queue; simultaneous clients can still paste the same item.
+OpenCode V2 has no prompt-text setter or paste acknowledgement, so the item is marked complete after the paste is dispatched, not after anything runs. Review the prompt before submitting it yourself. This is not an exclusive task queue: two clients can still paste the same item.
 
-## Storage and compatibility
+## Options
 
-The default remains the legacy `opencode-later` database:
-
-```text
-$XDG_STATE_HOME/opencode/opencode-later/later.sqlite
-# or, when XDG_STATE_HOME is unset:
-~/.local/state/opencode/opencode-later/later.sqlite
-```
-
-The existing `items` and `metadata` SQLite schema is unchanged. IDs, active order, timestamps, completed history, and the revision counter are retained without conversion. WAL and transactions support multiple local clients. The plugin does not use OpenCode's own database or server RPC.
-
-To replace `opencode-later`, remove its configuration entry and install `@lidtop/opencode-later` instead. Keep any custom `database` path unchanged and configure it on the CLI side as below. Do not run both UI plugins together: they share `/later`, sidebar content, and the default database.
-
-### Custom database
-
-For a custom client-local path, load Later in global `~/.config/opencode/cli.json`
-instead of separately configuring it on the server. Server-loaded TUI extensions
-in OpenCode 2.1.1 do not reliably receive server plugin options.
+Load the plugin in global `~/.config/opencode/cli.json` to pass options; server-loaded terminal extensions in OpenCode 2.1.1 do not reliably receive server plugin options.
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/v2/cli.json",
   "plugins": [
-    {
-      "package": "@lidtop/opencode-later",
-      "options": { "database": "/absolute/path/later.sqlite" }
-    }
+    { "package": "@lidtop/opencode-later", "options": { "database": "/absolute/path/later.sqlite" } }
   ]
 }
 ```
 
-Relative paths resolve from the client's `$XDG_STATE_HOME/opencode` (or `~/.local/state/opencode`), **not the project directory**. Paths are trimmed; `~` is not expanded. Omitting the option uses the legacy default. Different paths intentionally create different lists.
+- `database`: where the list is stored. Relative paths resolve from the client's `$XDG_STATE_HOME/opencode` (or `~/.local/state/opencode`), not the project directory. Paths are trimmed; `~` is not expanded. Different paths create different lists. The default is `$XDG_STATE_HOME/opencode/opencode-later/later.sqlite` (or `~/.local/state/opencode/opencode-later/later.sqlite`).
 
-The database stores user-entered item text, IDs, positions, timestamps, and a revision counter; it does not collect session/project metadata or extract credentials. Item text can still contain secrets you enter. The database is not encrypted: protect its directory, file, WAL sidecars, and backups with appropriate permissions. Back it up before manual maintenance; close all clients before moving or replacing it, and preserve SQLite WAL sidecars when backing up an open database.
+## Data and privacy
+
+The database stores the item text you enter, IDs, positions, timestamps, and a revision counter. It collects no session or project metadata, but item text can contain anything you type. It is not encrypted: protect its directory, file, WAL sidecars, and backups. Close all clients before moving or replacing it, and keep the WAL sidecars when backing up an open database. Later does not use OpenCode's own database or any server RPC.
+
+## Replacing opencode-later
+
+The default database path and its `items` and `metadata` schema are the same as `opencode-later`'s, so IDs, order, timestamps, history, and the revision counter carry over without conversion. Remove the old entry and install this package instead; keep any custom `database` path and set it on the client side as in [Options](#options). Do not run both: they share `/later`, the sidebar, and the default database.
 
 ## Development
 
-From the monorepo root:
+From the repository root:
 
 ```sh
 mise exec -- bun test plugins/later/test
 mise exec -- bun run typecheck
+mise run dev later
 ```
 
-The root build compiles `src/index.ts` and `src/tui.tsx`, bundling the private `@opcode/core` and `@opcode/ui` workspaces while keeping OpenCode, OpenTUI, and Solid external.
+The build bundles the private `@opcode/core` and `@opcode/ui` workspaces into the package; OpenCode, OpenTUI, and Solid stay external.

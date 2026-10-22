@@ -1,10 +1,18 @@
 # @lidtop/opencode-cost
 
-Persistent, provider-reported cost and token usage for OpenCode **2.1.1+ within 2.x**. `/cost` opens a native terminal dashboard built with Opcode's shared UI.
+See where your usage goes: recorded costs and tokens across projects and models, with daily activity over time. Costs come from OpenCode's provider-reported records, not a separate pricing table.
+
+![Cost dashboard with usage totals, model and project breakdowns, and daily activity ordered newest first](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/cost-dashboard.png)
 
 ## Install
 
-Add the package globally in `~/.config/opencode/opencode.json(c)` so its server collector is available across projects:
+Requires OpenCode **2.1.1 or newer in the 2.x line**.
+
+```sh
+opencode plugin add @lidtop/opencode-cost
+```
+
+Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `opencode.json`), keeping your existing entries:
 
 ```jsonc
 {
@@ -13,42 +21,47 @@ Add the package globally in `~/.config/opencode/opencode.json(c)` so its server 
 }
 ```
 
-The package exposes the server plugin at its main entrypoint and the automatically loaded terminal plugin at `./tui`. Both use the ID `opcode-cost`. The dashboard requires the server plugin to be enabled at the connected location; a terminal-only installation cannot supply its RPC service.
+**Where it runs.** Install it globally so the server collector is available across projects. The server records usage and owns the database; the terminal dashboard queries it over plugin RPC (both parts use the ID `opcode-cost`). A client-only install in `cli.json` cannot supply that RPC service, so the dashboard needs the server plugin enabled at the connected location.
 
-## Dashboard
+## Use
 
 Run `/cost` or select **Cost** in the command palette.
 
 | Key | Action |
 | --- | --- |
-| `d` | Today, last 7 days, last 30 days, or all time |
+| `↑` / `↓` | Scroll |
+| `d` | Date range: today, last 7 days, last 30 days, or all time |
 | `p` | Filter by project |
-| `m` | Filter by provider/model |
-| `x` | Reset to 30 days and all projects/models |
+| `m` | Filter by provider and model |
+| `x` | Reset to 30 days and all projects and models |
 | `r` | Refresh and reconcile the current project's complete history; retry failed imports |
 | `esc` | Return to the originating session, home, or plugin page |
-| Up/Down | Scroll |
 
-Totals show USD cost, **recorded messages**, and input/output/reasoning/cache-read/cache-write tokens. Model/project breakdowns show the top eight by cost; daily activity shows the last 14 dates with recorded usage. Totals are not truncated. Selecting an entity hides its redundant breakdown, but daily content remains available even on narrow terminals with both filters selected.
+Totals show USD cost, **recorded messages**, and input, output, reasoning, cache-read, and cache-write tokens. Model and project breakdowns show the top eight by cost; daily activity shows the last 14 dates with recorded usage, newest first. Totals are never truncated. Selecting an entity hides its redundant breakdown, but daily activity stays available even on narrow terminals with both filters selected.
 
-The view rereads the server ledger every five seconds while open and shortly after public usage updates. Date filters use the **server's local calendar**, include today, and attribute usage to message creation time. Filter selectors show entities present in the selected date range. The project picker shows each project's path beside its name, so matching names can be distinguished; a project is named after its most recently used directory, and choosing one still includes its recorded worktrees.
+The view rereads the server ledger every five seconds while open and shortly after public usage updates. Date filters use the **server's local calendar**, include today, and attribute usage to message creation time. Filter pickers show entities present in the selected range. The project picker shows each project's path beside its name; a project is named after its most recently used directory, and choosing one includes its recorded worktrees.
 
-## Server-owned storage and remote connections
+## Collection and history
 
-**Only the server opens SQLite.** The terminal queries that server through documented plugin RPC; it never reads or writes a local cost database.
+The server records completed and failed assistant steps, including headless usage, and completed compactions with model metadata. It filters the cross-location event stream against each session's directory, reconnects after the stream ends, and cancels outstanding work on unload.
 
-This deliberately improves on `opencode-cost`: a remote dashboard now shows the **connected remote server's ledger**, not an unrelated local ledger, and imported remote history stays on that server. Local and remote histories are not silently mixed. There is no automatic transfer of an old local database to a remote machine.
+Historical import runs when the terminal plugin loads or changes location, and on `r`. OpenCode 2.1.1 exposes full message history only through the terminal client, so the terminal reads all assistant and compaction pages for **every session in the current project, including other worktrees**, extracts usage metadata, and sends validated batches of at most 100 messages to the server. The server derives project, session, and location identity from its own session lookup. Prompts and summaries are never sent.
 
-The default path intentionally remains compatible with `opencode-cost`:
+- **Safe to repeat:** imports are cancellable and idempotent, and each batch is atomic. Changing location cancels the previous import; a failure is shown only while its location is current. Retries scan again without double-counting, and old completion markers never permanently skip reconciliation. Projects never opened in a terminal are not imported until opened.
+- **Live wins:** history never overwrites a message collected live. For legacy or historical records, only a later completion timestamp replaces existing values, and incomplete snapshots cannot erase completed usage. Duplicate live updates replace existing values; older live events are ignored. A failed step that reports no usage keeps any usage already recorded for its message.
+- **Moves and forks:** message identity stays stable when OpenCode moves a session between projects, and reconciliation updates its attribution without touching protected costs. Forks can inherit their parent's message IDs; each ID is billed once, stays attributed to the first recorded session, and later duplicates are skipped without blocking the rest of the batch.
 
-```text
-$XDG_STATE_HOME/opencode/opencode-cost/cost.sqlite
-# or ~/.local/state/opencode/opencode-cost/cost.sqlite
-```
+## Accounting
 
-The existing `usage` and `backfill` tables are preserved. An additional `opcode_cost_live` table tracks live-write precedence and ordering. Existing usage needs no conversion. Stop/remove the old plugin before enabling this replacement to avoid competing collectors and `/cost` commands.
+- Costs come directly from OpenCode records; there is no provider pricing table or price recalculation.
+- A recorded message is an assistant step or an eligible completed compaction, not a user turn and not necessarily one provider request. Incomplete or failed steps can be recorded with zero usage. Title and transient generation are not collected separately, so this is not an exhaustive invoice.
+- Missing, non-finite, or negative usage values count as zero.
+- Public events have no replay: reconnecting alone cannot recover missed usage, so use `r` to reconcile. Records deleted from OpenCode before collection or import cannot be recovered.
+- Recorded usage remains after its session is deleted. There is no pruning, budget alerts, export, or billing integration.
 
-Override the path on the **server**:
+## Options
+
+Set a custom database path on the **server**:
 
 ```jsonc
 {
@@ -58,38 +71,26 @@ Override the path on the **server**:
 }
 ```
 
-Relative paths resolve against the server's OpenCode state directory. `:memory:` is supported but not durable. With a remote server, paths and environment variables belong to that remote machine. To clear durable history, stop OpenCode's service and remove the database and its SQLite sidecars; there is no dashboard delete action.
+- `database`: where the ledger is stored. Relative paths resolve from the server's OpenCode state directory. `:memory:` works but is not durable. With a remote server, paths and environment variables belong to that machine. The default is `$XDG_STATE_HOME/opencode/opencode-cost/cost.sqlite` (or `~/.local/state/opencode/opencode-cost/cost.sqlite`).
 
-## Collection and historical reconciliation
+## Data and privacy
 
-The server records completed and failed assistant steps, including headless usage, and completed compactions with model metadata. It filters the cross-location event stream against the session's actual directory, reconnects after stream termination, and cancels outstanding work on unload.
+**Only the server opens SQLite.** The terminal never reads or writes a local cost database, so a remote dashboard shows the **connected server's ledger**, and imported remote history stays on that server. Local and remote histories are never mixed.
 
-Historical import starts when the terminal plugin loads or changes location, and on `r`. OpenCode 2.1.1 exposes full paginated message history through the terminal client's `message.list`; the server plugin's `session.context` only exposes active context. The terminal therefore reads all assistant and compaction pages for **every session in the current project, including other worktrees**, extracts usage metadata, and sends validated batches of at most 100 messages to the server. The server derives project/session/location identity from its own session lookup. Prompts and summaries are never sent in import RPC payloads.
+The database stores IDs, directories, model and provider IDs, timestamps, costs, and token counts only: no prompts, responses, tool arguments, file contents, or credentials. Full history is fetched transiently for metadata extraction. To clear history, stop OpenCode and remove the database and its SQLite sidecars; there is no delete action in the dashboard.
 
-Imports are cancellable and idempotent; changing location cancels the previous location's import, and an import failure is shown only while its location is current. Each batch is atomic; partial successful batches remain after interruption, and retries scan again without double-counting. Completion timestamps are informational: old backfill markers **never permanently skip reconciliation**. Pressing `r` retries the current location's failed import and picks up missed messages. Projects never opened in a terminal are not historically imported until opened.
+## Replacing opencode-cost
 
-History cannot overwrite any message collected live by this replacement. For legacy or historical records, only a later completion timestamp can replace existing values; incomplete snapshots cannot erase completed usage. This conservative policy prevents stale historical reads from replacing newer live usage, but does not apply same-completion-time historical corrections. Duplicate live updates replace existing values; older live events are ignored. A failed step that reports no usage keeps any usage already recorded for its message, as OpenCode does when a retried step fails.
-
-Session/message identity remains stable when OpenCode moves a session between projects. Reconciliation updates its server-authorized project/directory attribution independently of usage freshness, so moved records do not block other records in the import batch or replace protected live costs.
-
-Forks can inherit the **same global message IDs** as their parent. Each ID is billed only once, never once per session. When history presents an existing ID under a different session, that record is skipped without changing its cost, model, timestamps, or attribution; other records in the batch still import. This also conservatively protects against unrelated cross-session ID conflicts, because the import RPC authorizes the session but does not independently verify each message's origin. Historical attribution stays with the first recorded session (parent or fork); moves of that recorded session can update attribution as above, and live updates remain authoritative. Fork-only messages import normally, and retries can complete without duplicating inherited costs.
-
-## Accounting limits and privacy
-
-- Costs come directly from OpenCode records; no provider pricing table or price recalculation.
-- A recorded message is an assistant step or an eligible completed compaction—not a user turn or necessarily one provider HTTP request. Incomplete/failed assistants can be recorded with zero usage. Title generation and transient generation are not independently collected; this is not an exhaustive provider invoice.
-- Missing/non-finite/negative usage values normalize to zero.
-- Public events have no replay. Reconnection alone cannot recover missed usage; use historical reconciliation. Records deleted from OpenCode before collection/import cannot be recovered.
-- Recorded usage remains after its source session is deleted. No pruning, budget alerts, exports, or billing integration.
-- Persisted data is IDs, directories, model/provider IDs, timestamps, costs, and token counts only. No prompts, responses, tool arguments, file contents, or credentials are stored. Full history is fetched transiently for metadata extraction.
+The default database path is the same as `opencode-cost`'s, and its `usage` and `backfill` tables are kept without conversion; an added `opcode_cost_live` table tracks live-write precedence. Remove the old plugin before enabling this one to avoid competing collectors and `/cost` commands. An old local database is not transferred to a remote server automatically.
 
 ## Development
 
-From the workspace root:
+From the repository root:
 
 ```sh
 mise exec -- bun test plugins/cost/test
 mise exec -- bun run typecheck
+mise run dev cost
 ```
 
-Tests protect ledger persistence/legacy compatibility, idempotence and stale-write safety, date filters, paginated imports and retry/cancellation, event location filtering, RPC ownership, and lifecycle/navigation behavior. Real-host terminal rendering and remote-server installation still require integration verification.
+The build bundles the private `@opcode/core` and `@opcode/ui` workspaces into the package; OpenCode, OpenTUI, and Solid stay external.
