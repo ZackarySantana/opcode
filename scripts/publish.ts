@@ -1,72 +1,115 @@
-import { appendFile, mkdir } from "node:fs/promises"
-import { join } from "node:path"
-import { buildAll } from "./build"
-import { manifestAt, pluginIDs, publicPackageName, repositoryRoot } from "./packaging"
-
-async function command(args: string[], cwd: string): Promise<string> {
-  const child = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "pipe" })
-  const [stdout, stderr, status] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
-  if (status) throw new Error(`${args.join(" ")} failed: ${stderr}\n${stdout}`)
-  if (stderr) console.error(stderr.trim())
-  return stdout
-}
+import { appendFile, mkdir, readdir, rm } from "node:fs/promises"
+import { join, resolve } from "node:path"
+import { manifestAt, pluginIDs, publicPackageName, repositoryRoot, run } from "./packaging"
 
 export type PublishOperations = {
   environment: Record<string, string | undefined>
-  command: typeof command
+  command: (args: string[], cwd: string) => Promise<string>
   build: (root: string) => Promise<void>
   registryStatus: (url: string) => Promise<number>
 }
 
-/** No network writes unless explicitly requested; reruns skip exact versions already on npm. */
-export async function publish(root = repositoryRoot, live = false, overrides: Partial<PublishOperations> = {}) {
-  const operations: PublishOperations = {
+export type Tarball = { name: string; version: string; tarball: string }
+
+function operations(overrides: Partial<PublishOperations>): PublishOperations {
+  return {
     environment: process.env,
-    command,
-    build: buildAll,
+    command: (args, cwd) => run(args, cwd, { echo: true }),
+    // Loaded lazily: publishing prebuilt tarballs must not need build dependencies installed.
+    build: async (root) => (await import("./build")).buildAll(root),
     registryStatus: async (url) => (await fetch(url)).status,
     ...overrides,
   }
-  const npm = (args: string[], cwd: string) => operations.command(["npm", ...args], cwd)
-  if (live) {
-    const environment = operations.environment
-    if (environment.GITHUB_ACTIONS !== "true" || environment.GITHUB_REF !== "refs/heads/main" || !environment.ACTIONS_ID_TOKEN_REQUEST_URL) {
-      throw new Error("Live publishing requires the main-branch GitHub Actions OIDC environment")
-    }
-    const version = /^11\.(\d+)\.(\d+)$/.exec((await npm(["--version"], root)).trim())
-    if (!version || Number(version[1]) < 5 || (Number(version[1]) === 5 && Number(version[2]) < 1)) throw new Error("Publishing requires npm 11.5.1+ (11.x) and Node 24")
-    const nodeVersion = (await operations.command(["node", "--version"], root)).trim()
-    if (!/^v24\.\d+\.\d+$/.test(nodeVersion)) throw new Error("Publishing requires Node 24")
-  }
-  await operations.build(root)
+}
+
+/** Builds and packs every plugin into `.release/tarballs`, without contacting npm. */
+export async function pack(root = repositoryRoot, overrides: Partial<PublishOperations> = {}): Promise<Tarball[]> {
+  const { build, command } = operations(overrides)
+  await build(root)
   const tarballs = join(root, ".release/tarballs")
+  await rm(tarballs, { recursive: true, force: true })
   await mkdir(tarballs, { recursive: true })
-  const published: { name: string; version: string }[] = []
+  const packed: Tarball[] = []
   for (const id of pluginIDs) {
     const directory = join(root, ".release", `opcode-${id}`)
     const manifest = await manifestAt(directory)
     if (manifest.name !== publicPackageName(id) || manifest.private) throw new Error(`Invalid public plugin manifest: ${directory}`)
-    const packed = JSON.parse(await npm(["pack", "--json", "--ignore-scripts", "--pack-destination", tarballs], directory)) as { filename: string }[]
-    const tarball = join(tarballs, packed[0]!.filename)
-    if (!live) {
-      console.log(`Packed ${manifest.name}@${manifest.version}: ${tarball} (not published)`)
-      continue
-    }
-    const status = await operations.registryStatus(`https://registry.npmjs.org/${encodeURIComponent(manifest.name)}/${encodeURIComponent(manifest.version)}`)
-    if (status >= 200 && status < 300) {
-      console.log(`Skipping published ${manifest.name}@${manifest.version}`)
-      continue
-    }
-    if (status !== 404) throw new Error(`Registry lookup failed for ${manifest.name}: HTTP ${status}`)
-    console.log(await npm(["publish", tarball, "--access", "public", "--provenance", "--ignore-scripts", "--registry", "https://registry.npmjs.org/"], directory))
-    published.push({ name: manifest.name, version: manifest.version })
+    const output = JSON.parse(await command(["npm", "pack", "--json", "--ignore-scripts", "--pack-destination", tarballs], directory)) as { filename: string }[]
+    const tarball = join(tarballs, output[0]!.filename)
+    console.log(`Packed ${manifest.name}@${manifest.version}: ${tarball} (not published)`)
+    packed.push({ name: manifest.name, version: manifest.version, tarball })
   }
-  if (operations.environment.GITHUB_OUTPUT) await appendFile(operations.environment.GITHUB_OUTPUT, `publishedPackages=${JSON.stringify(published)}\n`)
+  return packed
+}
+
+/** The manifests inside prebuilt tarballs; exactly one per public plugin. */
+export async function readTarballs(directory: string, overrides: Partial<PublishOperations> = {}): Promise<Tarball[]> {
+  const { command } = operations(overrides)
+  const found = new Map<string, Tarball>()
+  for (const file of (await readdir(directory)).filter((file) => file.endsWith(".tgz")).sort()) {
+    const tarball = join(directory, file)
+    const manifest = JSON.parse(await command(["tar", "-xzOf", tarball, "package/package.json"], directory))
+    if (!pluginIDs.some((id) => publicPackageName(id) === manifest.name) || manifest.private || typeof manifest.version !== "string") {
+      throw new Error(`Unexpected package in ${file}`)
+    }
+    if (found.has(manifest.name)) throw new Error(`Multiple tarballs for ${manifest.name}`)
+    found.set(manifest.name, { name: manifest.name, version: manifest.version, tarball })
+  }
+  return pluginIDs.map((id) => {
+    const tarball = found.get(publicPackageName(id))
+    if (!tarball) throw new Error(`Missing tarball for ${publicPackageName(id)} in ${directory}`)
+    return tarball
+  })
+}
+
+/** Exact-version lookup that fails closed on anything except published or 404. */
+async function isPublished({ name, version }: Tarball, registryStatus: PublishOperations["registryStatus"]) {
+  const status = await registryStatus(`https://registry.npmjs.org/${encodeURIComponent(name)}/${encodeURIComponent(version)}`)
+  if (status >= 200 && status < 300) return true
+  if (status !== 404) throw new Error(`Registry lookup failed for ${name}: HTTP ${status}`)
+  return false
+}
+
+/** Read-only: which tarball versions npm does not have yet, exposed as the `packages` step output. */
+export async function unpublished(directory: string, overrides: Partial<PublishOperations> = {}): Promise<Tarball[]> {
+  const { environment, registryStatus } = operations(overrides)
+  const pending: Tarball[] = []
+  for (const tarball of await readTarballs(directory, overrides)) {
+    if (!await isPublished(tarball, registryStatus)) pending.push(tarball)
+  }
+  const names = pending.map(({ name, version }) => `${name}@${version}`)
+  console.log(names.length ? `Unpublished: ${names.join(" ")}` : "All staged versions are already published")
+  if (environment.GITHUB_OUTPUT) await appendFile(environment.GITHUB_OUTPUT, `packages=${JSON.stringify(names)}\n`)
+  return pending
+}
+
+/** Publishes prebuilt tarballs only; reruns skip exact versions already on npm. */
+export async function publishTarballs(directory: string, overrides: Partial<PublishOperations> = {}): Promise<Tarball[]> {
+  const { environment, command, registryStatus } = operations(overrides)
+  if (environment.GITHUB_ACTIONS !== "true" || environment.GITHUB_REF !== "refs/heads/main" || !environment.ACTIONS_ID_TOKEN_REQUEST_URL) {
+    throw new Error("Live publishing requires the main-branch GitHub Actions OIDC environment")
+  }
+  const version = /^11\.(\d+)\.(\d+)$/.exec((await command(["npm", "--version"], directory)).trim())
+  if (!version || Number(version[1]) < 5 || (Number(version[1]) === 5 && Number(version[2]) < 1)) throw new Error("Publishing requires npm 11.5.1+ (11.x) and Node 24")
+  const nodeVersion = (await command(["node", "--version"], directory)).trim()
+  if (!/^v24\.\d+\.\d+$/.test(nodeVersion)) throw new Error("Publishing requires Node 24")
+  const published: Tarball[] = []
+  for (const tarball of await readTarballs(directory, overrides)) {
+    if (await isPublished(tarball, registryStatus)) {
+      console.log(`Skipping published ${tarball.name}@${tarball.version}`)
+      continue
+    }
+    console.log(await command(["npm", "publish", tarball.tarball, "--access", "public", "--provenance", "--ignore-scripts", "--registry", "https://registry.npmjs.org/"], directory))
+    published.push(tarball)
+  }
   return published
 }
 
 if (import.meta.main) {
-  if (process.argv.slice(2).some((argument) => argument !== "--publish" && argument !== "--dry-run")) throw new Error("Usage: bun scripts/publish.ts [--dry-run | --publish]")
-  if (process.argv.includes("--publish") && process.argv.includes("--dry-run")) throw new Error("Choose --publish or --dry-run")
-  await publish(repositoryRoot, process.argv.includes("--publish"))
+  const usage = "Usage: bun scripts/publish.ts [--dry-run] | --pending --from <dir> | --publish --from <dir>"
+  const [mode = "--dry-run", ...rest] = process.argv.slice(2)
+  if (mode === "--dry-run" && !rest.length) await pack()
+  else if ((mode === "--pending" || mode === "--publish") && rest.length === 2 && rest[0] === "--from") {
+    await (mode === "--pending" ? unpublished : publishTarballs)(resolve(rest[1]!))
+  } else throw new Error(usage)
 }
