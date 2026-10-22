@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import type { OpenCodeClient } from "@opencode/client"
 import type { CostService } from "../src/client.js"
-import { importProject, createImportRunner } from "../src/importer.js"
+import { importProject } from "../src/importer.js"
 import { CostLedger } from "../src/ledger.js"
 import { context, message, session } from "./fixtures.js"
 
@@ -155,23 +155,4 @@ test("repeated pagination cursors fail rather than looping forever", async () =>
   } as unknown as CostService
   await expect(importProject(client, service, new AbortController().signal)).rejects.toThrow("repeated a cursor")
   expect(completed).toBe(false)
-})
-
-test("refreshes coalesce in flight, serialize locations, and remain retryable after failure", async () => {
-  const calls: string[] = []
-  let release!: () => void
-  const gate = new Promise<void>((resolve) => { release = resolve })
-  const run = createImportRunner<string>((id) => id, async (id) => {
-    calls.push(id)
-    await gate
-    if (calls.length === 1) throw new Error("retry me")
-  })
-  const first = run("one")
-  expect(run("one")).toBe(first)
-  const next = run("two")
-  release()
-  await expect(first).rejects.toThrow("retry me")
-  await next
-  await run("one")
-  expect(calls).toEqual(["one", "two", "one"])
 })

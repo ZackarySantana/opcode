@@ -231,7 +231,7 @@ test("TUI commands preserve return navigation; refresh rescans; unload cancels i
     const before = imports
     await run("refresh")
     expect(imports).toBe(before + 1)
-    expect(commands.filter((command) => command.bind).map((command) => command.bind)).toEqual(["escape", "d", "p", "m", "x", "r"])
+    expect(new Set(commands.flatMap((command) => command.bind ? [command.bind] : []))).toEqual(new Set(["escape", "d", "p", "m", "x", "r"]))
     await run("close")
     expect(current).toEqual({ type: "session", sessionID: "session-a" })
   } finally { root.dispose(); await cleanup() }

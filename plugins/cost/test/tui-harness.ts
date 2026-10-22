@@ -3,7 +3,7 @@ import type { Destination, DialogSelectOptions, KeymapLayer, Page, Route } from 
 import { createRoot, createSignal } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { mockTheme } from "@opcode/ui/test-support/host"
-import tuiPlugin from "../src/tui.js"
+import { createCostTui, type Timers } from "../src/tui.js"
 import { PLUGIN_ID } from "../src/navigation.js"
 
 export function dashboard(cost = 2, projectLabel = "Alpha", day = "2026-07-10"): Dashboard {
@@ -33,6 +33,17 @@ export async function createTuiHarness(initial: Route = { type: "home" }, mutabl
   const usageListeners = new Set<() => void>()
   const toasts: string[] = []
   let modes = 0
+  // Test-driven clocks: `tick` fires active refresh intervals, `settle` fires pending debounces.
+  const intervals = new Set<() => void>()
+  const debounces = new Set<() => void>()
+  const timers: Timers = {
+    interval: (run) => { const entry = () => run(); intervals.add(entry); return () => { intervals.delete(entry) } },
+    debounce: (run) => {
+      const entry = () => { debounces.delete(entry); run() }
+      debounces.add(entry)
+      return () => { debounces.delete(entry) }
+    },
+  }
   let page!: Page
   let unregistered = false
   const api = {
@@ -78,7 +89,7 @@ export async function createTuiHarness(initial: Route = { type: "home" }, mutabl
       toast: { show: ({ message }: { message: string }) => { toasts.push(message) } },
     },
   }
-  const root = createRoot((dispose) => ({ dispose, result: tuiPlugin.setup(api as never) }))
+  const root = createRoot((dispose) => ({ dispose, result: createCostTui(timers).setup(api as never) }))
   const stop = await root.result
   if (!stop) throw new Error("Missing plugin cleanup")
   let stopped = false
@@ -99,5 +110,8 @@ export async function createTuiHarness(initial: Route = { type: "home" }, mutabl
     api, queries, dialogs, navigations, layers, usageListeners, toasts, route, setRoute, setLocation, run, cleanup,
     page: () => page, modes: () => modes, unregistered: () => unregistered,
     emitUsage: () => { for (const callback of usageListeners) callback() },
+    intervals, debounces,
+    tick: () => { for (const run of [...intervals]) run() },
+    settle: () => { for (const run of [...debounces]) run() },
   }
 }

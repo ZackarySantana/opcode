@@ -9,22 +9,74 @@ import { useTerminalDimensions } from "@opentui/solid"
 import { batch, createComputed, createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
 import { createCostService } from "./client.js"
 import { DATE_RANGES, rangeLabel, type Breakdown, type Dashboard } from "./domain.js"
-import { createImportRunner, importProject } from "./importer.js"
+import { importProject } from "./importer.js"
 import { dashboardSections, MODE, parseRoute, PLUGIN_ID, ROUTE, type RouteState } from "./navigation.js"
+
+/** Injectable so tests drive refreshes without real timers. Each returns its cancel function. */
+export interface Timers {
+  interval(run: () => void): () => void
+  debounce(run: () => void): () => void
+}
+
+const timers: Timers = {
+  interval: (run) => { const id = setInterval(run, 5_000); return () => clearInterval(id) },
+  debounce: (run) => { const id = setTimeout(run, 100); return () => clearTimeout(id) },
+}
+
+type ImportState = { type: "idle" } | { type: "running" } | { type: "failed"; message: string }
 
 interface ScreenProps {
   api: Plugin.Context
-  state: () => RouteState
-  setState: (state: RouteState) => void
+  timers: Timers
   location: () => LocationRef
   params?: Record<string, unknown>
   revision: () => number
-  importStatus: () => string
+  importState: () => ImportState
   mount: () => void
 }
 
 const backHint = { key: "esc", label: "back", command: "opcode-cost.close" }
 const refreshHint = { key: "r", label: "refresh", command: "opcode-cost.refresh" }
+
+/**
+ * One query's reads, adapted from Context's snapshot refresh. Refreshes coalesce behind the in-flight read
+ * (at most one follow-up) rather than cancelling it, so streaming bursts cannot starve the dashboard.
+ */
+function createRefresh(
+  load: (signal: AbortSignal) => Promise<Dashboard>,
+  publish: (result: { data: Dashboard } | { error: string }) => void,
+  debounce: Timers["debounce"],
+) {
+  const controller = new AbortController()
+  let active = false
+  let queued = false
+  let cancel: (() => void) | undefined
+  const refresh = () => {
+    if (controller.signal.aborted) return
+    cancel?.()
+    cancel = undefined
+    if (active) { queued = true; return }
+    active = true
+    void load(controller.signal).then((data) => ({ data }), (error: unknown) => ({ error: errorMessage(error) })).then((result) => {
+      active = false
+      if (controller.signal.aborted) return
+      publish(result)
+      if (queued) { queued = false; refresh() }
+    })
+  }
+  return {
+    refresh,
+    schedule() {
+      if (controller.signal.aborted) return
+      if (active) queued = true
+      else cancel ??= debounce(() => { cancel = undefined; refresh() })
+    },
+    dispose() {
+      controller.abort()
+      cancel?.()
+    },
+  }
+}
 
 function DashboardScreen(props: ScreenProps) {
   props.mount()
@@ -34,70 +86,42 @@ function DashboardScreen(props: ScreenProps) {
   const [data, setData] = createSignal<Dashboard>()
   const [error, setError] = createSignal("")
   const [refreshWarning, setRefreshWarning] = createSignal("")
-  const [tick, setTick] = createSignal(0)
-  const sections = createMemo(() => dashboardSections(props.state()))
-  createEffect(() => props.setState(parseRoute(props.params)))
+  const state = createMemo(() => parseRoute(props.params))
+  const sections = createMemo(() => dashboardSections(state()))
   const query = createMemo(() => {
-    const state = props.state()
+    const filter = state()
     const location = props.location()
     return {
-      key: JSON.stringify([state.range, state.projectID ?? null, state.model ?? null, location.directory, location.workspaceID ?? null]),
-      filter: { range: state.range, projectID: state.projectID, model: state.model },
+      key: JSON.stringify([filter.range, filter.projectID ?? null, filter.model ?? null, location.directory, location.workspaceID ?? null]),
+      filter: { range: filter.range, projectID: filter.projectID, model: filter.model },
       location: { directory: location.directory, workspaceID: location.workspaceID },
     }
   }, undefined, { equals: (previous, next) => previous.key === next.key })
-  type Query = ReturnType<typeof query> & { controller: AbortController; pending: boolean; queued: boolean }
-  let current: Query | undefined
-  const refresh = (request: Query) => {
-    if (request !== current || request.controller.signal.aborted) return
-    if (request.pending) {
-      // Keep the in-flight read alive under streaming bursts; at most one follow-up is needed.
-      request.queued = true
-      return
-    }
-    request.pending = true
-    void (async () => {
-      try {
-        const dashboard = await createCostService(props.api.client, request.location).dashboard(request.filter, request.controller.signal)
-        if (request !== current || request.controller.signal.aborted) return
-        batch(() => { setData(dashboard); setError(""); setRefreshWarning("") })
-      } catch (cause) {
-        if (request !== current || request.controller.signal.aborted) return
-        if (data()) setRefreshWarning(errorMessage(cause))
-        else setError(errorMessage(cause))
-      } finally {
-        request.pending = false
-        if (request === current && !request.controller.signal.aborted && request.queued) {
-          request.queued = false
-          refresh(request)
-        }
-      }
-    })()
-  }
-  createEffect(on(() => [query(), props.revision(), tick()] as const, ([next]) => {
-    if (current?.key !== next.key) {
-      current?.controller.abort()
-      current = { ...next, controller: new AbortController(), pending: false, queued: false }
-      // Clear stale values only for a different filter/location, not a background refresh.
-      batch(() => { setData(undefined); setError(""); setRefreshWarning("") })
-    }
-    refresh(current)
+  let refresh: ReturnType<typeof createRefresh> | undefined
+  createEffect(on(query, (next) => {
+    // Clear stale values only for a different filter/location, not a background refresh.
+    batch(() => { setData(undefined); setError(""); setRefreshWarning("") })
+    const current = createRefresh((signal) => createCostService(props.api.client, next.location).dashboard(next.filter, signal), (result) => {
+      if ("data" in result) batch(() => { setData(result.data); setError(""); setRefreshWarning("") })
+      else if (data()) setRefreshWarning(result.error)
+      else setError(result.error)
+    }, props.timers.debounce)
+    refresh = current
+    current.refresh()
+    onCleanup(() => {
+      current.dispose()
+      if (refresh === current) refresh = undefined
+    })
   }))
-  const timer = setInterval(() => setTick((value) => value + 1), 5_000)
-  let pending: ReturnType<typeof setTimeout> | undefined
-  const off = props.api.data.on("session.usage.updated", () => {
-    if (pending) clearTimeout(pending)
-    pending = setTimeout(() => setTick((value) => value + 1), 100)
-  })
-  onCleanup(() => {
-    current?.controller.abort()
-    current = undefined
-    clearInterval(timer)
-    if (pending) clearTimeout(pending)
-    off()
-  })
+  createEffect(on(props.revision, () => refresh?.refresh(), { defer: true }))
+  onCleanup(props.timers.interval(() => refresh?.refresh()))
+  onCleanup(props.api.data.on("session.usage.updated", () => refresh?.schedule()))
+  const importFailure = () => {
+    const current = props.importState()
+    return current.type === "failed" ? current.message : undefined
+  }
   const projectLabel = () => {
-    const id = props.state().projectID
+    const id = state().projectID
     return id ? data()?.projectOptions.find((option) => option.id === id)?.label ?? id : "all projects"
   }
   const wide = () => dimensions().width >= 100
@@ -114,9 +138,9 @@ function DashboardScreen(props: ScreenProps) {
         actions={<KeyHints items={hints()} />}
         filters={(
           <box width="100%" flexDirection="row" flexWrap="wrap" gap={1}>
-            <FilterChip label="date" value={rangeLabel(props.state().range)} />
+            <FilterChip label="date" value={rangeLabel(state().range)} />
             <FilterChip label="project" value={shorten(projectLabel(), wide() ? 30 : 18)} />
-            <FilterChip label="model" value={shorten(props.state().model ?? "all models", wide() ? 40 : 24)} />
+            <FilterChip label="model" value={shorten(state().model ?? "all models", wide() ? 40 : 24)} />
           </box>
         )}
         footer={(
@@ -132,8 +156,8 @@ function DashboardScreen(props: ScreenProps) {
       >
         <scrollbox id="opcode-cost.content" flexGrow={1} minHeight={0} focused>
           <box flexDirection="column" flexGrow={1} flexShrink={0} gap={1}>
-            <Show when={props.importStatus().includes("failed")}>
-              <text fg={palette.warning}>{props.importStatus()}</text>
+            <Show when={importFailure()}>
+              {(message) => <text fg={palette.warning}>{`History import failed: ${message()}. Press r to retry.`}</text>}
             </Show>
             <Show when={error()}>
               <Card grow minHeight={8}><CenterEmpty title="Unable to read ledger" description={error()} /></Card>
@@ -220,15 +244,16 @@ function formatTokens(value: number) {
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(value)
 }
 
-export default Plugin.define({
+export const createCostTui = (timing: Timers = timers) => Plugin.define({
   id: PLUGIN_ID,
   setup(api) {
     const screen = createScreen(api, { id: PLUGIN_ID, name: ROUTE, mode: MODE })
     const controller = new AbortController()
-    const [state, setState] = createSignal<RouteState>(parseRoute())
     const [revision, setRevision] = createSignal(0)
-    const [importStatus, setImportStatus] = createSignal("History has not been reconciled yet.")
+    const [imports, setImports] = createSignal<Record<string, ImportState>>({})
     const location = () => api.location ?? api.data.location.default()
+    // Each location keeps its own import state; the dashboard only shows the current location's.
+    const importState = () => imports()[JSON.stringify(location())] ?? { type: "idle" }
     let selectionController: AbortController | undefined
     const cancelSelection = () => {
       selectionController?.abort()
@@ -242,22 +267,28 @@ export default Plugin.define({
       return [screen.active(), params?.range, params?.projectID, params?.model, JSON.stringify(location())]
     }, cancelSelection, { defer: true }))
     const tasks = new Set<Promise<void>>()
-    const runImport = createImportRunner<LocationRef>((target) => JSON.stringify(target), async (target) => {
-      if (controller.signal.aborted) return
-      setImportStatus("Reconciling this project's history, including other worktrees…")
-      try {
-        await importProject(api.client, createCostService(api.client, target), controller.signal)
-        if (!controller.signal.aborted) setImportStatus("History reconciled. Refresh retries and includes newly missed messages.")
-      } catch (error) {
-        if (!controller.signal.aborted) setImportStatus(`History import failed: ${errorMessage(error)}. Press r to retry.`)
-      } finally {
-        if (!controller.signal.aborted) setRevision((value) => value + 1)
-      }
-    })
+    let importing: { key: string; abort: AbortController; task: Promise<void> } | undefined
+    /** One import at a time: a repeat for the same location joins it; another location cancels it. */
     const reconcile = () => {
-      const task = runImport(location())
+      if (controller.signal.aborted) return Promise.resolve()
+      const target = { ...location() }
+      const key = JSON.stringify(target)
+      if (importing?.key === key) return importing.task
+      importing?.abort.abort()
+      const abort = new AbortController()
+      const signal = AbortSignal.any([controller.signal, abort.signal])
+      const settle = (state: ImportState) => { if (!signal.aborted) setImports((all) => ({ ...all, [key]: state })) }
+      settle({ type: "running" })
+      const task: Promise<void> = importProject(api.client, createCostService(api.client, target), signal).then(
+        () => settle({ type: "idle" }),
+        (error: unknown) => settle({ type: "failed", message: errorMessage(error) }),
+      ).finally(() => {
+        tasks.delete(task)
+        if (importing?.task === task) importing = undefined
+        if (!signal.aborted) setRevision((value) => value + 1)
+      })
+      importing = { key, abort, task }
       tasks.add(task)
-      void task.finally(() => tasks.delete(task))
       return task
     }
     void reconcile()
@@ -270,7 +301,6 @@ export default Plugin.define({
       if (controller.signal.aborted || !screen.active()) return
       cancelSelection()
       api.ui.dialog.clear()
-      setState(next)
       screen.update({ ...next })
     }
     const beginSelection = () => {
@@ -296,7 +326,7 @@ export default Plugin.define({
     }
     const unregister = api.ui.router.register({
       name: ROUTE,
-      render: (input) => <DashboardScreen api={api} params={input.data} state={state} setState={setState} location={location} revision={revision} importStatus={importStatus} mount={mount} />,
+      render: (input) => <DashboardScreen api={api} timers={timing} params={input.data} location={location} revision={revision} importState={importState} mount={mount} />,
     })
     api.keymap.layer(() => ({
       mode: "global",
@@ -307,7 +337,6 @@ export default Plugin.define({
           if (controller.signal.aborted) return
           cancelSelection()
           api.ui.dialog.clear()
-          setState(parseRoute())
           screen.open({ range: "30d" })
         },
       }],
@@ -369,3 +398,5 @@ export default Plugin.define({
     }
   },
 })
+
+export default createCostTui()
