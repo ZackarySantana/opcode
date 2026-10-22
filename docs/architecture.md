@@ -8,7 +8,8 @@
 | Cost | Normalized usage ledger and date/entity aggregates | Server-owned SQLite, live events, RPC; client history import | Dashboard and native filters |
 | Later | Ordered active items and completed history | Client-local SQLite and isolated prompt-paste bridge | Manager, native edit/confirmation dialogs, sidebar |
 | Sessions | Searchable user/assistant text and session metadata | Server-owned SQLite, live events, RPC; client history import | Browser, filters, preview, safe resume action |
-| Feed | Subscriptions, settings, and an interpreted timeline of feed items | Client-local SQLite, feed fetching, browser launcher | Status/Upcoming/Releases/Subscribe/Settings dialog, feed picker, sidebar |
+| Feed | Subscriptions, settings, and an interpreted timeline of feed items | Client-local SQLite, feed fetching | Status/Upcoming/Releases/Subscribe/Settings dialog, feed picker, sidebar |
+| GH PR Status | Pull requests classified by what waits on you, settings, and a saved team filter | Client-local SQLite, `gh` GraphQL and REST calls | Mine/Reviewing/Teams/Settings dialog, team picker, sidebar |
 
 Later is deliberately not an execution engine: starting an item pastes it into
 the existing prompt, without submission. Cost is recorded message telemetry,
@@ -49,6 +50,13 @@ transitions from mouse input. The host's `router.current()`
 is a live store proxy, never a safe value to save directly as a return destination.
 Persistence, domain actions, and their cancellable I/O remain plugin-specific.
 
+`@opcode/tabs` holds what Feed and GH PR Status share: the tabbed dialog with one
+search box and Escape that undoes one step at a time, grouped item cards that
+open on enter or click, the picker, the Settings tab, sidebar items with "+N
+more" and refresh countdown lines, the refresh schedule, and the browser
+launcher. It is a separate workspace so that changing it releases only those two
+plugins, not every consumer of `@opcode/ui`.
+
 `@opcode/core` contains small host-independent utilities, including the XDG
 state directory and owner-only WAL SQLite setup shared by Cost, Later, and
 Sessions. Domain models stay in
@@ -65,7 +73,7 @@ Private workspace source is bundled into each package. Host runtimes and all
 third-party dependencies stay external.
 
 The public npm packages are `@lidtop/opencode-context`, `@lidtop/opencode-cost`,
-`@lidtop/opencode-later`, `@lidtop/opencode-sessions`, and `@lidtop/opencode-feed`. Each has its own version
+`@lidtop/opencode-later`, `@lidtop/opencode-sessions`, `@lidtop/opencode-feed`, and `@lidtop/opencode-gh-pr-status`. Each has its own version
 and changeset history; they are not a permanent lockstep group. The npm scope does not rename runtime plugin, command,
 or RPC IDs, nor existing database paths. Shared-source or
 catalog updates require releases of affected consumers, not a forced permanent

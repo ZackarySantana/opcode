@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@opcode/core": "workspace:*",
+    "@opcode/tabs": "workspace:*",
     "@opcode/ui": "workspace:*",
     "@opencode/plugin": "catalog:"
   },

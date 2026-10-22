@@ -1,0 +1,103 @@
+# @lidtop/opencode-gh-pr-status
+
+Never leave a review waiting. See the GitHub pull requests that need you in the sidebar, with your pull requests, your reviews, and your teams' review requests one command away.
+
+## Install
+
+Requires OpenCode **2.1.1 or newer in the 2.x line**, and the [GitHub CLI](https://cli.github.com/) signed in with `gh auth login`.
+
+```sh
+opencode plugin add @lidtop/opencode-gh-pr-status
+```
+
+Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `opencode.json`), keeping your existing entries:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["@lidtop/opencode-gh-pr-status"]
+}
+```
+
+**Where it runs.** This is a terminal UI plugin; its server entrypoint does nothing. You can instead put the same entry in global `~/.config/opencode/cli.json` to load it on the client only, independent of server configuration. **Do not configure both.** The terminal client runs `gh` and stores your settings on its filesystem, including when connected to a remote server, so `gh` must be installed and signed in where you run OpenCode.
+
+## Use
+
+Run `/ghpr` or select **Pull requests** in the command palette. The dialog has four tabs:
+
+- **Mine:** your open pull requests. The ones that need you come first, then the ones waiting on others, then drafts.
+- **Reviewing:** pull requests requesting your review, then open ones you've already reviewed.
+- **Teams:** review requests for your teams, with every requested reviewer listed. Press `f` to show one team; the choice is saved.
+- **Settings:** what the sidebar shows, and how often it refreshes.
+
+Each pull request shows its status, author, repository and number, when it was opened, and when your review (or your team's) was requested.
+
+| Key | Action |
+| --- | --- |
+| `tab` / `shift+tab` | Next / previous tab |
+| `↑` / `↓`, `j` / `k` | Move the outline |
+| `/` | Search titles, authors, repositories, statuses, and reviewers |
+| `enter` | Open the outlined pull request in your browser (clicking one does too) |
+| `f` | Show one team's review requests, or all of them (Teams) |
+| `←` / `→`, `h` / `l` | Change the outlined setting (Settings) |
+| `r` | Refresh now |
+| `esc` | Leave the box, clear the search, close the team picker, then close |
+
+A pull request **waits on you** when:
+
+- it requests your review, or your team's;
+- it's yours and has merge conflicts, failing checks, or requested changes, or is approved and ready to merge.
+
+Statuses are colored by urgency: red for your pull requests that are blocked, yellow for review requests, green for approved, the theme's highlight for pull requests waiting on someone else, and gray for drafts and approvals you've given.
+
+The sidebar lists only what waits on you: review requests for you first, then your teams' (narrowed to the team chosen on the Teams tab), then your own pull requests that need you. It shows five by default, then a count of the rest and a pointer to `/ghpr`, and ends with a countdown to the next refresh. Click a pull request there to open it in your browser, or the "+N more" line to open `/ghpr`.
+
+Links open in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-open` (Linux); on WSL it tries `wslview`, `xdg-open`, then PowerShell.
+
+## Teams and hidden pull requests
+
+Review requests come from GitHub's `review-requested:@me` search, which includes requests to any team you're on, closed and secret teams included, as long as `gh` can see them. Team names come from `gh api /user/teams`, which needs the `read:org` scope that `gh auth login` grants by default; without it, every team requested on a pull request that asks for your review is treated as yours.
+
+GitHub sometimes withholds results. A pull request in an organization that enforces SAML single sign-on stays hidden until you authorize `gh`'s token for that organization, and a team your token can't see shows as **hidden team**. `/ghpr` counts what was withheld and shows GitHub's reason; the sidebar notes hidden review requests.
+
+## Settings
+
+| Setting | Choices | Default |
+| --- | --- | --- |
+| Sidebar team reviews | No, Yes | Yes |
+| Sidebar your PRs | No, Yes | Yes |
+| Sidebar items | 3, 5, 10, 15, 20 | 5 |
+| Refresh every | 1m, 2m, 5m, 10m, 15m, 30m | 5m |
+
+Review requests for you always appear in the sidebar. **Sidebar team reviews** adds your teams' review requests, narrowed to the Teams tab's filter; **Sidebar your PRs** adds your pull requests that need you. Each refresh runs one GraphQL search per list, up to 50 open pull requests each.
+
+## Options
+
+Load the plugin in global `~/.config/opencode/cli.json` to pass options; server-loaded terminal extensions in OpenCode 2.1.1 do not reliably receive server plugin options.
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/v2/cli.json",
+  "plugins": [
+    { "package": "@lidtop/opencode-gh-pr-status", "options": { "database": "/absolute/path/gh-pr-status.sqlite" } }
+  ]
+}
+```
+
+- `database`: where settings and the team filter are stored. Relative paths resolve from the client's `$XDG_STATE_HOME/opencode` (or `~/.local/state/opencode`), not the project directory. The default is `$XDG_STATE_HOME/opencode/opcode-gh-pr-status/gh-pr-status.sqlite` (or `~/.local/state/opencode/opcode-gh-pr-status/gh-pr-status.sqlite`).
+
+## Data and privacy
+
+The database stores your settings and team filter. Pull requests are kept in memory only. Requests go to GitHub through `gh`, with its credentials; nothing else is sent.
+
+## Development
+
+From the repository root:
+
+```sh
+mise exec -- bun test plugins/gh-pr-status/test
+mise exec -- bun run typecheck
+mise run dev gh-pr-status
+```
+
+The build bundles the private `@opcode/core`, `@opcode/tabs`, and `@opcode/ui` workspaces into the package; OpenCode, OpenTUI, and Solid stay external.

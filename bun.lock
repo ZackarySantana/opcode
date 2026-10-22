@@ -21,6 +21,18 @@
       "name": "@opcode/core",
       "version": "0.0.0",
     },
+    "packages/tabs": {
+      "name": "@opcode/tabs",
+      "version": "0.0.0",
+      "dependencies": {
+        "@opcode/core": "workspace:*",
+        "@opcode/ui": "workspace:*",
+        "@opencode/plugin": "catalog:",
+        "@opentui/core": "catalog:",
+        "@opentui/solid": "catalog:",
+        "solid-js": "catalog:",
+      },
+    },
     "packages/ui": {
       "name": "@opcode/ui",
       "version": "0.0.0",
@@ -66,6 +78,22 @@
       "version": "0.3.0",
       "dependencies": {
         "@opcode/core": "workspace:*",
+        "@opcode/tabs": "workspace:*",
+        "@opcode/ui": "workspace:*",
+        "@opencode/plugin": "catalog:",
+      },
+      "peerDependencies": {
+        "@opentui/core": "catalog:host",
+        "@opentui/solid": "catalog:host",
+        "solid-js": "catalog:host",
+      },
+    },
+    "plugins/gh-pr-status": {
+      "name": "@lidtop/opencode-gh-pr-status",
+      "version": "0.0.0",
+      "dependencies": {
+        "@opcode/core": "workspace:*",
+        "@opcode/tabs": "workspace:*",
         "@opcode/ui": "workspace:*",
         "@opencode/plugin": "catalog:",
       },
@@ -300,6 +328,8 @@
 
     "@lidtop/opencode-feed": ["@lidtop/opencode-feed@workspace:plugins/feed"],
 
+    "@lidtop/opencode-gh-pr-status": ["@lidtop/opencode-gh-pr-status@workspace:plugins/gh-pr-status"],
+
     "@lidtop/opencode-later": ["@lidtop/opencode-later@workspace:plugins/later"],
 
     "@lidtop/opencode-sessions": ["@lidtop/opencode-sessions@workspace:plugins/sessions"],
@@ -345,6 +375,8 @@
     "@npmcli/run-script": ["@npmcli/run-script@10.0.4", "", { "dependencies": { "@npmcli/node-gyp": "^5.0.0", "@npmcli/package-json": "^7.0.0", "@npmcli/promise-spawn": "^9.0.0", "node-gyp": "^12.1.0", "proc-log": "^6.0.0" } }, "sha512-mGUWr1uMnf0le2TwfOZY4SFxZGXGfm4Jtay/nwAa2FLNAKXUoUwaGwBMNH36UHPtinWfTSJ3nqFQr0091CxVGg=="],
 
     "@opcode/core": ["@opcode/core@workspace:packages/core"],
+
+    "@opcode/tabs": ["@opcode/tabs@workspace:packages/tabs"],
 
     "@opcode/ui": ["@opcode/ui@workspace:packages/ui"],
 

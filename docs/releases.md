@@ -1,8 +1,8 @@
 # Builds and independent releases
 
 The public packages are `@lidtop/opencode-context`, `@lidtop/opencode-cost`,
-`@lidtop/opencode-later`, `@lidtop/opencode-sessions`, and `@lidtop/opencode-feed`. Each has its own version and
-changelog. Changesets has no fixed or linked groups. Private `@opcode/core` and `@opcode/ui` are never published.
+`@lidtop/opencode-later`, `@lidtop/opencode-sessions`, `@lidtop/opencode-feed`, and `@lidtop/opencode-gh-pr-status`. Each has its own version and
+changelog. Changesets has no fixed or linked groups. Private `@opcode/core`, `@opcode/tabs`, and `@opcode/ui` are never published.
 Each public manifest keeps `publishConfig.access: "public"`; scoped packages must
 not fall back to npm's private-access default.
 
@@ -232,7 +232,7 @@ Each public package needs its own npm trusted-publisher configuration:
 These values identify the actual GitHub origin, `ZackarySantana/opcode`; the npm
 organization `@lidtop` is not the GitHub owner. Confirm the origin during preflight.
 Check every package: `@lidtop/opencode-context`, `@lidtop/opencode-cost`,
-`@lidtop/opencode-later`, `@lidtop/opencode-sessions`, and `@lidtop/opencode-feed`. Their staged `repository.url`
+`@lidtop/opencode-later`, `@lidtop/opencode-sessions`, `@lidtop/opencode-feed`, and `@lidtop/opencode-gh-pr-status`. Their staged `repository.url`
 metadata must match the actual repository. Newly created trusted publishers can
 default to stage-only access; that does not authorize this workflow's direct
 `npm publish`. Standalone

@@ -270,7 +270,7 @@ describe("independent release policy", () => {
     const { git, commit } = await repository(root)
     await writeFile(join(root, "packages/core/src/index.ts"), 'export const updated = true\n')
     await commit()
-    await expect(checkReleasePolicy(root, "baseline")).rejects.toThrow("@lidtop/opencode-context, @lidtop/opencode-cost, @lidtop/opencode-feed, @lidtop/opencode-later, @lidtop/opencode-sessions")
+    await expect(checkReleasePolicy(root, "baseline")).rejects.toThrow("@lidtop/opencode-context, @lidtop/opencode-cost, @lidtop/opencode-feed, @lidtop/opencode-gh-pr-status, @lidtop/opencode-later, @lidtop/opencode-sessions")
     await writeFile(join(root, ".changeset/fix.md"), `---\n${pluginIDs.map((id) => `"${publicPackageName(id)}": patch`).join("\n")}\n---\nUpdate shared behavior.\n`)
     await commit()
     await expect(checkReleasePolicy(root, "baseline")).resolves.toBeUndefined()
@@ -288,7 +288,7 @@ describe("independent release policy", () => {
     }
     await writeFile(join(root, "package.json"), JSON.stringify(manifest))
     await commit()
-    await expect(checkReleasePolicy(root, "before-host-upgrade")).rejects.toThrow("@lidtop/opencode-context, @lidtop/opencode-cost, @lidtop/opencode-feed, @lidtop/opencode-later, @lidtop/opencode-sessions")
+    await expect(checkReleasePolicy(root, "before-host-upgrade")).rejects.toThrow("@lidtop/opencode-context, @lidtop/opencode-cost, @lidtop/opencode-feed, @lidtop/opencode-gh-pr-status, @lidtop/opencode-later, @lidtop/opencode-sessions")
   }, 30_000)
 
   test("catalog policy precisely covers named peers and inherited SDK/optional dependencies, not dev-only entries", async () => {
@@ -308,6 +308,7 @@ describe("independent release policy", () => {
       { id: "later", dependencies: { "@opencode/plugin": "catalog:" } },
       { id: "sessions" },
       { id: "feed" },
+      { id: "gh-pr-status" },
     ] as const
     for (const plugin of plugins) {
       const { id, ...manifest } = plugin

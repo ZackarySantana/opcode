@@ -1,10 +1,9 @@
 import type { usePalette } from "@opcode/ui"
+import type { Mark } from "@opcode/tabs"
 import type { Phase } from "./status"
 
-type Palette = ReturnType<typeof usePalette>
-
 /** Glyph and color carry urgency; resolved items recede. */
-export function phaseStyle(phase: Phase, palette: Palette): { glyph: string; color: Palette["text"]; title: Palette["text"]; strong: boolean } {
+export function phaseStyle(phase: Phase, palette: ReturnType<typeof usePalette>): Mark {
   switch (phase) {
     case "active": return { glyph: "●", color: palette.error, title: palette.text, strong: true }
     case "monitoring": return { glyph: "●", color: palette.warning, title: palette.text, strong: true }
@@ -13,8 +12,4 @@ export function phaseStyle(phase: Phase, palette: Palette): { glyph: string; col
     case "resolved": return { glyph: "✓", color: palette.muted, title: palette.muted, strong: false }
     case "news": return { glyph: "•", color: palette.accent, title: palette.text, strong: false }
   }
-}
-
-export function clockTime(time: number): string {
-  return new Date(time).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
 }

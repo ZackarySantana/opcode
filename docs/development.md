@@ -14,13 +14,13 @@ preview just one:
 mise run dev cost
 ```
 
-Try `/context`, `/cost`, `/later`, `/feed`, and `/opcode-sessions` (avoids the
+Try `/context`, `/cost`, `/later`, `/feed`, `/ghpr`, and `/opcode-sessions` (avoids the
 built-in `/sessions` command). Relaunch after editing code to rebuild.
 
 Preview plugin databases persist in `.release/dev/data`, separate from the
 original plugins' databases. The launcher temporarily replaces the four
 originals and uses the preview extensions instead of your CLI-only plugin list.
-Later and Feed are configured on the CLI side so their client-local database
+Later, Feed, and GH PR Status are configured on the CLI side so their client-local database
 options reach the TUI.
 
 OpenCode loads every configured plugin before applying removals, so a published
@@ -48,8 +48,8 @@ mise run check
 Mise pins Bun 1.4.3 and Node 24.22.0. Keep third-party versions in the root
 workspace catalog and update the OpenCode packages together.
 
-`plugins/` contains independently released packages. `packages/ui` and
-`packages/core` are private source workspaces bundled into each plugin; OpenCode,
+`plugins/` contains independently released packages. `packages/ui`,
+`packages/tabs`, and `packages/core` are private source workspaces bundled into each plugin that uses them; OpenCode,
 OpenTUI, and Solid remain external. See [architecture](architecture.md) and
 [releases](releases.md) for ownership and packaging details.
 

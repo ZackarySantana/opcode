@@ -38,13 +38,13 @@ Run `/feed` or select **Feeds** in the command palette. The dialog has five tabs
 | `tab` / `shift+tab` | Next / previous tab |
 | `↑` / `↓`, `j` / `k` | Move the outline |
 | `/` | Focus the box at the top: search, or paste a URL in Subscribe |
-| `enter` | Open the outlined item's link (Status, Upcoming, Releases); subscribe or add (Subscribe) |
+| `enter` | Open the outlined item's link, as clicking it does (Status, Upcoming, Releases); subscribe or add (Subscribe) |
 | `space` | Subscribe or unsubscribe (Subscribe) |
 | `f` | Pick one feed of the tab's kind to show its latest 20 items (Status, Upcoming, Releases) |
 | `←` / `→`, `h` / `l` | Change the outlined setting (Settings) |
 | `d` | Remove a custom feed (Subscribe) |
 | `r` | Refresh every feed now (also `/feed-refresh`, or **Refresh feeds** in the command palette) |
-| `esc` | Leave the box, close the picker, clear the search, show all feeds, then close |
+| `esc` | Leave the box, clear the search, close the picker, show all feeds, then close |
 
 Changing tabs clears the search and the chosen feed. While typing in the box, the arrow keys still move the outline and `enter` acts on it.
 

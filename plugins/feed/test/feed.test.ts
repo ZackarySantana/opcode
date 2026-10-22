@@ -6,8 +6,7 @@ import { join } from "node:path"
 import { createRoot } from "solid-js"
 import type { SetTimer } from "@opcode/core/refresh"
 import { FeedsController, type Fetcher } from "../src/host"
-import { age, editRows, managerRows, matches, refreshStatus, sidebarLayout, timeline, type EditRow, type FetchResult, type Surface, type SurfaceScope, type TimelineEntry } from "../src/model"
-import { launchers, openURL } from "../src/open"
+import { editRows, managerRows, matches, sidebarLayout, timeline, type EditRow, type FetchResult, type Surface, type SurfaceScope, type TimelineEntry } from "../src/model"
 import { parseFeed } from "../src/parse"
 import { candidateURL, feedURL, presets } from "../src/presets"
 import { FeedsDatabase } from "../src/sqlite"
@@ -241,16 +240,6 @@ test("the sidebar keeps the configured number of items and two scheduled items, 
   expect(sidebarLayout(view, 10)).toMatchObject({ hiddenEntries: 0, hiddenUpcoming: 2 })
 })
 
-test("links open with the platform's launcher, and only http(s) links open at all", () => {
-  expect(launchers("https://a.test", "darwin")).toEqual([["open", "https://a.test"]])
-  expect(launchers("https://a.test", "linux", {}, "6.8.0-generic")).toEqual([["xdg-open", "https://a.test"]])
-  const wsl = launchers("https://a.test/?q='x'", "linux", { WSL_DISTRO_NAME: "Ubuntu" }, "6.18-microsoft-standard-WSL2")
-  expect(wsl.map(([name]) => name)).toEqual(["wslview", "xdg-open", "powershell.exe"])
-  expect(wsl[2]!.at(-1)).toBe("Start-Process 'https://a.test/?q=''x'''")
-  expect(() => openURL("file:///etc/passwd", () => "/bin/true")).toThrow("Refusing to open")
-  expect(() => openURL("https://a.test", () => null)).toThrow("No browser launcher found")
-})
-
 test("settings persist across reopening the database", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opcode-feed-"))
   afterAll(() => rm(directory, { recursive: true, force: true }))
@@ -351,29 +340,6 @@ test("0.3.0 databases gain the sidebar length and refresh interval at their defa
   const reopened = new FeedsDatabase(path)
   expect(reopened.settings()).toEqual({ windowHours: 24, resolved: "both", sidebarReleases: true, sidebarItems: 5, refreshMinutes: 10 })
   reopened.close()
-})
-
-test("ages are compact", () => {
-  const now = Date.parse("2026-10-21T12:00:00Z")
-  const hours = (count: number) => now - count * 60 * 60_000
-  expect(age(now - 5 * 60_000, now)).toBe("5m")
-  expect(age(hours(23.9), now)).toBe("23h")
-  expect(age(hours(29), now)).toBe("1d 5h")
-  expect(age(hours(48), now)).toBe("2d")
-  expect(age(hours(9 * 24 + 3), now)).toBe("9d 3h")
-  // Upcoming items count the other way, with the same format.
-  expect(age(now, hours(-30))).toBe("1d 6h")
-  expect(age(undefined, now)).toBe("")
-})
-
-test("the refresh line counts down to the second", () => {
-  const now = Date.parse("2026-10-21T12:00:00Z")
-  expect(refreshStatus(true, now + 5 * 60_000, now)).toBe("Refreshing…")
-  expect(refreshStatus(false, now + 4 * 60_000 + 5_500, now)).toBe("Next refresh in 4m 06s")
-  expect(refreshStatus(false, now + 60 * 60_000, now)).toBe("Next refresh in 60m 00s")
-  expect(refreshStatus(false, now + 30_000, now)).toBe("Next refresh in 30s")
-  expect(refreshStatus(false, now - 1_000, now)).toBe("Next refresh in 0s")
-  expect(refreshStatus(false, undefined, now)).toBeUndefined()
 })
 
 test("subscriptions persist, fetch on subscribe, and late results after unsubscribe are dropped", async () => {

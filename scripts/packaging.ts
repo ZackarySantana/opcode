@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs"
-import { readFile } from "node:fs/promises"
+import { readdir, readFile } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 
-export const pluginIDs = ["context", "cost", "later", "sessions", "feed"] as const
+export const pluginIDs = ["context", "cost", "later", "sessions", "feed", "gh-pr-status"] as const
 export function publicPackageName(id: typeof pluginIDs[number]) {
   return `@lidtop/opencode-${id}`
 }
@@ -65,8 +65,10 @@ export function resolveCatalog(specifier: string, dependency: string, root: Mani
   return value
 }
 
+/** Every workspace under packages/, each private and named @opcode/<directory>. */
 export async function privateWorkspaces(root: string) {
-  const entries = await Promise.all(["core", "ui"].map(async (id) => {
+  const ids = (await readdir(join(root, "packages"), { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name)
+  const entries = await Promise.all(ids.map(async (id) => {
     const directory = join(root, "packages", id)
     const manifest = await manifestAt(directory)
     if (manifest.name !== `@opcode/${id}` || !manifest.private) throw new Error(`${directory} must be private`)

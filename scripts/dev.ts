@@ -6,7 +6,7 @@ import { pluginIDs, publicPackageName, repositoryRoot } from "./packaging"
 
 type PluginID = typeof pluginIDs[number]
 // Client-local plugins load through the CLI config so their options reach the terminal process.
-const clientLocal: readonly PluginID[] = ["later", "feed"]
+const clientLocal: readonly PluginID[] = ["later", "feed", "gh-pr-status"]
 type Environment = Record<string, string | undefined>
 const originals = ["opencode-context-tui", "opencode-cost", "opencode-later", "opencode-sessions-all"]
 
@@ -207,7 +207,7 @@ export async function dev(arguments_: string[], root = repositoryRoot, environme
   const suspended = published.files.length
     ? `Took ${packages.join(", ")} out of ${published.files.join(", ")} until OpenCode exits; other OpenCode windows lose them meanwhile.`
     : "Global config files are unchanged."
-  console.log(`\nOpcode preview: ${selected.join(", ")}\nPlugin databases: ${preview.data}\nUsing your normal OpenCode login/session database. ${suspended}\nTry /context, /cost, /later, /feed, or /opcode-sessions.\n`)
+  console.log(`\nOpcode preview: ${selected.join(", ")}\nPlugin databases: ${preview.data}\nUsing your normal OpenCode login/session database. ${suspended}\nTry /context, /cost, /later, /feed, /ghpr, or /opcode-sessions.\n`)
   try { return await attached([executable, "--standalone"], root, preview.environment) }
   finally {
     for (const warning of await published.restore()) console.warn(warning)
