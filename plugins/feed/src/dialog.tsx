@@ -8,7 +8,7 @@ import type { ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createMemo, createSignal, For, Show, type Accessor } from "solid-js"
 import type { FeedsController } from "./host"
-import { FEED_HISTORY, kindOf, matches, matchesText, relative, scopeChoices, showsOn, windowChoices, windowLabel, windowShort, type SurfaceScope, type Settings as FeedSettings, type TimelineEntry } from "./model"
+import { FEED_HISTORY, kindOf, matches, matchesText, relative, scopeChoices, windowChoices, windowLabel, windowShort, type SurfaceScope, type Settings as FeedSettings, type TimelineEntry } from "./model"
 import { openURL } from "./open"
 import { TabFrame } from "./frame"
 import { FeedPicker } from "./picker"
@@ -165,8 +165,6 @@ function Browser(props: TabProps & {
         { title: recentTitle(), entries: filter(ofKind(timeline().recent)) },
       ])
   const subscribed = () => props.feeds.subscriptions().some((subscription) => kindOf(subscription, presets) === feedKind)
-  // Show releases can keep them out of /feed; picking one feed still shows it.
-  const hidden = () => props.kind === "releases" && !props.scope() && !showsOn(settings().releases, "feed")
   const items = createMemo(() => groups().flatMap((group) => group.entries))
   const offsets = createMemo(() => groups().map((_, index) => groups().slice(0, index).reduce((sum, group) => sum + group.entries.length, 0)))
   let scroll: ScrollBoxRenderable | undefined
@@ -204,9 +202,8 @@ function Browser(props: TabProps & {
         { key: "/", label: "search", command: "opcode-feed.search" },
         { key: "r", label: "refresh", command: "opcode-feed.refresh" },
       ]}>
-        <Show when={subscribed() && !hidden()} fallback={hidden()
-          ? <CenterEmpty title="Releases are hidden in /feed" description="Change Show releases in the Settings tab." />
-          : <CenterEmpty title={feedKind === "status" ? "No status pages yet" : "No release feeds yet"} description="Subscribe to one in the Subscribe tab." />
+        <Show when={subscribed()} fallback={
+          <CenterEmpty title={feedKind === "status" ? "No status pages yet" : "No release feeds yet"} description="Subscribe to one in the Subscribe tab." />
         }>
           <scrollbox ref={scroll} height={props.height}>
             <box flexDirection="column" minWidth={0}>
@@ -264,12 +261,12 @@ const settingRows = [
     update: (resolved: SurfaceScope) => ({ resolved }),
   } satisfies SettingRow<SurfaceScope>,
   {
-    id: "releases", label: "Show releases",
-    description: "Where posts from release feeds appear; /feed means the Releases tab. Status pages always show.",
-    choices: scopes,
-    current: (settings: FeedSettings) => settings.releases,
-    update: (releases: SurfaceScope) => ({ releases }),
-  } satisfies SettingRow<SurfaceScope>,
+    id: "releases", label: "Sidebar releases",
+    description: "Whether posts from release feeds also appear in the sidebar. The Releases tab always has them.",
+    choices: [{ value: false, label: "No" }, { value: true, label: "Yes" }],
+    current: (settings: FeedSettings) => settings.sidebarReleases,
+    update: (sidebarReleases: boolean) => ({ sidebarReleases }),
+  } satisfies SettingRow<boolean>,
 ] as SettingRow<unknown>[]
 
 /** Every choice stays visible; ←/→ move between them, stopping at either end. */

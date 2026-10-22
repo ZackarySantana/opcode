@@ -8,7 +8,7 @@ export type FetchResult =
   | { readonly status: "ok"; readonly feed: Feed; readonly fetchedAt: number }
   | { readonly status: "error"; readonly error: string; readonly feed?: Feed }
 
-/** Which surfaces show a kind of item: resolved incidents, or posts from release feeds. */
+/** Which surfaces show resolved incidents. */
 export type SurfaceScope = "both" | "sidebar" | "feed" | "none"
 /** The two places a timeline renders. */
 export type Surface = "sidebar" | "feed"
@@ -16,15 +16,15 @@ export type Surface = "sidebar" | "feed"
 export interface Settings {
   readonly windowHours: number
   readonly resolved: SurfaceScope
-  /** Posts from release feeds; by default only in /feed, keeping the sidebar for incidents. */
-  readonly releases: SurfaceScope
+  /** Posts from release feeds always show in /feed; by default the sidebar is kept for incidents. */
+  readonly sidebarReleases: boolean
 }
 
-export const defaultSettings: Settings = { windowHours: 12, resolved: "none", releases: "feed" }
+export const defaultSettings: Settings = { windowHours: 12, resolved: "none", sidebarReleases: false }
 export const windowChoices = [6, 12, 24, 48, 72, 168] as const
 export const scopeChoices: readonly SurfaceScope[] = ["both", "sidebar", "feed", "none"]
 
-export const showsOn = (scope: SurfaceScope, surface: Surface) => scope === "both" || scope === surface
+const showsOn = (scope: SurfaceScope, surface: Surface) => scope === "both" || scope === surface
 /** In-progress items stay visible past the window, but not forever if a provider never closes one. */
 const CURRENT_HORIZON = 7 * 24 * 60 * 60_000
 /** Newest posts each release feed may place in a timeline. */
@@ -127,7 +127,7 @@ export interface TimelineOptions {
   readonly releasesPerFeed?: number
   /**
    * Narrows to one subscribed feed and shows its history: the window, the release cap, and the
-   * resolved and releases settings stop applying, and the newest FEED_HISTORY settled items are kept.
+   * resolved setting stop applying, and the newest FEED_HISTORY settled items are kept.
    */
   readonly feed?: string
 }
@@ -137,7 +137,7 @@ export function timeline(subscriptions: readonly Subscription[], presets: readon
   { now = Date.now(), releasesPerFeed = RELEASES_PER_FEED, feed }: TimelineOptions = {}): Timeline {
   const scoped = feed !== undefined
   const resolved = scoped || showsOn(settings.resolved, surface)
-  const releases = scoped || showsOn(settings.releases, surface)
+  const releases = surface === "feed" || settings.sidebarReleases
   const current: TimelineEntry[] = []
   const recent: TimelineEntry[] = []
   const upcoming: TimelineEntry[] = []
@@ -148,7 +148,7 @@ export function timeline(subscriptions: readonly Subscription[], presets: readon
   const cap = scoped ? FEED_HISTORY : releasesPerFeed
   for (const subscription of scoped ? subscriptions.filter((subscription) => subscription.url === feed) : subscriptions) {
     const kind = kindOf(subscription, presets)
-    // A hidden release feed leaves no trace on this surface, not even a failure.
+    // A release feed kept out of the sidebar leaves no trace there, not even a failure.
     if (kind === "release" && !releases) continue
     const result = results.get(subscription.url)
     const source = feedTitle(subscription.url, presets, subscription, result)
