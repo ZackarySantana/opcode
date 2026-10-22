@@ -26,6 +26,13 @@ const options = {
     type: "object", additionalProperties: false, properties: { id: { type: "string" }, label: { type: "string" } }, required: ["id", "label"],
   },
 } as const
+const projectOptions = {
+  type: "array", items: {
+    type: "object", additionalProperties: false,
+    properties: { id: { type: "string" }, label: { type: "string" }, directory: { type: "string" } },
+    required: ["id", "label", "directory"],
+  },
+} as const
 const dashboard = {
   type: "object", additionalProperties: false,
   properties: {
@@ -37,7 +44,7 @@ const dashboard = {
       },
       required: ["cost", "messages", "tokens", "input", "output", "reasoning", "cacheRead", "cacheWrite"],
     },
-    projects: breakdown, models: breakdown, daily: breakdown, projectOptions: options, modelOptions: options,
+    projects: breakdown, models: breakdown, daily: breakdown, projectOptions, modelOptions: options,
   },
   required: ["total", "projects", "models", "daily", "projectOptions", "modelOptions"],
 } as const

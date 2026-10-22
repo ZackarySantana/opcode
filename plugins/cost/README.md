@@ -31,7 +31,7 @@ Run `/cost` or select **Cost** in the command palette.
 
 Totals show USD cost, **recorded messages**, and input/output/reasoning/cache-read/cache-write tokens. Model/project breakdowns show the top eight by cost; daily activity shows the last 14 dates with recorded usage. Totals are not truncated. Selecting an entity hides its redundant breakdown, but daily content remains available even on narrow terminals with both filters selected.
 
-The view rereads the server ledger every five seconds while open and shortly after public usage updates. Date filters use the **server's local calendar**, include today, and attribute usage to message creation time. Filter selectors show entities present in the selected date range.
+The view rereads the server ledger every five seconds while open and shortly after public usage updates. Date filters use the **server's local calendar**, include today, and attribute usage to message creation time. Filter selectors show entities present in the selected date range. The project picker shows each project's path beside its name, so matching names can be distinguished; choosing one still includes its recorded worktrees.
 
 ## Server-owned storage and remote connections
 

@@ -330,7 +330,7 @@ export default Plugin.define({
             if (!selection.valid()) return
             const projectID = await api.ui.dialog.select({ title: "Project", current: previous.projectID ?? "", options: [
               { title: "All projects", value: "" },
-              ...dashboard.projectOptions.map((item) => ({ title: item.label, value: item.id, description: item.id })),
+              ...dashboard.projectOptions.map((item) => ({ title: item.label, value: item.id, description: item.directory })),
             ] })
             if (selection.valid() && projectID !== undefined) update({ ...previous, projectID: projectID || undefined })
           } catch (error) { if (selection.valid()) api.ui.toast.show({ message: errorMessage(error), variant: "error" }) }

@@ -19,7 +19,7 @@ export function dashboard(cost = 2, projectLabel = "Alpha", day = "2026-07-10"):
     projects: [{ id: "p", label: projectLabel, cost, messages: 1, tokens: 15 }],
     models: [{ id: "provider/model", label: "provider/model", cost, messages: 1, tokens: 15 }],
     daily: [{ id: day, label: day, cost, messages: 1, tokens: 15 }],
-    projectOptions: [{ id: "p", label: projectLabel }], modelOptions: [{ id: "provider/model", label: "provider/model" }],
+    projectOptions: [{ id: "p", label: projectLabel, directory: "/remote/project" }], modelOptions: [{ id: "provider/model", label: "provider/model" }],
   }
 }
 

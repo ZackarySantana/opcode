@@ -54,7 +54,7 @@ export interface Dashboard {
   projects: Breakdown[]
   models: Breakdown[]
   daily: Breakdown[]
-  projectOptions: Array<{ id: string; label: string }>
+  projectOptions: Array<{ id: string; label: string; directory: string }>
   modelOptions: Array<{ id: string; label: string }>
 }
 

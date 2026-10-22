@@ -13,6 +13,30 @@ test("route parsing owns filters only; return navigation is not serialized into 
   expect(parseRoute({ back: { type: "plugin", id: PLUGIN_ID, name: ROUTE } })).not.toHaveProperty("back")
 })
 
+test("project picker shows server paths beside project names while selecting by ID", async () => {
+  const harness = await createTuiHarness()
+  try {
+    await harness.run("open")
+    const pending = harness.run("project")
+    const data = dashboard()
+    data.projectOptions = [
+      { id: "opaque-project-a", label: "main", directory: "/remote/a/main" },
+      { id: "opaque-project-b", label: "main", directory: "/remote/b/main" },
+    ]
+    harness.queries.at(-1)!.resolve(data)
+    await Bun.sleep(0)
+    const selection = harness.dialogs.at(-1)!
+    expect(selection.options.options).toEqual([
+      { title: "All projects", value: "" },
+      { title: "main", value: "opaque-project-a", description: "/remote/a/main" },
+      { title: "main", value: "opaque-project-b", description: "/remote/b/main" },
+    ])
+    selection.resolve("opaque-project-b")
+    await pending
+    expect(harness.route()).toMatchObject({ data: { range: "30d", projectID: "opaque-project-b" } })
+  } finally { await harness.cleanup() }
+})
+
 test("a same-name route owned by another plugin is neither operated on nor closed on unload", async () => {
   const foreign: Route = { type: "plugin", id: "other", name: ROUTE, data: { range: "all", back: { type: "session", sessionID: "not-ours" } } }
   const harness = await createTuiHarness(foreign)

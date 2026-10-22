@@ -184,3 +184,18 @@ test("breakdowns are bounded, daily dates chronological, and totals remain compl
   expect(dashboard.daily[0]?.id).toBe("2026-07-07")
   expect(dashboard.daily.at(-1)?.id).toBe("2026-07-20")
 })
+
+test("project options distinguish matching names by path and retain project-wide worktree filtering", () => {
+  const ledger = open()
+  ledger.importBatch([
+    { ...record, messageID: "worktree", projectID: "project-a", directory: "/worktrees/feature/main" },
+    { ...record, messageID: "other-project", projectID: "project-b", directory: "/projects/b/main" },
+    { ...record, messageID: "main", projectID: "project-a", directory: "/projects/a/main" },
+  ])
+  const dashboard = ledger.dashboard({ range: "all", projectID: "project-a" })
+  expect(dashboard.projectOptions).toEqual([
+    { id: "project-a", label: "main", directory: "/projects/a/main" },
+    { id: "project-b", label: "main", directory: "/projects/b/main" },
+  ])
+  expect(dashboard.total).toMatchObject({ messages: 2, cost: 1 })
+})

@@ -127,7 +127,7 @@ export class CostLedger {
       const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
       addGroup(days, day, row.cost, count)
     }
-    const projectOptions = [...directories].map(([id, directory]) => ({ id, label: basename(directory) || directory }))
+    const projectOptions = [...directories].map(([id, directory]) => ({ id, label: basename(directory) || directory, directory }))
       .sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id))
     for (const option of projectOptions) {
       const group = projects.get(option.id)
