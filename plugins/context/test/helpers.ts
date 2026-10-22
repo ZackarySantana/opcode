@@ -5,23 +5,18 @@ export const user = (id: string, text = "hello"): SessionMessageInfo => ({ id, t
 export function mockHost() {
   const location = { directory: "/session" }
   const locations: LocationRef[] = []
-  const catalogReads: { catalog: string; operation: "sync" | "list"; location: LocationRef }[] = []
-  const sessionReads: { method: "get" | "context"; sessionID: string }[] = []
+  const syncs: string[] = []
   const history = [user("user-1")]
   const collection = <T>(catalog: string, items: T[] = []) => ({
-    sync: async (value: LocationRef) => { locations.push(value); catalogReads.push({ catalog, operation: "sync", location: value }) },
-    list: (value: LocationRef) => { catalogReads.push({ catalog, operation: "list", location: value }); return items },
+    sync: async (value: LocationRef) => { locations.push(value); syncs.push(catalog) },
+    list: (value: LocationRef) => { locations.push(value); return items },
   })
   const host = {
     location: { directory: "/plugin" },
     client: {
       session: {
-        get: async ({ sessionID }: { sessionID: string }, _options?: { signal?: AbortSignal }) => {
-          sessionReads.push({ method: "get", sessionID }); return { location, model: undefined }
-        },
-        context: async ({ sessionID }: { sessionID: string }, _options?: { signal?: AbortSignal }): Promise<SessionMessageInfo[]> => {
-          sessionReads.push({ method: "context", sessionID }); return history
-        },
+        get: async (_input: { sessionID: string }, _options?: { signal?: AbortSignal }) => ({ location, model: undefined }),
+        context: async (_input: { sessionID: string }, _options?: { signal?: AbortSignal }): Promise<SessionMessageInfo[]> => history,
       },
       message: { list: async (_input: { sessionID: string; cursor?: string; order?: "asc" | "desc"; limit?: number }, _options?: { signal?: AbortSignal }) => ({ data: history, cursor: {} as { next?: string } }) },
       config: { get: async ({ location }: { location: LocationRef }): Promise<ConfigEntry[]> => {
@@ -47,5 +42,5 @@ export function mockHost() {
       },
     },
   }
-  return { host, history, location, locations, catalogReads, sessionReads }
+  return { host, history, location, locations, syncs }
 }
