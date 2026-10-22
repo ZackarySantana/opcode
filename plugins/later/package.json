@@ -1,15 +1,39 @@
 {
   "name": "@lidtop/opencode-later",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Save, organize, and paste deferred OpenCode prompts",
   "type": "module",
   "license": "MIT",
   "author": "ZackarySantana",
-  "repository": { "type": "git", "url": "git+https://github.com/ZackarySantana/opcode.git", "directory": "plugins/later" },
-  "files": ["dist", "README.md", "LICENSE"],
-  "exports": { ".": "./src/index.ts", "./tui": "./src/tui.tsx" },
-  "engines": { "opencode": "^2.1.1" },
-  "publishConfig": { "access": "public" },
-  "dependencies": { "@opcode/core": "workspace:*", "@opcode/ui": "workspace:*", "@opencode/plugin": "catalog:", "@opencode/client": "catalog:" },
-  "peerDependencies": { "@opentui/core": "catalog:host", "@opentui/solid": "catalog:host", "solid-js": "catalog:host" }
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZackarySantana/opcode.git",
+    "directory": "plugins/later"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./tui": "./src/tui.tsx"
+  },
+  "engines": {
+    "opencode": "^2.1.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@opcode/core": "workspace:*",
+    "@opcode/ui": "workspace:*",
+    "@opencode/plugin": "catalog:",
+    "@opencode/client": "catalog:"
+  },
+  "peerDependencies": {
+    "@opentui/core": "catalog:host",
+    "@opentui/solid": "catalog:host",
+    "solid-js": "catalog:host"
+  }
 }
