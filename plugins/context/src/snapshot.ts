@@ -1,3 +1,4 @@
+import { usageMetrics } from "@opcode/core/usage"
 import type { ModelInfo, ModelRef, ProviderInfo, SessionMessageInfo } from "@opencode/client"
 
 export type EnvironmentItem = { category: "instruction" | "agent" | "skill" | "mcp" | "tool"; name: string; detail?: string }
@@ -36,11 +37,12 @@ export function buildSnapshot(input: SnapshotInput) {
   for (const message of assistants) {
     if (!message.tokens) continue
     usageReports++
-    usage.input += message.tokens.input
-    usage.cacheRead += message.tokens.cache.read
-    usage.cacheWrite += message.tokens.cache.write
-    usage.output += message.tokens.output
-    usage.reasoning += message.tokens.reasoning
+    const reported = usageMetrics(message)
+    usage.input += reported.input
+    usage.cacheRead += reported.cacheRead
+    usage.cacheWrite += reported.cacheWrite
+    usage.output += reported.output
+    usage.reasoning += reported.reasoning
   }
   const selected = input.model ?? assistants.at(-1)?.model
   const metadata = input.models?.find((model) => model.providerID === selected?.providerID && model.id === selected.id)

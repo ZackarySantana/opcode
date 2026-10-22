@@ -1,5 +1,6 @@
 import type { OpenCodeClient, SessionInfo } from "@opencode/client"
 import { isSessionNotFoundError } from "@opencode/client"
+import { paginate } from "@opcode/core/paginate"
 import { messageRecord, sessionRecord, type MessageRecord, type SearchInput } from "./domain"
 import type { acquireIndex } from "./index-store"
 import { validateBatch } from "./rpc"
@@ -70,19 +71,14 @@ export class SessionsService {
     return this.operation(signal, async (active) => {
       const before = await this.commit(active, () => this.lease.index.ids(directory))
       const seen = new Set<string>()
-      const cursors = new Set<string>()
-      let cursor: string | undefined
-      do {
-        const page = await this.source.session.list(cursor ? { cursor, limit: 100 } : { ...(directory ? { directory } : {}), limit: 100 }, { signal: active })
-        active.throwIfAborted()
-        for (const session of page.data) {
+      // After the first page, the cursor carries the directory filter.
+      const pages = paginate((cursor) => this.source.session.list(cursor ? { cursor, limit: 100 } : { ...(directory ? { directory } : {}), limit: 100 }, { signal: active }), active)
+      for await (const page of pages) {
+        for (const session of page) {
           seen.add(session.id)
           try { await this.indexOne(session.id, active) } catch (error) { if (!isMissing(error)) throw error }
         }
-        cursor = page.cursor.next ?? undefined
-        if (cursor && cursors.has(cursor)) throw new Error("Server repeated a session cursor.")
-        if (cursor) cursors.add(cursor)
-      } while (cursor)
+      }
       active.throwIfAborted()
       for (const id of before) if (!seen.has(id)) {
         // A missing directory-list entry can be a move, not a deletion. Confirm by ID.

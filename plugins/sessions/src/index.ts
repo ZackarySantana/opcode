@@ -1,27 +1,20 @@
 import { Plugin } from "@opencode/plugin"
 import type { OpenCodeEvent } from "@opencode/client"
 import { errorMessage } from "@opcode/core"
+import { consumeLive, sleep } from "@opcode/core/live"
 import { acquireIndex, databasePath } from "./index-store"
 import { SessionsRpc } from "./rpc"
 import { SessionsService } from "./service"
 import { isMissing } from "./service"
 import type { MessageRecord, SearchInput } from "./domain"
 
-export function delay(milliseconds: number, signal: AbortSignal) {
-  signal.throwIfAborted()
-  return new Promise<void>((resolve, reject) => {
-    const done = () => { signal.removeEventListener("abort", abort); resolve() }
-    const timer = setTimeout(done, milliseconds)
-    const abort = () => { clearTimeout(timer); signal.removeEventListener("abort", abort); reject(signal.reason) }
-    signal.addEventListener("abort", abort, { once: true })
-  })
-}
-
 const updates = new Set([
   "session.created", "session.renamed", "session.moved", "session.inbox.delivered", "session.text.ended",
   "session.step.ended", "session.step.failed", "session.usage.updated", "session.execution.succeeded",
   "session.execution.failed", "session.execution.interrupted",
 ])
+
+const liveWarnings = { stream: "reconnecting event stream", event: "event handling failed", reconnect: "reconnect reconciliation failed" }
 
 /** Consume promptly, coalesce bursts, retry the documented live-only stream after failure. */
 export async function watchSessions(
@@ -44,7 +37,7 @@ export async function watchSessions(
             if (attempt < 3) {
               attempts.set(id, attempt)
               pending.set(id, deleted || pending.get(id) === true)
-              try { await delay(retryMilliseconds, signal) } catch { break }
+              try { await sleep(retryMilliseconds, signal) } catch { break }
               continue
             }
           }
@@ -58,50 +51,21 @@ export async function watchSessions(
     pending.set(id, deleted || pending.get(id) === true)
     startDrain()
   }
-  let reconnect = false
   try {
-    while (!signal.aborted) {
-      const attempt = new AbortController()
-      const active = AbortSignal.any([signal, attempt.signal])
-      let iterator: AsyncIterator<OpenCodeEvent> | undefined
-      let reconciliation: Promise<unknown> | undefined
-      try {
-        iterator = subscribe(active)[Symbol.asyncIterator]()
-        // Calling next starts the lazy subscription. Reconcile without waiting for an event.
-        let next = iterator.next()
-        void next.catch(() => {})
-        if (reconnect) {
-          reconciliation = service.refresh(active, directory).catch((error) => {
-            if (!active.aborted) warn(`opcode-sessions: reconnect reconciliation failed: ${errorMessage(error)}`)
-          })
-        }
-        while (!signal.aborted) {
-          const item = await next
-          if (item.done) break
-          signal.throwIfAborted()
-          const event = item.value
-          next = iterator.next()
-          void next.catch(() => {})
-          if (!("sessionID" in event.data) || typeof event.data.sessionID !== "string") continue
-          if (event.type === "session.deleted") { enqueue(event.data.sessionID, true); continue }
-          if (!updates.has(event.type)) continue
-          // Moves must update the old directory even when no destination instance is loaded.
-          if (event.type !== "session.moved" && event.location?.directory && event.location.directory !== directory) continue
-          enqueue(event.data.sessionID, false)
-        }
-        if (!signal.aborted) throw new Error("Event stream ended")
-      } catch (error) {
-        if (signal.aborted) break
-        warn(`opcode-sessions: reconnecting event stream: ${errorMessage(error)}`)
-      } finally {
-        attempt.abort()
-        try { await iterator?.return?.() } catch { /* The attempt already reported its stream error. */ }
-        await reconciliation
-      }
-      reconnect = true
-      await delay(retryMilliseconds, signal)
-    }
-  } catch (error) { if (!signal.aborted) throw error } finally { await drain }
+    await consumeLive({
+      signal, subscribe, retryMilliseconds,
+      onReconnect: (active) => service.refresh(active, directory),
+      handle: (event) => {
+        if (!("sessionID" in event.data) || typeof event.data.sessionID !== "string") return
+        if (event.type === "session.deleted") return enqueue(event.data.sessionID, true)
+        if (!updates.has(event.type)) return
+        // Moves must update the old directory even when no destination instance is loaded.
+        if (event.type !== "session.moved" && event.location?.directory && event.location.directory !== directory) return
+        enqueue(event.data.sessionID, false)
+      },
+      warn: (error, source) => warn(`opcode-sessions: ${liveWarnings[source]}: ${errorMessage(error)}`),
+    })
+  } finally { await drain }
 }
 
 export default Plugin.define({
@@ -125,7 +89,7 @@ export default Plugin.define({
         try { await service.refresh(controller.signal, context.location.directory); return } catch (error) {
           if (controller.signal.aborted) return
           console.warn(`opcode-sessions: initial indexing failed; retrying: ${errorMessage(error)}`)
-          await delay(5_000, controller.signal)
+          await sleep(5_000, controller.signal)
         }
       }
     })().catch((error) => { if (!controller.signal.aborted) console.warn(`opcode-sessions: initial indexing stopped: ${errorMessage(error)}`) })

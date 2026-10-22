@@ -2,7 +2,8 @@ import { expect, test } from "bun:test"
 import type { Plugin } from "@opencode/plugin"
 import type { Context, Destination, Route } from "@opencode/plugin/tui/context"
 import { createRoot, createSignal } from "solid-js"
-import server, { delay } from "../src/index"
+import { sleep } from "@opcode/core/live"
+import server from "../src/index"
 import tui from "../src/tui"
 import { BROWSER_ROUTE } from "../src/view"
 import { session, user } from "./fixtures"
@@ -20,7 +21,7 @@ test("server unload aborts initial indexing and stream, unregistering RPC before
       return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => { aborted = true; reject(options.signal.reason) }, { once: true }))
     } },
     event: { subscribe: async function* ({ signal }: { signal: AbortSignal }) {
-      try { await delay(60_000, signal) } finally { streamAborted = signal.aborted }
+      try { await sleep(60_000, signal) } finally { streamAborted = signal.aborted }
     } },
   } as unknown as Plugin.Context
   const cleanup = await server.setup(context)

@@ -1,3 +1,4 @@
+import { paginate } from "@opcode/core/paginate"
 import type { ConfigEntry, SessionMessageInfo } from "@opencode/client"
 import type { Context } from "@opencode/plugin/tui/context"
 import { ContextRpc, type ToolSummary } from "./rpc"
@@ -22,16 +23,8 @@ export async function loadSnapshot(host: Host, sessionID?: string, signal?: Abor
   const [messages, retainedMessages, documents, tools] = await Promise.all([
     optional(async () => {
       const all: SessionMessageInfo[] = []
-      let cursor: string | undefined
-      const seen = new Set<string>()
-      do {
-        signal?.throwIfAborted()
-        const page = await host.client.message.list({ sessionID, limit: 100, ...(cursor ? { cursor } : { order: "asc" }) }, { signal })
-        all.push(...page.data)
-        cursor = page.cursor.next ?? undefined
-        if (cursor && seen.has(cursor)) throw new Error("Repeated history cursor")
-        if (cursor) seen.add(cursor)
-      } while (cursor)
+      const pages = paginate((cursor) => host.client.message.list({ sessionID, limit: 100, ...(cursor ? { cursor } : { order: "asc" }) }, { signal }), signal)
+      for await (const page of pages) all.push(...page)
       return all
     }, () => {
       const cached = host.data.session.message.list(sessionID)

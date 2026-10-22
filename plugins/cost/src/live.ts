@@ -1,6 +1,5 @@
 import type { OpenCodeEvent, SessionMessageAssistant } from "@opencode/client"
 import type { Plugin } from "@opencode/plugin"
-import { setTimeout as delay } from "node:timers/promises"
 import { isUsageMessage, usageFromMessage } from "./messages.js"
 import type { CostLedger } from "./ledger.js"
 
@@ -53,31 +52,5 @@ export function createLiveCollector(host: Host, ledger: CostLedger) {
         started.delete(assistantMessageID)
       }
     },
-  }
-}
-
-/** Public subscriptions are live-only. Reconnect, but never pretend this replays missed usage. */
-export async function consumeEvents(options: {
-  subscribe: (signal: AbortSignal) => AsyncIterable<OpenCodeEvent>
-  handle: (event: OpenCodeEvent, signal: AbortSignal) => Promise<void>
-  signal: AbortSignal
-  warn: (error: unknown) => void
-  wait?: (signal: AbortSignal) => Promise<void>
-}) {
-  const { signal } = options
-  while (!signal.aborted) {
-    try {
-      for await (const event of options.subscribe(signal)) {
-        if (signal.aborted) break
-        try { await options.handle(event, signal) }
-        catch (error) { if (!signal.aborted) options.warn(error) }
-      }
-    } catch (error) {
-      if (!signal.aborted) options.warn(error)
-    }
-    if (!signal.aborted) {
-      try { await (options.wait ?? ((signal) => delay(1_000, undefined, { signal })))(signal) }
-      catch (error) { if (!signal.aborted) throw error }
-    }
   }
 }

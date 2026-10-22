@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import type { OpenCodeEvent } from "@opencode/client"
 import { CostLedger } from "../src/ledger.js"
-import { consumeEvents, createLiveCollector } from "../src/live.js"
+import { createLiveCollector } from "../src/live.js"
 import { context, event, location, message, record, session, tokens } from "./fixtures.js"
 
 const started = { sessionID: session.id, assistantMessageID: message.id, agent: "build", model: message.model, started: message.time.created }
@@ -80,29 +80,4 @@ test("cancelled session reads cannot write to the ledger", async () => {
     await expect(collector.handle(event("session.step.ended", ended), controller.signal)).rejects.toThrow()
     expect(ledger.dashboard({ range: "all" }).total.messages).toBe(0)
   } finally { ledger.close() }
-})
-
-test("subscriptions reconnect on errors and finite streams, isolate handler failures, and stop on abort", async () => {
-  const controller = new AbortController()
-  const warnings: unknown[] = []
-  let subscriptions = 0
-  let waits = 0
-  let handled = 0
-  await consumeEvents({
-    signal: controller.signal,
-    subscribe: (signal) => {
-      expect(signal).toBe(controller.signal)
-      const attempt = ++subscriptions
-      return (async function* (): AsyncIterable<OpenCodeEvent> {
-        if (attempt === 1) throw new Error("disconnected")
-        yield event("session.step.ended", ended)
-      })()
-    },
-    handle: async () => { if (++handled === 1) throw new Error("one bad event") },
-    warn: (error) => warnings.push(error),
-    wait: async () => { if (++waits === 3) controller.abort() },
-  })
-  expect(subscriptions).toBe(3)
-  expect(handled).toBe(2)
-  expect(warnings).toHaveLength(2)
 })

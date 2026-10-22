@@ -1,8 +1,9 @@
 import { createSerialQueue, errorMessage } from "@opcode/core"
+import { consumeLive } from "@opcode/core/live"
 import { Plugin } from "@opencode/plugin"
 import { parseFilter, parseImportBatch } from "./domain.js"
 import { CostLedger, databasePath } from "./ledger.js"
-import { consumeEvents, createLiveCollector } from "./live.js"
+import { createLiveCollector } from "./live.js"
 import { CostRpc } from "./rpc.js"
 
 export default Plugin.define({
@@ -44,7 +45,8 @@ export default Plugin.define({
       ledger.close()
       throw error
     }
-    const events = consumeEvents({
+    // Public subscriptions are live-only. Reconnect, but never pretend this replays missed usage.
+    const events = consumeLive({
       signal: controller.signal,
       subscribe: (signal) => {
         live.clear()
@@ -55,8 +57,7 @@ export default Plugin.define({
     })
     return async () => {
       controller.abort()
-      await events
-      await queue(async () => { live.clear(); ledger.close() })
+      try { await events } finally { await queue(async () => { live.clear(); ledger.close() }) }
     }
   },
 })

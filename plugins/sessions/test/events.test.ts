@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import type { OpenCodeEvent } from "@opencode/client"
-import { delay, watchSessions } from "../src/index"
+import { sleep } from "@opcode/core/live"
+import { watchSessions } from "../src/index"
 
 const event = (type: string, sessionID = "s1", directory = "/work/alpha") => ({ type, data: { sessionID }, location: { directory } }) as OpenCodeEvent
 
@@ -14,7 +15,7 @@ test("event loop retries failed subscriptions, reconciles, and indexes moves/del
     yield event("session.renamed", "foreign", "/other")
     yield event("session.moved", "moved", "/other")
     yield event("session.deleted", "deleted", "/other")
-    await delay(60_000, signal)
+    await sleep(60_000, signal)
   }
   const task = watchSessions(source, {
     refresh: async () => { operations.push("refresh"); return { sessions: 0 } },
@@ -47,13 +48,13 @@ test("restarting an idle open stream reconciles immediately without waiting for 
   const task = watchSessions(async function* (signal) {
     if (++subscriptions === 1) throw new Error("disconnected")
     secondStarted = true
-    await delay(60_000, signal)
+    await sleep(60_000, signal)
   }, {
     refresh: async () => { expect(secondStarted).toBe(true); reconciled.resolve(); return { sessions: 0 } },
     syncSession: async () => {}, remove: async () => {},
   }, "/work", controller.signal, () => {}, 1)
   try {
-    await Promise.race([reconciled.promise, delay(500, controller.signal).then(() => { throw new Error("Idle stream never reconciled") })])
+    await Promise.race([reconciled.promise, sleep(500, controller.signal).then(() => { throw new Error("Idle stream never reconciled") })])
     expect(subscriptions).toBe(2)
   } finally { controller.abort(); await task }
 })
@@ -64,7 +65,7 @@ test("a transient event indexing failure is retried without blocking stream cons
   const warnings: string[] = []
   const task = watchSessions(async function* (signal) {
     yield event("session.renamed")
-    await delay(60_000, signal)
+    await sleep(60_000, signal)
   }, {
     refresh: async () => ({ sessions: 0 }), remove: async () => {},
     syncSession: async () => { if (++calls === 1) throw new Error("temporary"); controller.abort() },

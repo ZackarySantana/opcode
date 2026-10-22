@@ -1,3 +1,4 @@
+import { usageMetrics } from "@opcode/core/usage"
 import type { SessionInfo, SessionMessageInfo } from "@opencode/client"
 
 export interface SessionRecord {
@@ -51,8 +52,6 @@ export function sessionRecord(session: SessionInfo): SessionRecord {
   }
 }
 
-const usage = (value: number | undefined) => value !== undefined && Number.isFinite(value) && value >= 0 ? value : 0
-
 export function messageRecord(message: SessionMessageInfo): MessageRecord | undefined {
   if (message.type !== "user" && message.type !== "assistant") return
   const assistant = message.type === "assistant" ? message : undefined
@@ -60,8 +59,7 @@ export function messageRecord(message: SessionMessageInfo): MessageRecord | unde
     id: message.id, role: message.type, createdAt: message.time.created,
     text: message.type === "user" ? message.text.trim() : message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n").trim(),
     ...(assistant ? { providerID: assistant.model.providerID, modelID: assistant.model.id } : {}),
-    cost: usage(assistant?.cost), input: usage(assistant?.tokens?.input), output: usage(assistant?.tokens?.output),
-    reasoning: usage(assistant?.tokens?.reasoning), cacheRead: usage(assistant?.tokens?.cache.read), cacheWrite: usage(assistant?.tokens?.cache.write),
+    ...usageMetrics(assistant),
   }
 }
 

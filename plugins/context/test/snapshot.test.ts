@@ -32,6 +32,13 @@ test("history telemetry, retained estimates, and selected model remain separate"
   expect(snapshot.model?.modelName).toBe("Selected model")
 })
 
+test("invalid provider usage values do not corrupt recorded totals", () => {
+  const invalid = { ...assistant, id: "invalid", tokens: { input: NaN, output: -10, reasoning: Infinity, cache: { read: -1, write: 2 } } }
+  const snapshot = buildSnapshot({ sessionID: "s", messages: [assistant, invalid] })
+  expect(snapshot.usage).toEqual({ input: 100, cacheRead: 300, cacheWrite: 42, output: 20, reasoning: 5 })
+  expect(snapshot.usageReports).toBe(2)
+})
+
 test("unknown retained context is distinct from an explicitly empty retained context", () => {
   const input = { messages: [assistant] }
   expect(buildSnapshot(input).retained).toBeUndefined()
