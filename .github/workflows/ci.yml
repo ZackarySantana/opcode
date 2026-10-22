@@ -23,6 +23,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          version: 2026.10.11
+          sha256: f9612efcddda0ae55b62d3b6f82a6c860d5b54ebee0807d4f1a1d578055e1607
       - run: mise exec -- bun install --frozen-lockfile --ignore-scripts
       - run: mise exec -- bun run check
       - name: Require explicit affected-plugin changesets
