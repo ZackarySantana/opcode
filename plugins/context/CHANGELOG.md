@@ -1,5 +1,11 @@
 # @lidtop/opencode-context
 
+## 0.3.0
+
+### Minor Changes
+
+- 88b9cd1: Switch tabs with Tab/Shift+Tab instead of h/l and left/right, matching the other Opcode dialogs.
+
 ## 0.2.2
 
 ### Patch Changes
