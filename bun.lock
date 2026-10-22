@@ -61,6 +61,20 @@
         "solid-js": "catalog:host",
       },
     },
+    "plugins/feed": {
+      "name": "@lidtop/opencode-feed",
+      "version": "0.0.0",
+      "dependencies": {
+        "@opcode/core": "workspace:*",
+        "@opcode/ui": "workspace:*",
+        "@opencode/plugin": "catalog:",
+      },
+      "peerDependencies": {
+        "@opentui/core": "catalog:host",
+        "@opentui/solid": "catalog:host",
+        "solid-js": "catalog:host",
+      },
+    },
     "plugins/later": {
       "name": "@lidtop/opencode-later",
       "version": "0.2.1",
@@ -283,6 +297,8 @@
     "@lidtop/opencode-context": ["@lidtop/opencode-context@workspace:plugins/context"],
 
     "@lidtop/opencode-cost": ["@lidtop/opencode-cost@workspace:plugins/cost"],
+
+    "@lidtop/opencode-feed": ["@lidtop/opencode-feed@workspace:plugins/feed"],
 
     "@lidtop/opencode-later": ["@lidtop/opencode-later@workspace:plugins/later"],
 

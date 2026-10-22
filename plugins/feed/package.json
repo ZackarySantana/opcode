@@ -1,0 +1,38 @@
+{
+  "name": "@lidtop/opencode-feed",
+  "version": "0.0.0",
+  "description": "Follow RSS and Atom feeds in the OpenCode sidebar",
+  "type": "module",
+  "license": "MIT",
+  "author": "ZackarySantana",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZackarySantana/opcode.git",
+    "directory": "plugins/feed"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./tui": "./src/tui.tsx"
+  },
+  "engines": {
+    "opencode": "^2.1.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@opcode/core": "workspace:*",
+    "@opcode/ui": "workspace:*",
+    "@opencode/plugin": "catalog:"
+  },
+  "peerDependencies": {
+    "@opentui/core": "catalog:host",
+    "@opentui/solid": "catalog:host",
+    "solid-js": "catalog:host"
+  }
+}

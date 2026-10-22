@@ -1,17 +1,20 @@
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
-import { pluginIDs, publicPackageName, repositoryRoot } from "./packaging"
+import { pluginIDs, previewPluginIDs, publicPackageName, repositoryRoot, type BuildableID } from "./packaging"
 
-type PluginID = typeof pluginIDs[number]
+type PluginID = BuildableID
+const previewable: readonly PluginID[] = [...pluginIDs, ...previewPluginIDs]
+// Client-local plugins load through the CLI config so their options reach the terminal process.
+const clientLocal: readonly PluginID[] = ["later", "feed"]
 type Environment = Record<string, string | undefined>
 const originals = ["opencode-context-tui", "opencode-cost", "opencode-later", "opencode-sessions-all"]
 
 export function selectPlugins(arguments_: string[]): PluginID[] {
-  if (!arguments_.length) return [...pluginIDs]
+  if (!arguments_.length) return [...previewable]
   return [...new Set(arguments_.map((argument) => {
-    const id = pluginIDs.find((id) => argument === id || argument === `opcode-${id}` || argument === publicPackageName(id))
-    if (!id) throw new Error(`Unknown plugin '${argument}'. Choose: ${pluginIDs.join(", ")}`)
+    const id = previewable.find((id) => argument === id || argument === `opcode-${id}` || argument === publicPackageName(id))
+    if (!id) throw new Error(`Unknown plugin '${argument}'. Choose: ${previewable.join(", ")}`)
     return id
   }))]
 }
@@ -45,18 +48,19 @@ export async function prepareDev(root: string, selected: PluginID[], environment
     for (const entry of ["index", "tui"]) {
       await Bun.write(join(wrapper, `${entry}.js`), `export { default } from ${JSON.stringify(pathToFileURL(join(source, `${entry}.js`)).href)}\n`)
     }
-    entries.push({ package: wrapper, options: { database: join(data, `${id}.sqlite`) } })
+    entries.push({ id, entry: { package: wrapper, options: { database: join(data, `${id}.sqlite`) } } })
   }
-  const disabled = [...originals, ...pluginIDs.map((id) => `opcode-${id}`)].map((id) => `-${id}`)
-  const later = entries.find((entry) => entry.package === join(directory, "plugins/later"))
+  const disabled = [...originals, ...previewable.map((id) => `opcode-${id}`)].map((id) => `-${id}`)
+  const local = entries.filter(({ id }) => clientLocal.includes(id)).map(({ entry }) => entry)
+  const shared = entries.filter(({ id }) => !clientLocal.includes(id)).map(({ entry }) => entry)
   return {
     data,
     environment: {
       ...environment,
-      OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...settings, plugins: [...(settings.plugins as unknown[] ?? []), ...disabled, ...entries.filter((entry) => entry !== later)] }),
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...settings, plugins: [...(settings.plugins as unknown[] ?? []), ...disabled, ...shared] }),
       // Use the server-provided extensions, excluding old CLI-only copies too.
       // Theme, keybinds, and other CLI settings remain inherited.
-      OPENCODE_CLI_CONFIG_CONTENT: JSON.stringify({ ...cli, plugins: ["*", ...originals.map((id) => `-${id}`), ...(later ? [later] : [])] }),
+      OPENCODE_CLI_CONFIG_CONTENT: JSON.stringify({ ...cli, plugins: ["*", ...originals.map((id) => `-${id}`), ...local] }),
     },
   }
 }
@@ -88,7 +92,7 @@ async function attached(command: string[], cwd: string, environment: Environment
 
 export async function dev(arguments_: string[], root = repositoryRoot, environment: Environment = process.env) {
   if (arguments_.includes("--help")) {
-    console.log("Usage: mise run dev [context|cost|later|sessions …]\nDefaults to all four plugins. Plugin preview data persists under .release/dev/data.")
+    console.log(`Usage: mise run dev [${previewable.join("|")} …]\nDefaults to every plugin, including unreleased previews. Plugin preview data persists under .release/dev/data.`)
     return 0
   }
   const selected = selectPlugins(arguments_)
@@ -100,7 +104,7 @@ export async function dev(arguments_: string[], root = repositoryRoot, environme
   const { buildPlugin } = await import("./build")
   for (const id of selected) await buildPlugin(root, id)
   const preview = await prepareDev(root, selected, environment)
-  console.log(`\nOpcode preview: ${selected.join(", ")}\nPlugin databases: ${preview.data}\nUsing your normal OpenCode login/session database; global config files are unchanged.\nTry /context, /cost, /later, or /opcode-sessions. Exit OpenCode normally when done.\n`)
+  console.log(`\nOpcode preview: ${selected.join(", ")}\nPlugin databases: ${preview.data}\nUsing your normal OpenCode login/session database; global config files are unchanged.\nTry /context, /cost, /later, /feed, or /opcode-sessions. Exit OpenCode normally when done.\n`)
   return attached([executable, "--standalone"], root, preview.environment)
 }
 

@@ -3,7 +3,10 @@ import { readFile } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 
 export const pluginIDs = ["context", "cost", "later", "sessions"] as const
-export function publicPackageName(id: typeof pluginIDs[number]) {
+/** Buildable and previewable with `mise run dev`, but never released until promoted into pluginIDs. */
+export const previewPluginIDs = ["feed"] as const
+export type BuildableID = typeof pluginIDs[number] | typeof previewPluginIDs[number]
+export function publicPackageName(id: BuildableID) {
   return `@lidtop/opencode-${id}`
 }
 
@@ -25,7 +28,7 @@ export async function manifestAt(directory: string): Promise<Manifest> {
 }
 
 /** A workspace plugin manifest, rejected unless it is the expected public package. */
-export async function publicManifest(root: string, id: typeof pluginIDs[number]): Promise<Manifest> {
+export async function publicManifest(root: string, id: BuildableID): Promise<Manifest> {
   const directory = join(root, "plugins", id)
   const manifest = await manifestAt(directory)
   if (manifest.name !== publicPackageName(id) || manifest.private) throw new Error(`Expected public package ${publicPackageName(id)} in ${directory}`)
