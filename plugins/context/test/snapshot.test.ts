@@ -28,8 +28,17 @@ test("history telemetry, retained estimates, and selected model remain separate"
   expect(snapshot.retained?.estimatedTokens).toBe(32)
   expect(snapshot.retained?.contributors.map((item) => item.category)).toEqual(["tool", "reasoning", "system"])
   expect(snapshot.utilization).toBe(0.032)
-  expect(snapshot.cacheEfficiency).toBe(0.75)
+  expect(snapshot.cacheEfficiency).toBe(300 / 440)
   expect(snapshot.model?.modelName).toBe("Selected model")
+})
+
+test("cache efficiency counts cache writes as recorded input", () => {
+  const efficiency = (read: number, write: number) =>
+    buildSnapshot({ messages: [{ ...assistant, tokens: { input: 100, output: 0, reasoning: 0, cache: { read, write } } }] }).cacheEfficiency
+  expect(efficiency(300, 0)).toBe(0.75)
+  expect(efficiency(300, 100)).toBe(0.6)
+  expect(efficiency(0, 0)).toBe(0)
+  expect(buildSnapshot({ messages: [] }).cacheEfficiency).toBeUndefined()
 })
 
 test("invalid provider usage values do not corrupt recorded totals", () => {
