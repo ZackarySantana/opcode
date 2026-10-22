@@ -1,5 +1,11 @@
 # @lidtop/opencode-context
 
+## 0.2.1
+
+### Patch Changes
+
+- e2b016b: Let history pagination cursors carry the sort order after the first page. Prevent OpenCode from rejecting subsequent pages and incorrectly showing a degraded cached-history warning.
+
 ## 0.2.0
 
 ### Minor Changes

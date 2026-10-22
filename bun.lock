@@ -33,7 +33,7 @@
     },
     "plugins/context": {
       "name": "@lidtop/opencode-context",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/ui": "workspace:*",
@@ -48,7 +48,7 @@
     },
     "plugins/cost": {
       "name": "@lidtop/opencode-cost",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/ui": "workspace:*",
