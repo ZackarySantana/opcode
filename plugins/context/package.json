@@ -1,15 +1,40 @@
 {
   "name": "@lidtop/opencode-context",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Inspect OpenCode session context usage",
   "type": "module",
   "license": "MIT",
   "author": "ZackarySantana",
-  "repository": { "type": "git", "url": "git+https://github.com/ZackarySantana/opcode.git", "directory": "plugins/context" },
-  "files": ["dist", "README.md", "LICENSE"],
-  "exports": { ".": "./src/index.ts", "./tui": "./src/tui.tsx", "./rpc": "./src/rpc.ts" },
-  "engines": { "opencode": "^2.1.1" },
-  "publishConfig": { "access": "public" },
-  "dependencies": { "@opcode/core": "workspace:*", "@opcode/ui": "workspace:*", "@opencode/plugin": "catalog:", "@opencode/client": "catalog:" },
-  "peerDependencies": { "@opentui/core": "catalog:host", "@opentui/solid": "catalog:host", "solid-js": "catalog:host" }
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZackarySantana/opcode.git",
+    "directory": "plugins/context"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./tui": "./src/tui.tsx",
+    "./rpc": "./src/rpc.ts"
+  },
+  "engines": {
+    "opencode": "^2.1.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@opcode/core": "workspace:*",
+    "@opcode/ui": "workspace:*",
+    "@opencode/plugin": "catalog:",
+    "@opencode/client": "catalog:"
+  },
+  "peerDependencies": {
+    "@opentui/core": "catalog:host",
+    "@opentui/solid": "catalog:host",
+    "solid-js": "catalog:host"
+  }
 }
