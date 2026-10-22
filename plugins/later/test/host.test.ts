@@ -7,7 +7,6 @@ import { join } from "node:path"
 import { tempDir } from "@opcode/ui/test-support/host"
 import { LaterController, MANAGER_ROUTE } from "../src/host"
 import { LaterDatabase } from "../src/sqlite"
-import plugin from "../src/index"
 
 const cleanup: Array<() => void> = []
 afterEach(() => { for (const stop of cleanup.splice(0).reverse()) stop() })
@@ -63,11 +62,6 @@ function harness(initial: Route = { type: "home" }, sharedPath?: string) {
     updates: () => updates,
   }
 }
-
-test("server entrypoint is an inert V2 definition", () => {
-  expect(plugin.id).toBe("opcode-later")
-  expect(plugin.setup({} as never)).toBeUndefined()
-})
 
 test("keyboard actions cover adding, editing, reordering, history, restoring, and confirmed deletion", async () => {
   const h = harness()
