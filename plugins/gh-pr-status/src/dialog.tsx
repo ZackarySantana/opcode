@@ -4,39 +4,37 @@ import { ItemList, Picker, SettingsTab, TabbedDialog, useTab, type SettingRow, t
 import { age } from "@opcode/tabs/format"
 import { openLink } from "@opcode/tabs/open"
 import { usePalette, type KeyHint } from "@opcode/ui"
-import { useDialogCommands } from "@opcode/ui/screen"
 import { usePlugin } from "@opencode/plugin/tui"
-import { createMemo, createSignal, Show, type Accessor } from "solid-js"
+import { createMemo, createSignal, Show } from "solid-js"
 import type { PullRequestsController } from "./host"
-import { matches, onTeam, refreshChoices, sidebarItemChoices, teamChoices, view, type Entry, type Search, type Settings, type View } from "./model"
+import { matches, onTeam, refreshChoices, sidebarItemChoices, teamChoices, view, type Entry, type Search, type Settings } from "./model"
 import { card } from "./style"
 
 export const PREFIX = "opcode-gh-pr-status"
 export const TITLE = "Pull requests"
 
+export const hiddenLine = (hidden: number, noun: string) => `${hidden} ${noun}${hidden === 1 ? "" : "s"} hidden`
+
 export function PullRequestsDialog(props: { prs: PullRequestsController }) {
-  const current = createMemo(() => { const snapshot = props.prs.snapshot(); return snapshot && view(snapshot) })
-  const entries = (pick: (view: View) => readonly Entry[]) => current() ? pick(current()!) : []
+  const current = createMemo(() => view(props.prs.snapshot()))
   return (
     <TabbedDialog prefix={PREFIX} refreshing={props.prs.refreshing()} refresh={() => props.prs.refresh()} tabs={[
-      { id: "mine", label: "Mine", placeholder: "search your pull requests", render: () => {
-        const mine = () => entries((view) => view.mine)
-        return <PullList prs={props.prs} search={props.prs.snapshot()?.mine} groups={[
-          { title: "NEEDS YOU", entries: mine().filter((entry) => entry.pending) },
-          { title: "WAITING", entries: mine().filter((entry) => !entry.pending && !entry.pr.draft) },
-          { title: "DRAFTS", entries: mine().filter((entry) => !entry.pending && entry.pr.draft) },
+      { label: "Mine", placeholder: "search your pull requests", render: () => (
+        <PullList prs={props.prs} searches={[props.prs.snapshot()?.mine]} groups={[
+          { title: "NEEDS YOU", entries: current().mine.filter((entry) => entry.pending) },
+          { title: "WAITING", entries: current().mine.filter((entry) => !entry.pending && !entry.pr.draft) },
+          { title: "DRAFTS", entries: current().mine.filter((entry) => entry.pr.draft) },
         ]} />
-      } },
-      { id: "reviewing", label: "Reviewing", placeholder: "search pull requests you review", render: () => {
-        const reviewing = () => entries((view) => view.reviewing)
-        return <PullList prs={props.prs} search={props.prs.snapshot()?.requested} groups={[
-          { title: "AWAITING YOUR REVIEW", entries: reviewing().filter((entry) => entry.pending) },
-          { title: "REVIEWED BY YOU", entries: reviewing().filter((entry) => !entry.pending) },
+      ) },
+      { label: "Reviewing", placeholder: "search pull requests you review", render: () => (
+        <PullList prs={props.prs} searches={[props.prs.snapshot()?.requested, props.prs.snapshot()?.reviewed]} groups={[
+          { title: "AWAITING YOUR REVIEW", entries: current().reviewing.filter((entry) => entry.pending) },
+          { title: "REVIEWED BY YOU", entries: current().reviewing.filter((entry) => !entry.pending) },
         ]} />
-      } },
-      { id: "teams", label: "Teams", placeholder: "search your teams' review requests", render: () => <Teams prs={props.prs} entries={() => entries((view) => view.teams)} /> },
-      { id: "settings", label: "Settings", placeholder: "search settings",
-        render: () => <SettingsTab rows={settingRows} settings={props.prs.settings()} update={(change) => props.prs.updateSettings(change)} /> },
+      ) },
+      { label: "Teams", placeholder: "search your teams' review requests", render: () => <Teams prs={props.prs} entries={current().teams} /> },
+      { label: "Settings", placeholder: "search settings",
+        render: () => <SettingsTab rows={settingRows(props.prs.settings().team)} settings={props.prs.settings()} update={(change) => props.prs.updateSettings(change)} /> },
     ]} />
   )
 }
@@ -45,14 +43,16 @@ export function PullRequestsDialog(props: { prs: PullRequestsController }) {
 function PullList(props: {
   prs: PullRequestsController
   groups: readonly { title: string; entries: readonly Entry[] }[]
-  /** The search the tab draws on, for what it withheld. */
-  search?: Search
+  /** The searches the tab draws on, for what they withheld. */
+  searches: readonly (Search | undefined)[]
   hints?: readonly KeyHint[]
   handlers?: Partial<TabHandlers>
 }) {
   const api = usePlugin()
   const tab = useTab()
   const palette = usePalette()
+  const hidden = () => props.searches.reduce((sum, search) => sum + (search?.hidden ?? 0), 0)
+  const reason = () => props.searches.find((search) => search?.reason)?.reason
   const empty = () => tab.query() ? "No matching pull requests." : props.prs.snapshot() ? "Nothing here." : props.prs.error() ? "Couldn't load pull requests." : "Loading…"
   return (
     <ItemList handlers={props.handlers} empty={empty()}
@@ -71,54 +71,49 @@ function PullList(props: {
       ]}
       header={<>
         <Show when={props.prs.error()}>{(error) => <text minWidth={0} wrapMode="word" fg={palette.error}>! {error()}</text>}</Show>
-        <Show when={props.search?.hidden}>
-          <text minWidth={0} wrapMode="word" fg={palette.warning}>! {props.search!.hidden} hidden by GitHub{props.search!.reason ? `: ${props.search!.reason}` : ""}</text>
+        <Show when={hidden()}>
+          <text minWidth={0} wrapMode="word" fg={palette.warning}>! {hiddenLine(hidden(), "pull request")}{reason() ? `: ${reason()}` : ""}</text>
         </Show>
       </>} />
   )
 }
 
 /** Review requests for your teams; f filters to one team, and the filter is saved. */
-function Teams(props: { prs: PullRequestsController; entries: Accessor<readonly Entry[]> }) {
-  const api = usePlugin()
+function Teams(props: { prs: PullRequestsController; entries: readonly Entry[] }) {
   const tab = useTab()
   const [picking, setPicking] = createSignal(false)
   const team = () => props.prs.settings().team
   const options = createMemo(() => {
     const snapshot = props.prs.snapshot()
-    return snapshot ? teamChoices(snapshot, props.entries(), team()).map((name) => {
-      const count = onTeam(props.entries(), name).length
-      return { key: name, label: name, detail: count ? `${count} awaiting review` : "" }
+    return snapshot ? teamChoices(snapshot, props.entries, team()).map((name) => {
+      const count = onTeam(props.entries, name).length
+      return { key: name, label: name, detail: count ? `${count} awaiting review` : "none waiting" }
     }) : []
   })
-  useDialogCommands(api, () => [{
-    id: `${PREFIX}.pick`, bind: "f", enabled: () => !tab.typing() && !picking(),
-    run: () => { tab.reset(); setPicking(true) },
-  }])
   return (
     <Show when={!picking()} fallback={
       <Picker options={options()} all="All your teams" noun="teams" action="filter" initial={team()}
         pick={(team) => { props.prs.updateSettings({ team }); setPicking(false) }} close={() => setPicking(false)} />
     }>
-      <PullList prs={props.prs} search={props.prs.snapshot()?.requested} handlers={{ prefix: team }}
-        groups={[{ title: team() ? `AWAITING ${team()!.toUpperCase()}` : "AWAITING YOUR TEAMS", entries: onTeam(props.entries(), team()) }]}
-        hints={[{ key: "f", label: team() ? "change team" : "team", command: `${PREFIX}.pick` }]} />
+      <PullList prs={props.prs} searches={[props.prs.snapshot()?.requested]} handlers={{ prefix: team, pick: () => setPicking(true) }}
+        groups={[{ title: "AWAITING REVIEW", entries: onTeam(props.entries, team()) }]}
+        hints={[{ key: "f", label: "change team", command: tab.command("pick") }]} />
     </Show>
   )
 }
 
 const yesNo = [{ value: false, label: "No" }, { value: true, label: "Yes" }]
 
-const settingRows = [
+const settingRows = (team: string | undefined) => [
   {
     id: "teams", label: "Sidebar team reviews",
-    description: "Whether review requests for your teams appear in the sidebar, narrowed to the team chosen on the Teams tab. Requests for you always do.",
+    description: `Whether review requests for your teams appear in the sidebar, narrowed to the Teams tab's filter (${team ?? "all your teams"}). Requests for you always do.`,
     choices: yesNo,
     current: (settings) => settings.sidebarTeams,
     update: (sidebarTeams) => ({ sidebarTeams }),
   } satisfies SettingRow<Settings, boolean>,
   {
-    id: "mine", label: "Sidebar your PRs",
+    id: "mine", label: "Sidebar own PRs",
     description: "Whether your pull requests that need you appear in the sidebar: conflicts, failing checks, changes requested, or approved and ready to merge.",
     choices: yesNo,
     current: (settings) => settings.sidebarMine,
@@ -133,7 +128,7 @@ const settingRows = [
   } satisfies SettingRow<Settings, number>,
   {
     id: "refresh", label: "Refresh every",
-    description: "How often gh is asked for your pull requests again; r refreshes now.",
+    description: "How often to refresh from GitHub; r refreshes now.",
     choices: refreshChoices.map((minutes) => ({ value: minutes, label: age(0, minutes * 60_000) })),
     current: (settings) => settings.refreshMinutes,
     update: (refreshMinutes) => ({ refreshMinutes }),

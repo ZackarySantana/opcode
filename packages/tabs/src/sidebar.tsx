@@ -20,7 +20,7 @@ export function useClick(run: () => void) {
   }
 }
 
-/** An item in two lines: its mark, head, detail, and age, then its title. A click opens it. */
+/** An item in two lines: its mark, head, detail, and age, then its title, underlined on hover when it has a link. A click opens it. */
 export function SidebarItem(props: { item: Item; open(): void }) {
   const palette = usePalette()
   const click = useClick(() => props.open())
@@ -34,7 +34,7 @@ export function SidebarItem(props: { item: Item; open(): void }) {
         <text wrapMode="none" flexShrink={0} fg={palette.muted}>{props.item.time}</text>
       </box>
       <box minWidth={0} paddingLeft={2}>
-        <text minWidth={0} wrapMode="word" fg={props.item.mark.title}>{click.hovered() ? <u>{props.item.title}</u> : props.item.title}</text>
+        <text minWidth={0} wrapMode="word" fg={props.item.mark.title}>{click.hovered() && props.item.link ? <u>{props.item.title}</u> : props.item.title}</text>
       </box>
     </box>
   )

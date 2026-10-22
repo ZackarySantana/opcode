@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 
 import { errorMessage } from "@opcode/core"
-import { centered, Heading, Row, TabFrame, useFocus, useTab } from "@opcode/tabs"
+import { centered, Heading, Line, Row, TabFrame, useFocus, useTab } from "@opcode/tabs"
 import { usePalette, useText } from "@opcode/ui"
 import { useDialogCommands } from "@opcode/ui/screen"
 import { usePlugin } from "@opencode/plugin/tui"
@@ -9,7 +9,7 @@ import { createMemo, For, Match, Switch } from "solid-js"
 import type { FeedsController } from "./host"
 import { editRows, managerRows, type EditRow } from "./model"
 import { candidateURL, presets } from "./presets"
-import { FeedLine } from "./rows"
+import { feedLine } from "./style"
 
 type Actionable = Exclude<EditRow, { kind: "heading" }>
 const rowKey = (row: Actionable) => row.kind === "add" ? `add:${row.feedKind}:${row.url}` : row.url
@@ -66,13 +66,15 @@ export function Subscribe(props: { feeds: FeedsController }) {
                 </text>
               </Row>
             )}</Match>
-            <Match when={row.kind === "feed" && row}>{(feed) => (
-              <Row selected={selected()}>
-                <FeedLine label={`${marker()} [${feed().subscribed ? "x" : " "}] ${feed().title}${feed().preset ? "" : " (custom)"}`}
-                  labelColor={feed().subscribed ? palette.value : palette.text} selected={selected()} now={props.feeds.now()}
-                  kind={feed().feedKind} result={feed().result} showState={feed().subscribed} />
-              </Row>
-            )}</Match>
+            <Match when={row.kind === "feed" && row}>{(feed) => {
+              const state = () => feed().subscribed ? feedLine(feed().result, feed().feedKind, props.feeds.now(), palette) : undefined
+              return (
+                <Row selected={selected()}>
+                  <Line label={`${marker()} [${feed().subscribed ? "x" : " "}] ${feed().title}${feed().preset ? "" : " (custom)"}`}
+                    labelColor={feed().subscribed ? palette.value : palette.text} selected={selected()} detail={state()?.detail} detailColor={state()?.detailColor} />
+                </Row>
+              )
+            }}</Match>
           </Switch>
         )
       }}</For>

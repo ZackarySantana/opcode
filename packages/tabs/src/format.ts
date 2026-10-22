@@ -18,10 +18,6 @@ export function relative(time: number, now = Date.now()): string {
   return time > now ? `in ${age(now, time)}` : `${age(time, now)} ago`
 }
 
-export function clockTime(time: number): string {
-  return new Date(time).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-}
-
 /** The sidebar's refresh line, counting down to the second. */
 export function refreshStatus(refreshing: boolean, next: number | undefined, now = Date.now()): string | undefined {
   if (refreshing) return "Refreshing…"

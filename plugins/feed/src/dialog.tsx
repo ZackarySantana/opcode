@@ -1,27 +1,25 @@
 /** @jsxImportSource @opentui/solid */
 
 import { ItemList, Picker, SettingsTab, TabbedDialog, TabFrame, useTab, type Item, type SettingRow } from "@opcode/tabs"
-import { age, clockTime, relative } from "@opcode/tabs/format"
+import { age, relative } from "@opcode/tabs/format"
 import { openLink } from "@opcode/tabs/open"
 import { CenterEmpty, usePalette } from "@opcode/ui"
-import { useDialogCommands } from "@opcode/ui/screen"
 import { usePlugin } from "@opencode/plugin/tui"
 import { createMemo, createSignal, For, Show } from "solid-js"
 import type { FeedsController } from "./host"
 import { FEED_HISTORY, kindOf, managerRows, matches, refreshChoices, scopeChoices, sidebarItemChoices, windowChoices, windowLabel, windowShort, type Settings, type SurfaceScope, type TimelineEntry } from "./model"
 import { presets, type FeedKind } from "./presets"
-import { feedLine } from "./rows"
-import { phaseStyle } from "./style"
+import { clockTime, feedLine, phaseStyle } from "./style"
 import { Subscribe } from "./subscribe"
 
 export function FeedDialog(props: { feeds: FeedsController }) {
   return (
     <TabbedDialog prefix="opcode-feed" refreshing={props.feeds.refreshing()} refresh={() => void props.feeds.refreshAll()} tabs={[
-      { id: "status", label: "Status", placeholder: "search status pages", render: () => <Browser feeds={props.feeds} kind="status" /> },
-      { id: "upcoming", label: "Upcoming", placeholder: "search scheduled maintenance", render: () => <Browser feeds={props.feeds} kind="upcoming" /> },
-      { id: "releases", label: "Releases", placeholder: "search releases", render: () => <Browser feeds={props.feeds} kind="releases" /> },
-      { id: "subscribe", label: "Subscribe", placeholder: "search feeds or paste a URL to subscribe", render: () => <Subscribe feeds={props.feeds} /> },
-      { id: "settings", label: "Settings", placeholder: "search settings",
+      { label: "Status", placeholder: "search status pages", render: () => <Browser feeds={props.feeds} kind="status" /> },
+      { label: "Upcoming", placeholder: "search scheduled maintenance", render: () => <Browser feeds={props.feeds} kind="upcoming" /> },
+      { label: "Releases", placeholder: "search releases", render: () => <Browser feeds={props.feeds} kind="releases" /> },
+      { label: "Subscribe", placeholder: "search feeds or paste a URL to subscribe", render: () => <Subscribe feeds={props.feeds} /> },
+      { label: "Settings", placeholder: "search settings",
         render: () => <SettingsTab rows={settingRows} settings={props.feeds.settings()} update={(change) => props.feeds.updateSettings(change)} /> },
     ]} />
   )
@@ -51,28 +49,24 @@ function Browser(props: { feeds: FeedsController; kind: "status" | "upcoming" | 
       ])
   const item = (entry: TimelineEntry): Item => ({
     key: entry.key, mark: phaseStyle(entry.phase, palette), head: entry.status ?? entry.source, detail: entry.status ? entry.source : undefined,
-    time: `${relative(entry.time, props.feeds.now())} · ${clockTime(entry.time)}`, title: entry.title, lines: entry.summary ? [entry.summary] : undefined, link: entry.link,
+    time: `${relative(entry.time, props.feeds.now())} · ${clockTime(entry.time)}`, title: entry.title, summary: entry.summary, link: entry.link,
   })
   const subscribed = () => props.feeds.subscriptions().some((subscription) => kindOf(subscription, presets) === feedKind)
   const feeds = createMemo(() => managerRows(props.feeds.subscriptions(), presets, props.feeds.results())
     .filter((row) => row.subscribed && row.kind === feedKind)
     .map((row) => ({ key: row.url, label: row.title, ...feedLine(row.result, row.kind, props.feeds.now(), palette) })))
-  let outlined: () => Item | undefined = () => undefined
+  const focus = createSignal<string>()
   // The picker opens on the outlined item's feed, so f then enter shows more of it.
   const [initial, setInitial] = createSignal<string>()
-  useDialogCommands(api, () => [{
-    id: "opcode-feed.pick", bind: "f", enabled: () => !tab.typing() && !picking(),
-    run: () => {
-      const key = outlined()?.key
-      setInitial(groups().flatMap((group) => group.entries).find((entry) => entry.key === key)?.url ?? scope())
-      tab.reset()
-      setPicking(true)
-    },
-  }])
+  const pick = () => {
+    const entries = groups().flatMap((group) => group.entries)
+    setInitial((entries.find((entry) => entry.key === focus[0]()) ?? entries[0])?.url ?? scope())
+    setPicking(true)
+  }
   const hints = () => [
     ...tab.navigation,
     { key: "enter", label: "open link", command: tab.command("activate") },
-    { key: "f", label: scope() ? "change feed" : "feed", command: "opcode-feed.pick" },
+    { key: "f", label: scope() ? "change feed" : "feed", command: tab.command("pick") },
     { key: "/", label: "search", command: tab.command("search") },
     { key: "r", label: "refresh", command: tab.command("refresh") },
   ]
@@ -86,10 +80,11 @@ function Browser(props: { feeds: FeedsController; kind: "status" | "upcoming" | 
           <CenterEmpty title={feedKind === "status" ? "No status pages yet" : "No release feeds yet"} description="Subscribe to one in the Subscribe tab." />
         </TabFrame>
       }>
-        <ItemList hints={hints()} ref={(current) => { outlined = current }} open={(entry) => openLink(api, "Feed", entry.link)}
+        <ItemList hints={hints()} focus={focus} open={(entry) => openLink(api, "Feed", entry.link)}
           groups={groups().map((group) => ({ title: group.title, items: group.entries.map(item) }))}
           empty={tab.query() ? "No matching items." : timeline().pending ? "Loading…" : "Nothing in this window."}
           handlers={{
+            pick,
             back: () => scope() ? { label: "all feeds", run: () => setScope(undefined) } : undefined,
             prefix: () => scope() && props.feeds.title(scope()!),
           }}

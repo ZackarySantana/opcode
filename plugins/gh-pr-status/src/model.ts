@@ -24,7 +24,7 @@ export interface PullRequest {
 
 export interface Search {
   readonly prs: readonly PullRequest[]
-  /** Results GitHub withheld, such as pull requests in SAML-enforced orgs, and why. */
+  /** Results GitHub withheld, such as pull requests in SAML-enforced orgs, and what to do about it. */
   readonly hidden: number
   readonly reason?: string
 }
@@ -49,6 +49,9 @@ export interface Entry {
   readonly tone: Tone
   /** Waiting on you: your review, or your action on your own pull request. */
   readonly pending: boolean
+  /** Yours, rather than one you review. */
+  readonly own: boolean
+  /** Requests your review, not just your team's. */
   readonly direct: boolean
   /** Your teams whose review is requested. */
   readonly teams: readonly string[]
@@ -75,7 +78,7 @@ export const refreshChoices: readonly number[] = [1, 2, 5, 10, 15, 30]
 export const HIDDEN_TEAM = "hidden team"
 
 function authored(pr: PullRequest): Entry {
-  const entry = (label: string, tone: Tone, pending: boolean): Entry => ({ pr, label, tone, pending, direct: false, teams: [] })
+  const entry = (label: string, tone: Tone, pending: boolean): Entry => ({ pr, label, tone, pending, own: true, direct: false, teams: [] })
   if (pr.draft) return entry("Draft", "quiet", false)
   if (pr.conflicts) return entry("Conflicts", "urgent", true)
   if (pr.checks === "failing") return entry("Checks failing", "urgent", true)
@@ -94,20 +97,21 @@ function requested(pr: PullRequest, snapshot: Snapshot): Entry {
   const direct = pr.requested.find((reviewer): reviewer is Named => reviewer.kind === "user" && reviewer.name.toLowerCase() === viewer)
   const visible = pr.requested.filter((reviewer): reviewer is Named => reviewer.kind === "team")
   const known = visible.filter((team) => snapshot.teams.includes(team.name))
-  // Your team list narrows the visible teams to yours. When none match, the list is unavailable or incomplete, so any
-  // of them may be yours; when none are visible, GitHub matched you through a team your token can't see.
-  const teams = known.length ? known : visible
+  // Only without your team list (no read:org) may any visible team be yours. A request that isn't for you by name
+  // and matches none of your teams came through a team your token can't see.
+  const teams = known.length || snapshot.teams.length || direct ? known : visible
   const names = [...teams.map((team) => team.name), ...!direct && !teams.length ? [HIDDEN_TEAM] : []]
   const times = teams.flatMap((team) => team.requestedAt ?? [])
+  const team = names[0]?.split("/").pop()
   return {
-    pr, pending: true, direct: !!direct, teams: names, tone: "attention",
-    label: direct ? "Your review" : "Team review",
+    pr, pending: true, own: false, direct: !!direct, teams: names, tone: "attention",
+    label: direct ? "Review requested" : !teams.length ? "Team review" : `Team: ${team}${names.length > 1 ? ` +${names.length - 1}` : ""}`,
     requestedAt: direct ? direct.requestedAt : times.length ? Math.max(...times) : undefined,
   }
 }
 
 function reviewed(pr: PullRequest): Entry {
-  const entry = (label: string, tone: Tone): Entry => ({ pr, label, tone, pending: false, direct: false, teams: [] })
+  const entry = (label: string, tone: Tone): Entry => ({ pr, label, tone, pending: false, own: false, direct: false, teams: [] })
   if (pr.yourReview === "APPROVED") return entry("You approved", "quiet")
   if (pr.yourReview === "CHANGES_REQUESTED") return entry("You requested changes", "waiting")
   return entry("You commented", "quiet")
@@ -117,18 +121,19 @@ export interface View {
   readonly mine: readonly Entry[]
   /** Review requests for you, then pull requests you've reviewed. */
   readonly reviewing: readonly Entry[]
-  /** Review requests for your teams, including ones that also request you. */
+  /** Review requests for your teams; ones that also request you come first. */
   readonly teams: readonly Entry[]
 }
 
-export function view(snapshot: Snapshot): View {
+export function view(snapshot: Snapshot | undefined): View {
+  if (!snapshot) return { mine: [], reviewing: [], teams: [] }
   const requests = snapshot.requested.prs.filter((pr) => pr.author !== snapshot.viewer).map((pr) => requested(pr, snapshot))
   const direct = requests.filter((entry) => entry.direct)
   const pending = new Set(direct.map((entry) => entry.pr.url))
   return {
     mine: snapshot.mine.prs.map(authored),
     reviewing: [...direct, ...snapshot.reviewed.prs.filter((pr) => !pending.has(pr.url)).map(reviewed)],
-    teams: requests.filter((entry) => entry.teams.length),
+    teams: [...direct, ...requests.filter((entry) => !entry.direct)].filter((entry) => entry.teams.length),
   }
 }
 
@@ -148,15 +153,8 @@ export function sidebarEntries(current: View, settings: Settings): Entry[] {
   ]
 }
 
-export function reviewers(pr: PullRequest): string {
-  const hidden = pr.requested.filter((reviewer) => reviewer.kind === "hidden").length
-  return [
-    ...pr.requested.flatMap((reviewer) => reviewer.kind === "user" ? [`@${reviewer.name}`] : reviewer.kind === "team" ? [reviewer.name] : []),
-    ...hidden ? [`${hidden} hidden`] : [],
-  ].join(", ")
-}
-
 export function matches(entry: Entry, query: string): boolean {
   const { pr } = entry
-  return matchesText([pr.title, pr.author, pr.repository, `#${pr.number}`, entry.label, reviewers(pr), ...entry.teams].join(" "), query)
+  const reviewers = pr.requested.flatMap((reviewer) => reviewer.kind === "hidden" ? [] : [reviewer.name])
+  return matchesText([pr.title, pr.author, pr.repository, `#${pr.number}`, entry.label, ...reviewers, ...entry.teams].join(" "), query)
 }

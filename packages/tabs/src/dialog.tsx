@@ -5,7 +5,7 @@ import { useDialogCommands } from "@opcode/ui/screen"
 import { usePlugin } from "@opencode/plugin/tui"
 import { useTerminalDimensions } from "@opentui/solid"
 import type { JSX } from "@opentui/solid/jsx-runtime"
-import { createContext, createSignal, For, Show, useContext, type Accessor } from "solid-js"
+import { createContext, createSignal, For, onCleanup, Show, useContext, type Accessor } from "solid-js"
 
 /** What the shared keys mean on the current tab, or in a picker shown over it. */
 export interface TabHandlers {
@@ -15,6 +15,8 @@ export interface TabHandlers {
   activate(): void
   /** ←/→ and h/l, for values to change (Settings). */
   adjust?(direction: 1 | -1): void
+  /** f, for a picker that narrows the tab; the box is cleared first. */
+  pick?(): void
   /** The step esc takes once the box is left and the search cleared, before the dialog closes. */
   back?(): { label: string; run(): void } | undefined
   /** Shown before the box's text, such as the feed the list is narrowed to. */
@@ -23,7 +25,6 @@ export interface TabHandlers {
 }
 
 export interface Tab {
-  id: string
   label: string
   /** The box's placeholder on this tab. */
   placeholder: string
@@ -35,6 +36,7 @@ export interface TabContext {
   width: Accessor<number>
   query: Accessor<string>
   typing: Accessor<boolean>
+  /** Registers the keys' meaning until the calling component unmounts or another registers. */
   handle(handlers: TabHandlers): void
   /** Clears the box and returns the keyboard to the list. */
   reset(): void
@@ -54,7 +56,7 @@ export function useTab(): TabContext {
 
 /**
  * Tab pills, one search box shared by every tab, and the tab's content. Commands are `<prefix>.<name>`:
- * close, next, previous, down, up, adjust.next, adjust.previous, activate, search, and refresh.
+ * close, next, previous, down, up, adjust.next, adjust.previous, activate, pick, search, and refresh.
  */
 export function TabbedDialog(props: { prefix: string; tabs: readonly Tab[]; refreshing: boolean; refresh(): void }) {
   const api = usePlugin()
@@ -67,8 +69,7 @@ export function TabbedDialog(props: { prefix: string; tabs: readonly Tab[]; refr
   const [handlers, setHandlers] = createSignal<TabHandlers>()
   const command = (name: string) => `${props.prefix}.${name}`
   const reset = () => { setTyping(false); setQuery("") }
-  // A tab that registers nothing (an empty state) must not inherit the previous tab's keys.
-  const switchTab = (by: number) => { reset(); setHandlers(undefined); setTab((value) => (value + by + props.tabs.length) % props.tabs.length) }
+  const switchTab = (by: number) => { reset(); setTab((value) => (value + by + props.tabs.length) % props.tabs.length) }
   const idle = () => !typing()
   const back = () => handlers()?.back?.()
 
@@ -91,6 +92,7 @@ export function TabbedDialog(props: { prefix: string; tabs: readonly Tab[]; refr
     { id: command("adjust.previous"), bind: "left,h", enabled: idle, run: () => handlers()?.adjust?.(-1) },
     // While typing, the box's own submit handles enter, and space is text.
     { id: command("activate"), bind: "return,space", enabled: idle, run: () => handlers()?.activate() },
+    { id: command("pick"), bind: "f", enabled: () => idle() && !!handlers()?.pick, run: () => { reset(); handlers()?.pick?.() } },
     { id: command("search"), bind: "/", enabled: idle, run: () => { setTyping(true) } },
     { id: command("refresh"), bind: "r", enabled: idle, run: () => props.refresh() },
   ])
@@ -101,7 +103,11 @@ export function TabbedDialog(props: { prefix: string; tabs: readonly Tab[]; refr
     height: () => Math.max(6, Math.min(32, dimensions().height - 11)),
     width: () => width() - 4,
     query, typing, reset, command,
-    handle: (next) => setHandlers(() => next),
+    // A view that registers nothing (an empty state) must not inherit keys from one that unmounted.
+    handle: (next) => {
+      setHandlers(() => next)
+      onCleanup(() => setHandlers((current) => current === next ? undefined : current))
+    },
     navigation: [
       { key: "tab/shift+tab", label: "tabs", command: command("next") },
       { key: "↑/↓ j/k", label: "move", command: command("down") },

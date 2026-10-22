@@ -20,7 +20,7 @@ const searches = {
 
 const reviewer = "__typename ... on User { login } ... on Bot { login } ... on Mannequin { login } ... on Team { slug organization { login } }"
 
-export const query = `query {
+const query = `query {
   viewer { login }
   ${Object.entries(searches).map(([alias, search]) => `${alias}: search(query: ${JSON.stringify(search)}, type: ISSUE, first: ${LIMIT}) { nodes { ...pr } }`).join("\n  ")}
 }
@@ -52,7 +52,7 @@ interface RawPullRequest {
 }
 interface GraphQLResponse {
   data?: { viewer: { login: string } } & Record<keyof typeof searches, { nodes: (RawPullRequest | null)[] } | null> | null
-  errors?: { message: string; path?: (string | number)[] }[]
+  errors?: { message: string; path?: (string | number)[]; extensions?: { saml_failure?: boolean } }[]
 }
 
 /** A user's login, or a team as "org/slug"; undefined when the token can't see who it is. */
@@ -61,7 +61,7 @@ const nameOf = (raw: RawReviewer) => raw?.slug && raw.organization ? `${raw.orga
 const checks = { SUCCESS: "passing", FAILURE: "failing", ERROR: "failing", PENDING: "running", EXPECTED: "running" } as const
 const decisions = ["APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED"] as const
 
-export function parsePullRequest(raw: RawPullRequest, viewer: string): PullRequest {
+function parsePullRequest(raw: RawPullRequest, viewer: string): PullRequest {
   const requestedAt = new Map<string, number>()
   for (const event of raw.timelineItems.nodes) {
     const name = event.requestedReviewer && nameOf(event.requestedReviewer)
@@ -83,17 +83,23 @@ export function parsePullRequest(raw: RawPullRequest, viewer: string): PullReque
   }
 }
 
+const SAML = "authorize GitHub CLI for your organization's single sign-on at github.com/settings/connections/applications"
+
 /** Parses gh's output. GraphQL reports items it may not show (SAML-enforced orgs) as errors beside partial data. */
-export function parseResponse(stdout: string, stderr: string): Omit<Snapshot, "teams"> {
+export function parseResponse(stdout: string, stderr: string, status = 0): Omit<Snapshot, "teams"> {
   let response: GraphQLResponse
-  try { response = JSON.parse(stdout) } catch { throw new Error(stderr.trim() || "gh returned no data") }
+  try { response = JSON.parse(stdout) } catch {
+    // gh exits 4 when it has no credentials.
+    throw new Error(status === 4 ? "Not signed in to GitHub. Run gh auth login." : stderr.trim() || "gh returned no data")
+  }
   const data = response.data
   if (!data) throw new Error(response.errors?.[0]?.message ?? (stderr.trim() || "gh returned no data"))
   const viewer = data.viewer.login
   const search = (alias: keyof typeof searches): Search => {
     const nodes = data[alias]?.nodes ?? []
     const prs = nodes.filter((node): node is RawPullRequest => node !== null).map((node) => parsePullRequest(node, viewer))
-    return { prs, hidden: nodes.length - prs.length, reason: response.errors?.find((error) => error.path?.[0] === alias)?.message }
+    const error = response.errors?.find((error) => error.path?.[0] === alias)
+    return { prs, hidden: nodes.length - prs.length, reason: error?.extensions?.saml_failure ? SAML : error?.message }
   }
   return { viewer, mine: search("mine"), requested: search("requested"), reviewed: search("reviewed") }
 }
@@ -105,5 +111,5 @@ export async function fetchSnapshot(run: Runner, signal: AbortSignal): Promise<S
     // Optional: without read:org, every visible team request on a PR requesting your review counts as yours.
     run(["api", "--paginate", "/user/teams", "--jq", `.[] | .organization.login + "/" + .slug`], signal).catch(() => undefined),
   ])
-  return { ...parseResponse(result.stdout, result.stderr), teams: teams?.status === 0 ? teams.stdout.split("\n").filter(Boolean) : [] }
+  return { ...parseResponse(result.stdout, result.stderr, result.status), teams: teams?.status === 0 ? teams.stdout.split("\n").filter(Boolean) : [] }
 }

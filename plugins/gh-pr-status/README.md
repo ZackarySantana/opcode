@@ -26,18 +26,18 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 Run `/ghpr` or select **Pull requests** in the command palette. The dialog has four tabs:
 
 - **Mine:** your open pull requests. The ones that need you come first, then the ones waiting on others, then drafts.
-- **Reviewing:** pull requests requesting your review, then open ones you've already reviewed.
-- **Teams:** review requests for your teams, with every requested reviewer listed. Press `f` to show one team; the choice is saved.
+- **Reviewing:** pull requests requesting your review by name, then open ones you've already reviewed. Requests only for your teams are on Teams.
+- **Teams:** review requests for your teams, ones that also request you first, with every requested reviewer listed. Press `f` to show one team; the choice is saved until you pick **All your teams** there.
 - **Settings:** what the sidebar shows, and how often it refreshes.
 
-Each pull request shows its status, author, repository and number, when it was opened, and when your review (or your team's) was requested.
+Each pull request shows its status, author, repository and number, when it was opened, and who is requested and when: you first, then your teams, then everyone else.
 
 | Key | Action |
 | --- | --- |
 | `tab` / `shift+tab` | Next / previous tab |
 | `↑` / `↓`, `j` / `k` | Move the outline |
 | `/` | Search titles, authors, repositories, statuses, and reviewers |
-| `enter` | Open the outlined pull request in your browser (clicking one does too) |
+| `enter`, `space` | Open the outlined pull request in your browser (clicking one does too) |
 | `f` | Show one team's review requests, or all of them (Teams) |
 | `←` / `→`, `h` / `l` | Change the outlined setting (Settings) |
 | `r` | Refresh now |
@@ -48,9 +48,9 @@ A pull request **waits on you** when:
 - it requests your review, or your team's;
 - it's yours and has merge conflicts, failing checks, or requested changes, or is approved and ready to merge.
 
-Statuses are colored by urgency: red for your pull requests that are blocked, yellow for review requests, green for approved, the theme's highlight for pull requests waiting on someone else, and gray for drafts and approvals you've given.
+Statuses are colored by urgency: red for your pull requests that are blocked, yellow for review requests (**Review requested** for you, **Team: web** for your team), green for approved, the theme's highlight for pull requests waiting on someone else, and gray for drafts and pull requests you've approved or commented on.
 
-The sidebar lists only what waits on you: review requests for you first, then your teams' (narrowed to the team chosen on the Teams tab), then your own pull requests that need you. It shows five by default, then a count of the rest and a pointer to `/ghpr`, and ends with a countdown to the next refresh. Click a pull request there to open it in your browser, or the "+N more" line to open `/ghpr`.
+The sidebar lists only what waits on you: review requests for you first, then your teams' (narrowed to the team chosen on the Teams tab), then your own pull requests that need you. Each shows how long ago your review was requested, or for your own, how long ago it opened. It lists five by default, then a count of the rest and a pointer to `/ghpr`, and ends with a countdown to the next refresh. Click a pull request there to open it in your browser, or the "+N more" line to open `/ghpr`.
 
 Links open in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-open` (Linux); on WSL it tries `wslview`, `xdg-open`, then PowerShell.
 
@@ -58,18 +58,18 @@ Links open in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-op
 
 Review requests come from GitHub's `review-requested:@me` search, which includes requests to any team you're on, closed and secret teams included, as long as `gh` can see them. Team names come from `gh api /user/teams`, which needs the `read:org` scope that `gh auth login` grants by default; without it, every team requested on a pull request that asks for your review is treated as yours.
 
-GitHub sometimes withholds results. A pull request in an organization that enforces SAML single sign-on stays hidden until you authorize `gh`'s token for that organization, and a team your token can't see shows as **hidden team**. `/ghpr` counts what was withheld and shows GitHub's reason; the sidebar notes hidden review requests.
+GitHub sometimes withholds results. A pull request in an organization that enforces SAML single sign-on stays hidden until you authorize `gh`'s token for that organization, and a team your token can't see shows as **hidden team**. `/ghpr` counts what was withheld and says what to do, such as authorizing GitHub CLI for an organization's single sign-on at [github.com/settings/connections/applications](https://github.com/settings/connections/applications); the sidebar notes hidden review requests.
 
 ## Settings
 
 | Setting | Choices | Default |
 | --- | --- | --- |
 | Sidebar team reviews | No, Yes | Yes |
-| Sidebar your PRs | No, Yes | Yes |
+| Sidebar own PRs | No, Yes | Yes |
 | Sidebar items | 3, 5, 10, 15, 20 | 5 |
 | Refresh every | 1m, 2m, 5m, 10m, 15m, 30m | 5m |
 
-Review requests for you always appear in the sidebar. **Sidebar team reviews** adds your teams' review requests, narrowed to the Teams tab's filter; **Sidebar your PRs** adds your pull requests that need you. Each refresh runs one GraphQL search per list, up to 50 open pull requests each.
+Review requests for you always appear in the sidebar. **Sidebar team reviews** adds your teams' review requests, narrowed to the Teams tab's filter; **Sidebar own PRs** adds your pull requests that need you. Each refresh runs one GraphQL search per list, up to 50 open pull requests each.
 
 ## Options
 

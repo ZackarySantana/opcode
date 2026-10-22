@@ -291,6 +291,23 @@ describe("independent release policy", () => {
     await expect(checkReleasePolicy(root, "before-host-upgrade")).rejects.toThrow("@lidtop/opencode-context, @lidtop/opencode-cost, @lidtop/opencode-feed, @lidtop/opencode-gh-pr-status, @lidtop/opencode-later, @lidtop/opencode-sessions")
   }, 30_000)
 
+  test("a private workspace only some plugins bundle requires releases of just those plugins", async () => {
+    const root = await fixture()
+    await mkdir(join(root, "packages/tabs/src"), { recursive: true })
+    await writeFile(join(root, "packages/tabs/package.json"), JSON.stringify({ name: "@opcode/tabs", version: "0.0.0", private: true, exports: { ".": "./src/index.ts" } }))
+    await writeFile(join(root, "packages/tabs/src/index.ts"), "export const tabs = 1\n")
+    for (const id of pluginIDs) {
+      await mkdir(join(root, "plugins", id), { recursive: true })
+      const dependencies = id === "feed" || id === "gh-pr-status" ? { "@opcode/tabs": "workspace:*" } : { "@opcode/core": "workspace:*" }
+      await writeFile(join(root, "plugins", id, "package.json"), JSON.stringify({ name: publicPackageName(id), version: "1.0.0", dependencies }))
+    }
+    await mkdir(join(root, ".changeset"))
+    const { commit } = await repository(root)
+    await writeFile(join(root, "packages/tabs/src/index.ts"), "export const tabs = 2\n")
+    await commit()
+    await expect(checkReleasePolicy(root, "baseline")).rejects.toThrow(/^Add explicit consumer changesets for: @lidtop\/opencode-feed, @lidtop\/opencode-gh-pr-status$/)
+  }, 30_000)
+
   test("catalog policy precisely covers named peers and inherited SDK/optional dependencies, not dev-only entries", async () => {
     const root = await fixture()
     const rootManifest = await manifestAt(root)

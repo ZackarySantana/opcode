@@ -64,10 +64,9 @@ export class FeedsController {
 
   updateSettings(change: Partial<Settings>): void {
     const next = { ...this.settings(), ...change }
-    const reschedule = next.refreshMinutes !== this.settings().refreshMinutes
     this.database.saveSettings(next)
     this.settingsSignal[1](next)
-    if (reschedule) this.schedule.reschedule()
+    this.schedule.reschedule()
   }
 
   dispose(): void {

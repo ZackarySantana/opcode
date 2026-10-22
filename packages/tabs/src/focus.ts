@@ -1,11 +1,14 @@
 import { usePlugin } from "@opencode/plugin/tui"
 import { CliRenderEvents, type ScrollBoxRenderable } from "@opentui/core"
-import { createEffect, createMemo, createSignal, onCleanup, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, type Accessor, type Signal } from "solid-js"
 
-/** Focus by key, so it survives refreshes and filtering. Scrolls the focused child into view. */
-export function useFocus<T>(items: Accessor<readonly T[]>, key: (item: T) => string, scroll?: () => ScrollBoxRenderable | undefined, id?: (index: number) => string) {
+/**
+ * Focus by key, so it survives refreshes and filtering, or a remount when the key's signal is passed in.
+ * Scrolls the focused child into view.
+ */
+export function useFocus<T>(items: Accessor<readonly T[]>, key: (item: T) => string, scroll?: () => ScrollBoxRenderable | undefined, id?: (index: number) => string,
+  [focusedKey, setFocusedKey]: Signal<string | undefined> = createSignal<string>()) {
   const api = usePlugin()
-  const [focusedKey, setFocusedKey] = createSignal<string>()
   const focused = createMemo(() => Math.max(0, items().findIndex((item) => key(item) === focusedKey())))
   const move = (by: number) => {
     const next = items()[Math.max(0, Math.min(items().length - 1, focused() + by))]

@@ -3,7 +3,8 @@ import { createSignal } from "solid-js"
 
 /**
  * Runs `refresh` every `minutes()`, with a clock that ticks each minute so views age as time passes.
- * `refresh` should call `restart`: every refresh, automatic or not, restarts the countdown.
+ * `refresh` should call `restart`: every refresh, automatic or not, restarts the countdown. Call `reschedule` when
+ * the interval may have changed.
  */
 export function createSchedule(refresh: () => void, minutes: () => number, timer: SetTimer = setTimer) {
   const [now, setNow] = createSignal(Date.now())
@@ -11,6 +12,7 @@ export function createSchedule(refresh: () => void, minutes: () => number, timer
   let cancelNext: (() => void) | undefined
   let cancelClock: (() => void) | undefined
   let disposed = false
+  let scheduled = 0
   const tick = (at = Date.now()) => {
     setNow(at)
     // Timers can fall behind the wall clock across sleep (laptops, WSL); an overdue refresh starts within a tick.
@@ -20,7 +22,8 @@ export function createSchedule(refresh: () => void, minutes: () => number, timer
   const restart = () => {
     cancelNext?.()
     if (disposed) return
-    const delay = minutes() * 60_000
+    scheduled = minutes()
+    const delay = scheduled * 60_000
     setNext(Date.now() + delay)
     cancelNext = timer(refresh, delay)
   }
@@ -36,8 +39,8 @@ export function createSchedule(refresh: () => void, minutes: () => number, timer
       cancelClock = timer(loop, 60_000)
       refresh()
     },
-    /** For a changed interval; a schedule that hasn't started stays stopped. */
-    reschedule() { if (next() !== undefined) restart() },
+    /** Restarts the countdown if the interval changed; a schedule that hasn't started stays stopped. */
+    reschedule() { if (next() !== undefined && minutes() !== scheduled) restart() },
     dispose() {
       disposed = true
       cancelNext?.()

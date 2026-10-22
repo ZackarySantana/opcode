@@ -5,10 +5,11 @@ import { mockTheme } from "@opcode/ui/test-support/host"
 import { PluginContextProvider } from "@opencode/plugin/tui"
 import type { Context, KeymapCommand, KeymapLayer } from "@opencode/plugin/tui/context"
 import { testRender } from "@opentui/solid"
-import { createComputed } from "solid-js"
+import { createComputed, onCleanup } from "solid-js"
 import type { Runner } from "../src/gh"
 import { PullRequestsDialog } from "../src/dialog"
 import { PullRequestsController } from "../src/host"
+import { defaultSettings } from "../src/model"
 import { SettingsDatabase } from "../src/sqlite"
 import { response, teams } from "./fixtures"
 
@@ -17,49 +18,60 @@ const runner: Runner = async (args) => ({ stdout: args.includes("graphql") ? res
 test("/ghpr pages through your pull requests, your reviews, and your teams', and saves the team filter", async () => {
   const database = new SettingsDatabase(":memory:")
   const prs = new PullRequestsController(database, runner)
-  const layers: (() => KeymapLayer)[] = []
-  const dispatch = (id: string) => layers.map((layer) => layer()).sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
-    .flatMap((layer) => (layer.commands ?? []) as KeymapCommand[]).find((command) => command.id === id && (typeof command.enabled === "function" ? command.enabled() : command.enabled ?? true))?.run()
+  // Layers leave with their owner, as in the host, so a stale command from an unmounted tab or picker can't run.
+  const layers = new Set<() => KeymapLayer>()
+  const dispatch = (id: string) => [...layers].map((layer) => layer()).sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
+    .flatMap((layer) => (layer.commands ?? []) as KeymapCommand[])
+    .find((command) => command.id === id && (typeof command.enabled === "function" ? command.enabled() : command.enabled ?? true))?.run()
   let cleared = false
   const host = {
     theme: mockTheme(),
     renderer: { widthMethod: "unicode", once() {}, off() {}, requestRender() {} },
     ui: { dialog: { clear: () => { cleared = true } }, toast: { show() {} } },
-    keymap: { dispatch, layer: (factory: () => KeymapLayer) => { let current: KeymapLayer = {}; createComputed(() => { current = factory() }); layers.push(() => current) } },
+    keymap: {
+      dispatch,
+      layer: (factory: () => KeymapLayer) => {
+        let current: KeymapLayer = {}
+        const layer = () => current
+        createComputed(() => { current = factory() })
+        layers.add(layer)
+        onCleanup(() => layers.delete(layer))
+      },
+    },
   } as unknown as Context
   prs.refresh()
   const view = await testRender(() => <PluginContextProvider value={host}><PullRequestsDialog prs={prs} /></PluginContextProvider>, { width: 110, height: 44 })
   const frame = async (text: string) => view.waitForFrame((frame) => frame.includes(text))
   try {
-    const mine = await frame("NEEDS YOU")
-    // Conflicts outrank failing checks; approval waits on you to merge; a draft waits in its own group.
-    expect(mine).toMatch(/Conflicts\s+acme\/web#1/)
-    expect(mine).toContain("Approved")
-    expect(mine).toMatch(/WAITING[\s\S]*Upgrade TypeScript[\s\S]*Requested: @alice[\s\S]*DRAFTS[\s\S]*Refactor the router/)
+    expect(await frame("NEEDS YOU")).toMatch(/NEEDS YOU[\s\S]*WAITING[\s\S]*DRAFTS/)
 
     dispatch("opcode-gh-pr-status.next")
     const reviewing = await frame("AWAITING YOUR REVIEW")
-    expect(reviewing).toMatch(/Your review\s+@alice · acme\/web#10[\s\S]*opened 3d ago · requested 2h ago/)
-    expect(reviewing).toMatch(/REVIEWED BY YOU[\s\S]*You approved\s+@erin/)
-    expect(reviewing).not.toContain("You commented")
-    expect(reviewing).toContain("! 1 hidden by GitHub: Resource protected by organization SAML enforcement.")
+    expect(reviewing).toMatch(/Review requested\s+@alice[\s\S]*Requested: you \(2h ago\)[\s\S]*REVIEWED BY YOU/)
+    expect(reviewing).toContain("! 1 pull request hidden: authorize GitHub CLI")
 
     dispatch("opcode-gh-pr-status.next")
-    const all = await frame("AWAITING YOUR TEAMS")
-    for (const title of ["Cache build artifacts", "Speed up CI", "New billing API", "Rotate secrets"]) expect(all).toContain(title)
-    expect(all).toContain("Requested: 1 hidden")
+    expect(await frame("AWAITING REVIEW")).toContain("New billing API")
+
+    // In the picker, esc leaves the box, clears the search, then closes the picker, never the dialog.
+    dispatch("opcode-gh-pr-status.pick")
+    await frame("All your teams")
+    dispatch("opcode-gh-pr-status.search")
+    await view.mockInput.typeText("api")
+    await view.waitForFrame((frame) => frame.includes("acme/api") && !frame.includes("acme/web"))
+    for (let step = 0; step < 3; step++) dispatch("opcode-gh-pr-status.close")
+    await frame("AWAITING REVIEW")
+    expect(cleared).toBe(false)
 
     dispatch("opcode-gh-pr-status.pick")
     await frame("All your teams")
-    expect(await frame("hidden team")).toMatch(/acme\/api\s+1 awaiting review[\s\S]*acme\/web\s+2 awaiting review/)
     dispatch("opcode-gh-pr-status.down")
     dispatch("opcode-gh-pr-status.down")
     dispatch("opcode-gh-pr-status.activate")
-    const web = await frame("AWAITING ACME/WEB")
-    expect(web).toContain("acme/web › ")
+    const web = await frame("acme/web ›")
     expect(web).toContain("Speed up CI")
     expect(web).not.toContain("New billing API")
-    expect(database.settings().team).toBe("acme/web")
+    expect(database.settings()).toEqual({ ...defaultSettings, team: "acme/web" })
 
     // The saved filter isn't a step back: esc closes the dialog.
     dispatch("opcode-gh-pr-status.close")

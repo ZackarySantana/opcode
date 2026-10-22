@@ -3,7 +3,7 @@
 import { usePalette, useText } from "@opcode/ui"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import type { JSX } from "@opentui/solid/jsx-runtime"
-import { createMemo, For, onCleanup, Show } from "solid-js"
+import { createMemo, For, onCleanup, Show, type Signal } from "solid-js"
 import { TabFrame, useTab, type TabHandlers } from "./dialog"
 import { centered, useFocus } from "./focus"
 import { matchesText } from "./format"
@@ -29,8 +29,9 @@ export interface Item {
   title: string
   /** Top right, such as its age. */
   time: string
-  /** Muted lines under the title. */
-  lines?: readonly string[]
+  /** Muted, under the title. */
+  summary?: string
+  /** Shown under a dialog card, and opened by a click on a sidebar item. */
   link?: string
 }
 
@@ -39,10 +40,7 @@ export interface Group {
   items: readonly Item[]
 }
 
-/**
- * Items under headings, as bordered cards. ↑/↓ outline one; enter or a click opens it. A group's heading
- * shows only when it has items, except the last, which says `empty` instead.
- */
+/** Items under headings, as bordered cards. ↑/↓ outline one; enter or a click opens it. Empty groups are left out. */
 export function ItemList(props: {
   groups: readonly Group[]
   open(item: Item): void
@@ -52,17 +50,16 @@ export function ItemList(props: {
   hints: readonly { key: string; label: string; command?: string }[]
   /** Merged into the list's keys, e.g. a step back. */
   handlers?: Partial<TabHandlers>
-  /** Receives the outlined item, e.g. so a picker can open on its source. */
-  ref?(current: () => Item | undefined): void
+  /** The outlined item's key, owned by the caller so it survives the list being replaced by a picker. */
+  focus?: Signal<string | undefined>
 }) {
   const tab = useTab()
   const palette = usePalette()
-  const items = createMemo(() => props.groups.flatMap((group) => group.items))
-  const offsets = createMemo(() => props.groups.map((_, index) => props.groups.slice(0, index).reduce((sum, group) => sum + group.items.length, 0)))
+  const groups = createMemo(() => props.groups.filter((group) => group.items.length))
+  const items = createMemo(() => groups().flatMap((group) => group.items))
   const id = (index: number) => tab.command(`item.${index}`)
   let scroll: ScrollBoxRenderable | undefined
-  const focus = useFocus(items, (item) => item.key, () => scroll, id)
-  props.ref?.(focus.current)
+  const focus = useFocus(items, (item) => item.key, () => scroll, id, props.focus)
   tab.handle({
     ...props.handlers,
     move: focus.move,
@@ -76,16 +73,14 @@ export function ItemList(props: {
       <scrollbox ref={scroll} height={tab.height()}>
         <box flexDirection="column" minWidth={0}>
           {props.header}
-          <For each={props.groups}>{(group, groupIndex) => (
-            <Show when={group.items.length || groupIndex() === props.groups.length - 1}>
-              <text fg={palette.accent} flexShrink={0} paddingTop={1}><b>{group.title}</b></text>
-              <For each={group.items} fallback={<text fg={palette.muted}>{props.empty}</text>}>{(item, index) => {
-                const position = () => offsets()[groupIndex()]! + index()
-                return <ItemCard item={item} id={id(position())} focused={position() === focus.focused()}
-                  click={() => { focus.focus(item.key); props.open(item) }} />
-              }}</For>
-            </Show>
-          )}</For>
+          <For each={groups()} fallback={<text fg={palette.muted} paddingTop={1}>{props.empty}</text>}>{(group) => <>
+            <text fg={palette.accent} flexShrink={0} paddingTop={1}><b>{group.title}</b></text>
+            <For each={group.items}>{(item) => {
+              const position = () => items().indexOf(item)
+              return <ItemCard item={item} id={id(position())} focused={position() === focus.focused()}
+                click={() => { focus.focus(item.key); props.open(item) }} />
+            }}</For>
+          </>}</For>
         </box>
       </scrollbox>
     </TabFrame>
@@ -109,7 +104,7 @@ function ItemCard(props: { item: Item; id: string; focused: boolean; click(): vo
       </box>
       <box flexDirection="column" minWidth={0} paddingLeft={2}>
         <text minWidth={0} wrapMode="word" fg={props.item.mark.title}>{strong(props.item.title)}</text>
-        <For each={props.item.lines}>{(line) => <text minWidth={0} wrapMode="word" fg={palette.muted}>{line}</text>}</For>
+        <Show when={props.item.summary}><text minWidth={0} wrapMode="word" fg={palette.muted}>{props.item.summary}</text></Show>
         <Show when={props.item.link}><text minWidth={0} wrapMode="none" fg={props.focused ? palette.value : palette.border}>{props.item.link}</text></Show>
       </box>
     </box>

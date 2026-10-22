@@ -1,7 +1,7 @@
-import { age } from "@opcode/tabs/format"
+import { age, relative } from "@opcode/tabs/format"
 import type { Item, Mark } from "@opcode/tabs"
 import type { usePalette } from "@opcode/ui"
-import { reviewers, type Entry, type Tone } from "./model"
+import type { Entry, Reviewer, Tone } from "./model"
 
 type Palette = ReturnType<typeof usePalette>
 
@@ -15,24 +15,31 @@ export function toneMark(tone: Tone, palette: Palette): Mark {
   }
 }
 
-/** A dialog card: status, author and where, when it opened and when your review was requested, then who is requested. */
+/** Who is requested and when: you first, then your teams, other teams, and people. */
+export function requestedLine(entry: Entry, viewer: string, now: number): string | undefined {
+  const you = (reviewer: Reviewer) => reviewer.kind === "user" && reviewer.name.toLowerCase() === viewer.toLowerCase()
+  const rank = (reviewer: Reviewer) => you(reviewer) ? 0 : reviewer.kind === "team" ? entry.teams.includes(reviewer.name) ? 1 : 2 : reviewer.kind === "user" ? 3 : 4
+  const parts = [...entry.pr.requested].sort((a, b) => rank(a) - rank(b)).map((reviewer) => reviewer.kind === "hidden" ? "a hidden reviewer"
+    : `${you(reviewer) ? "you" : reviewer.kind === "user" ? `@${reviewer.name}` : reviewer.name}${reviewer.requestedAt ? ` (${relative(reviewer.requestedAt, now)})` : ""}`)
+  return parts.length ? `Requested: ${parts.join(", ")}` : undefined
+}
+
+/** A dialog card: status, author and where, when it opened, then who is requested and when. */
 export function card(entry: Entry, viewer: string, now: number, palette: Palette): Item {
   const { pr } = entry
-  const requested = reviewers(pr)
   const where = `${pr.repository}#${pr.number}`
   return {
-    key: pr.url, mark: toneMark(entry.tone, palette), head: entry.label, detail: pr.author === viewer ? where : `@${pr.author} · ${where}`,
-    time: [`opened ${age(pr.createdAt, now)} ago`, ...entry.requestedAt ? [`requested ${age(entry.requestedAt, now)} ago`] : []].join(" · "),
-    title: pr.title, lines: requested ? [`Requested: ${requested}`] : undefined,
+    key: pr.url, mark: toneMark(entry.tone, palette), head: entry.label, detail: entry.own ? where : `@${pr.author} · ${where}`,
+    time: `opened ${relative(pr.createdAt, now)}`, title: pr.title, summary: requestedLine(entry, viewer, now),
   }
 }
 
-/** A sidebar entry: author, or for your own pull requests, which one. */
-export function sidebarItem(entry: Entry, viewer: string, now: number, palette: Palette): Item {
+/** A sidebar entry: author, or for your own pull requests, which one. The age is since your review was requested, or since your pull request opened. */
+export function sidebarItem(entry: Entry, now: number, palette: Palette): Item {
   const { pr } = entry
   return {
-    key: pr.url, mark: toneMark(entry.tone, palette), head: entry.label,
-    detail: pr.author === viewer ? `${pr.repository.split("/").pop()}#${pr.number}` : `@${pr.author}`,
-    time: age(entry.requestedAt ?? pr.createdAt, now), title: pr.title,
+    key: pr.url, mark: toneMark(entry.tone, palette), head: entry.label, link: pr.url,
+    detail: entry.own ? `${pr.repository.split("/").pop()}#${pr.number}` : `@${pr.author}`,
+    time: age(entry.own ? pr.createdAt : entry.requestedAt, now), title: pr.title,
   }
 }

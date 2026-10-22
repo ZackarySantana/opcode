@@ -15,8 +15,6 @@ export function Sidebar(props: { feeds: FeedsController }) {
   const palette = usePalette()
   const view = createMemo(() => props.feeds.timeline("sidebar"))
   const layout = createMemo(() => sidebarLayout(view(), props.feeds.settings().sidebarItems))
-  // The last overflow line carries the pointer to /feed; clicking any of them opens it.
-  const pointer = () => layout().hiddenUpcoming ? "upcoming" : layout().hiddenEntries ? "entries" : undefined
   return (
     <Show when={props.feeds.subscriptions().length}>
       <box paddingTop={1}>
@@ -28,14 +26,14 @@ export function Sidebar(props: { feeds: FeedsController }) {
             <For each={layout().entries}>{(entry) => (
               <SidebarItem open={() => openLink(api, "Feed", entry.link)} item={{
                 key: entry.key, mark: phaseStyle(entry.phase, palette), head: entry.source, detail: entry.status,
-                time: age(entry.time, props.feeds.now()), title: entry.title,
+                time: age(entry.time, props.feeds.now()), title: entry.title, link: entry.link,
               }} />
             )}</For>
             <Show when={!layout().entries.length && !view().pending}>
               <text fg={palette.muted}>Nothing in the last {windowLabel(props.feeds.settings().windowHours)}</text>
             </Show>
             <Show when={layout().hiddenEntries}>
-              <More count={layout().hiddenEntries} pointer={pointer() === "entries" ? "/feed" : undefined} command="opcode-feed.open" />
+              <More count={layout().hiddenEntries} pointer={layout().hiddenUpcoming ? undefined : "/feed"} command="opcode-feed.open" />
             </Show>
             <Show when={layout().upcoming.length}>
               <box flexDirection="column" minWidth={0}>
