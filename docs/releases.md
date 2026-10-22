@@ -2,8 +2,7 @@
 
 The public packages are `@lidtop/opencode-context`, `@lidtop/opencode-cost`,
 `@lidtop/opencode-later`, and `@lidtop/opencode-sessions`. Each has its own version and
-changelog; their current workspace versions are all `0.1.0`. Changesets has no
-fixed or linked groups. Private `@opcode/core` and `@opcode/ui` are never published.
+changelog. Changesets has no fixed or linked groups. Private `@opcode/core` and `@opcode/ui` are never published.
 Each public manifest keeps `publishConfig.access: "public"`; scoped packages must
 not fall back to npm's private-access default.
 
@@ -16,7 +15,8 @@ Changesets CLI regression test.
 ## Local validation and artifacts
 
 Use Bun and Node pinned in root `mise.toml` (the Bun version also appears in
-`package.json`). CI and release jobs install this same mise toolchain:
+`package.json`). CI and release jobs install this same toolchain with a pinned,
+checksum-verified mise release (see `jdx/mise-action` in the workflows):
 
 ```sh
 mise install
@@ -26,8 +26,12 @@ mise exec -- bun scripts/publish.ts --dry-run
 ```
 
 `build` stages `.release/opcode-*/`. `publish.ts --dry-run` additionally uses local
-`npm pack --ignore-scripts` to create actual npm tarballs in `.release/tarballs/`;
-it neither queries nor writes to npm. Node 24 and npm are needed for packing tests.
+`npm pack --ignore-scripts` to create actual npm tarballs in a freshly emptied
+`.release/tarballs/`; it neither queries nor writes to npm.
+`publish.ts --pending --from <dir>` only reads the registry: it lists the tarballs
+in `<dir>` whose exact `name@version` npm lacks (and writes them as the `packages`
+GitHub step output). `--publish --from <dir>` publishes such prebuilt tarballs;
+see below. Node 24 and npm are needed for packing tests.
 Do not publish `plugins/*` directly: those workspace manifests contain
 catalog/workspace protocols rather than standalone npm artifacts.
 
@@ -43,16 +47,19 @@ root LICENSE, and an optional package changelog. The build:
   error fails the build rather than advertising missing declarations.
 - Merges runtime dependencies of bundled private workspaces, materializes catalog
   versions from the root catalog, and rejects unresolved local dependency specs.
+- Fails if the bundle imports, or a manifest declares as a runtime dependency, a
+  host singleton (any `catalogs.host` key) that the plugin does not declare in
+  `peerDependencies`; it never silently ships an exact copy.
 - Omits dev dependencies and workspace scripts from published manifests.
 
 Packaging tests unpack actual tarballs into an isolated directory. They resolve
 every export and declaration import, verify private imports are gone, and inspect
 source-map inputs to ensure no third-party runtime was bundled.
 
-### First manual 0.1.0 publication
+### Historical: first manual 0.1.0 publication
 
-All four public manifests currently remain at **0.1.0**. For the initial manual
-bootstrap, do not run Changesets versioning first: it would propose a later
+This section records the completed initial bootstrap; later releases use the
+automated flow below. For that initial manual bootstrap, do not run Changesets versioning first: it would propose a later
 version. Build and pack with the non-publishing command, then authenticate in
 your own terminal with an npm account authorized to publish under `@lidtop`:
 
@@ -71,9 +78,8 @@ Publish these packed staged artifacts, **not `plugins/*`**. Scoped packages need
 `--access public`. A local manual bootstrap does not use CI OIDC/provenance flags.
 Afterward configure each package's trusted publisher as described below.
 
-The initial Changeset still represents a subsequent **0.2.0 proposal**, not this
-manual 0.1.0 bootstrap. Do not merge the old release PR until an approved push has
-regenerated it with the final scoped names and a subsequent release is intended.
+At the time, the initial Changeset represented the subsequent 0.2.0 proposal,
+not the manual 0.1.0 bootstrap.
 
 Fixture factories use `join(tmpdir(), prefix)` from `node:os`, including standalone
 smoke entrypoints. The existing test preload and standalone bootstraps ensure
@@ -94,9 +100,18 @@ manifest change needs an explicit changeset for **every transitive consuming
 plugin**. This is deliberate: Changesets cannot infer that private source is
 bundled. Include the same consumer coverage when changing resolved runtime,
 peer, or optional dependencies in any default or named catalog, including inherited
-private-workspace dependencies. Dev-only catalog changes do not require releases.
-All `@opencode/*` default catalog versions must move together. Plugin source or
+private-workspace dependencies. Changing a host singleton's default catalog pin requires a release of every
+plugin that declares it as a peer. Each `catalogs.host` range must have the form
+`>=<pin> <limit>`, whose lower bound equals the default catalog pin.
+Dev-only catalog changes do not require releases.
+All `@opencode/*` versions, default catalog and resolved references alike, must move
+together. Plugin source or
 runtime manifest changes also need their own changeset. Test-only changes do not.
+Only changesets that the change itself **adds or edits** (committed or local
+working-tree files since the merge base) count toward this coverage: an older
+pending changeset for the same plugin describes a different change. Every pending
+changeset is still validated; `scripts/version.ts` re-runs only that validation on
+`main` before consuming them.
 Use patch/minor/major according to the public behavior, not the shared package's
 unpublished `0.0.0` version. For example:
 
@@ -158,7 +173,7 @@ gh api repos/OWNER/REPO/actions/permissions/workflow
 
 This repository-level setting permits the operation; the `version` job separately
 requests only its needed `contents: write` and `pull-requests: write`. OIDC remains
-exclusive to the separate publish job. A mise action Node-runtime deprecation
+exclusive to the separate `publish` job. A mise action Node-runtime deprecation
 warning is not a PR-permission or fixture failure; do not upgrade unrelated pins
 as a workaround.
 
@@ -186,7 +201,7 @@ However, GitHub does **not** evaluate `workflow_dispatch` job checks as required
 PR checks, even on that same SHA. Manual validation does not replace the approved
 `pull_request` run, satisfy branch protection, or authorize bypassing it.
 
-Changesets has no `publish` input here because publishing is a separate job. The
+Changesets has no `publish` input here because publishing uses separate jobs. The
 `version` job corrects only the pinned action's misleading manual-publication
 sentence after each PR creation/update; it preserves the rest of the body and
 changelog. The corrected instructions say that merging makes reviewed versions
@@ -239,19 +254,30 @@ Package settings are not proven by public registry metadata. A dry run,
 npm trusted-publisher authentication. Report it as unverified until an explicitly
 authorized publish succeeds.
 
-The release workflow runs only on `main`. Its Changesets job can write release
-PRs but has no OIDC permission. A separate GitHub-hosted, environment-gated publish
-job has `contents: read` and `id-token: write`, but cannot write repository contents
-or PRs. It uses pinned Node 24.22.0 and its bundled npm 11.19.1 (npm OIDC requires
-at least 11.5.1), validates
-everything, and publishes **the packed staged tarballs**, with provenance. It
-fails closed on registry errors and skips exact versions already published, so
-retries do not republish unrelated packages. The default local command only packs;
-`--publish` additionally requires the main-branch GitHub OIDC environment.
+The release workflow runs only on `main`, as three jobs:
+
+1. `version` (Changesets) can write release PRs but has no OIDC permission.
+2. `validate` has only `contents: read`. It runs the full check, packs the staged
+   tarballs, uploads them as the `npm-tarballs` artifact, and outputs `packages`:
+   the staged `name@version`s missing from npm (registry errors fail the job).
+3. `publish` runs only when `packages` is non-empty, independently of whether
+   changesets are pending. It is GitHub-hosted, environment-gated (`npm`), and has
+   `contents: read` and `id-token: write`, but cannot write repository contents or
+   PRs. It does not install dependencies, test, or build: it downloads the
+   validated tarballs and runs `publish.ts --publish --from`, which requires exactly
+   one tarball per public plugin, re-checks each exact version, skips published ones,
+   and publishes the rest with provenance.
+
+Publishing uses pinned Node 24.22.0 and its bundled npm 11.19.1 (npm OIDC requires
+at least 11.5.1). It fails closed on registry errors and skips exact versions
+already published, so retries do not republish unrelated packages. The default
+local command only packs; `--publish` additionally requires the main-branch
+GitHub OIDC environment.
 
 This setup deliberately does not create GitHub releases or git tags: npm versions
 and checked-in package changelogs are the release record. All workflow actions are
-pinned to verified commit SHAs; update them deliberately. Release builds do not
+pinned to verified commit SHAs, and every `jdx/mise-action` step also pins the
+mise `version` and the `sha256` of its Linux x64 binary; update them deliberately. Release builds do not
 restore dependency caches. No publish was performed during implementation.
 
 References: [Changesets action v1](https://github.com/changesets/action/tree/maintenance/v1),
