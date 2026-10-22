@@ -29,14 +29,17 @@ test("imports paginated history, other worktrees, compactions, and rescans despi
       calls.push(input)
       return input.cursor ? { data: [other], cursor: {} } : { data: [session], cursor: { next: "sessions-next" } }
     } },
-    message: { list: async (input: { sessionID: string; cursor?: string }) => {
+    message: { list: async (input: { sessionID: string; type: string; cursor?: string }) => {
       calls.push(input)
+      if (input.type === "compaction") return { data: [
+        { id: `${input.sessionID}-summary`, type: "compaction", status: "completed", model: message.model,
+          time: { created: message.time.created }, cost: 0.25, tokens: message.tokens },
+        // Defensive: a server may ignore the type filter.
+        { type: "compaction", status: "running" }, { type: "user" },
+      ], cursor: {} }
       return input.cursor
         ? { data: [{ ...message, id: `${input.sessionID}-old` }], cursor: {} }
-        : { data: [{ ...message, id: `${input.sessionID}-new` }, { type: "user" },
-          { id: `${input.sessionID}-summary`, type: "compaction", status: "completed", model: message.model,
-            time: { created: message.time.created }, cost: 0.25, tokens: message.tokens },
-          { type: "compaction", status: "running" }], cursor: { next: "messages-next" } }
+        : { data: [{ ...message, id: `${input.sessionID}-new` }], cursor: { next: "messages-next" } }
     } },
   } as unknown as OpenCodeClient
   try {
@@ -45,7 +48,8 @@ test("imports paginated history, other worktrees, compactions, and rescans despi
     await importProject(client, service, new AbortController().signal)
     expect(lists).toBe(4)
     expect(calls).toContainEqual({ project: context.projectID, cursor: "sessions-next", limit: 100 })
-    expect(calls).toContainEqual({ sessionID: "other", cursor: "messages-next", limit: 100 })
+    expect(calls).toContainEqual({ sessionID: "other", type: "assistant", cursor: "messages-next", limit: 100 })
+    expect(calls).toContainEqual({ sessionID: "other", type: "compaction", limit: 100, cursor: undefined })
     expect(ledger.dashboard({ range: "all" }).total).toMatchObject({ cost: 2.5, messages: 6 })
   } finally { ledger.close() }
 })
@@ -111,7 +115,7 @@ test("splits oversized history pages into bounded RPC batches", async () => {
   let completed = false
   const client = {
     session: { list: async () => ({ data: [session], cursor: {} }) },
-    message: { list: async () => ({ data: Array.from({ length: 205 }, (_, index) => ({ ...message, id: `m${index}` })), cursor: {} }) },
+    message: { list: async ({ type }: { type: string }) => ({ data: type === "assistant" ? Array.from({ length: 205 }, (_, index) => ({ ...message, id: `m${index}` })) : [], cursor: {} }) },
   } as unknown as OpenCodeClient
   const service = {
     status: async () => ({ projectID: context.projectID }),
