@@ -81,11 +81,11 @@ Remember the discussion but not where it happened? Search session titles, projec
 
 ## Feed: know what's down before you debug
 
-Is it your code, or is npm having a bad day? Follow the status pages and release feeds you depend on, with what's in progress in the sidebar and a full timeline one command away.
+Is it your code, or is npm having a bad day? Follow the status pages and release feeds you depend on, with what's in progress in the sidebar and the full picture one command away.
 
-**Glance at the sidebar → open `/feed` for the details → jump to the incident.** In-progress incidents come first, status pages with nothing going on are grayed out at the top, and scheduled maintenance waits under Upcoming. Pick from presets like npm, GitHub, Claude, OpenAI, AWS, and Cloudflare, plus release feeds and blogs, or paste any RSS or Atom URL.
+**Glance at the sidebar → open `/feed` for the details → jump to the incident.** In-progress incidents come first, status pages with nothing going on are grayed out at the top, scheduled maintenance waits under Upcoming, and releases get their own tab. Pick from presets like npm, GitHub, Claude, OpenAI, AWS, and Cloudflare, plus release feeds and blogs, or paste any RSS or Atom URL.
 
-![Feed timeline with in-progress npm, Claude, and OpenAI incidents, operational status pages grayed out, and recent updates](docs/images/feed-timeline.png)
+![Feed Status tab with in-progress Claude and OpenAI incidents and operational status pages grayed out at the top](docs/images/feed-status.png)
 
 [Explore Feed →](plugins/feed/README.md)
 

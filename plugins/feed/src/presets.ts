@@ -1,5 +1,5 @@
-/** Status pages report incidents and maintenance; updates are releases, blogs, and news. */
-export type FeedKind = "status" | "updates"
+/** Status pages report incidents and maintenance; release feeds are releases, blogs, and news. */
+export type FeedKind = "status" | "release"
 
 export interface Preset {
   readonly title: string
@@ -22,17 +22,17 @@ export const presets: readonly Preset[] = [
   { kind: "status", title: "Azure", url: "https://azure.status.microsoft/en-us/status/feed/" },
   { kind: "status", title: "Fly.io", url: "https://status.flyio.net/history.rss" },
   { kind: "status", title: "Slack", url: "https://slack-status.com/feed/rss" },
-  { kind: "updates", title: "Claude Code releases", url: "https://github.com/anthropics/claude-code/releases.atom" },
-  { kind: "updates", title: "OpenCode releases", url: "https://github.com/anomalyco/opencode/releases.atom" },
-  { kind: "updates", title: "Bun releases", url: "https://github.com/oven-sh/bun/releases.atom" },
-  { kind: "updates", title: "Node.js releases", url: "https://github.com/nodejs/node/releases.atom" },
-  { kind: "updates", title: "OpenRouter models", url: "https://openrouter.ai/api/v1/models?use_rss=true" },
-  { kind: "updates", title: "GitHub changelog", url: "https://github.blog/changelog/feed/" },
-  { kind: "updates", title: "TypeScript blog", url: "https://devblogs.microsoft.com/typescript/feed/" },
-  { kind: "updates", title: "Go blog", url: "https://go.dev/blog/feed.atom" },
-  { kind: "updates", title: "Deno blog", url: "https://deno.com/feed" },
-  { kind: "updates", title: "OpenAI news", url: "https://openai.com/news/rss.xml" },
-  { kind: "updates", title: "Hacker News (300+ points)", url: "https://hnrss.org/frontpage?points=300" },
+  { kind: "release", title: "Claude Code releases", url: "https://github.com/anthropics/claude-code/releases.atom" },
+  { kind: "release", title: "OpenCode releases", url: "https://github.com/anomalyco/opencode/releases.atom" },
+  { kind: "release", title: "Bun releases", url: "https://github.com/oven-sh/bun/releases.atom" },
+  { kind: "release", title: "Node.js releases", url: "https://github.com/nodejs/node/releases.atom" },
+  { kind: "release", title: "OpenRouter models", url: "https://openrouter.ai/api/v1/models?use_rss=true" },
+  { kind: "release", title: "GitHub changelog", url: "https://github.blog/changelog/feed/" },
+  { kind: "release", title: "TypeScript blog", url: "https://devblogs.microsoft.com/typescript/feed/" },
+  { kind: "release", title: "Go blog", url: "https://go.dev/blog/feed.atom" },
+  { kind: "release", title: "Deno blog", url: "https://deno.com/feed" },
+  { kind: "release", title: "OpenAI news", url: "https://openai.com/news/rss.xml" },
+  { kind: "release", title: "Hacker News (300+ points)", url: "https://hnrss.org/frontpage?points=300" },
 ]
 
 /** The URL a search box entry would add, when it plausibly is one: a dotted host or an explicit scheme, no spaces. */

@@ -18,10 +18,16 @@ export interface Subscription {
 
 type Row = { url: string; title: string | null; kind: string; createdAt: number }
 
-/** 0.1.0 created settings without `updates`; add it with the default rather than rebuilding the table. */
+/**
+ * Up to 0.2.0, release feeds were stored as kind 'updates'; 0.2.0 added their setting as `updates`.
+ * Rename the kind and add `releases`, carrying over a 0.2.0 choice, rather than rebuilding either table.
+ */
 function migrate(db: Database): void {
+  db.exec("UPDATE subscriptions SET kind = 'release' WHERE kind = 'updates'")
   const columns = db.query<{ name: string }, []>("PRAGMA table_info(settings)").all().map((column) => column.name)
-  if (!columns.includes("updates")) db.exec("ALTER TABLE settings ADD COLUMN updates TEXT NOT NULL DEFAULT 'feed'")
+  if (columns.includes("releases")) return
+  db.exec("ALTER TABLE settings ADD COLUMN releases TEXT NOT NULL DEFAULT 'feed'")
+  if (columns.includes("updates")) db.exec("UPDATE settings SET releases = updates")
 }
 
 /** Client-local subscriptions and settings. Fetched items are not persisted. */
@@ -42,7 +48,7 @@ export class FeedsDatabase {
           id INTEGER PRIMARY KEY CHECK (id = 1),
           window_hours INTEGER NOT NULL,
           resolved TEXT NOT NULL,
-          updates TEXT NOT NULL DEFAULT 'feed'
+          releases TEXT NOT NULL DEFAULT 'feed'
         );
       `)
       migrate(db)
@@ -50,16 +56,16 @@ export class FeedsDatabase {
   }
 
   settings(): Settings {
-    const row = this.db.query<{ windowHours: number; resolved: string; updates: string }, []>("SELECT window_hours AS windowHours, resolved, updates FROM settings WHERE id = 1").get()
+    const row = this.db.query<{ windowHours: number; resolved: string; releases: string }, []>("SELECT window_hours AS windowHours, resolved, releases FROM settings WHERE id = 1").get()
     if (!row) return defaultSettings
     const scope = (value: string, fallback: SurfaceScope) => scopeChoices.find((choice) => choice === value) ?? fallback
-    return { windowHours: row.windowHours, resolved: scope(row.resolved, defaultSettings.resolved), updates: scope(row.updates, defaultSettings.updates) }
+    return { windowHours: row.windowHours, resolved: scope(row.resolved, defaultSettings.resolved), releases: scope(row.releases, defaultSettings.releases) }
   }
 
   saveSettings(settings: Settings): void {
-    this.db.query(`INSERT INTO settings (id, window_hours, resolved, updates) VALUES (1, ?, ?, ?)
-      ON CONFLICT (id) DO UPDATE SET window_hours = excluded.window_hours, resolved = excluded.resolved, updates = excluded.updates`)
-      .run(settings.windowHours, settings.resolved, settings.updates)
+    this.db.query(`INSERT INTO settings (id, window_hours, resolved, releases) VALUES (1, ?, ?, ?)
+      ON CONFLICT (id) DO UPDATE SET window_hours = excluded.window_hours, resolved = excluded.resolved, releases = excluded.releases`)
+      .run(settings.windowHours, settings.resolved, settings.releases)
   }
 
   close(): void {
@@ -70,7 +76,7 @@ export class FeedsDatabase {
 
   list(): Subscription[] {
     return this.db.query<Row, []>("SELECT url, title, kind, created_at AS createdAt FROM subscriptions ORDER BY created_at, url").all()
-      .map((row) => ({ url: row.url, title: row.title ?? undefined, kind: row.kind === "updates" ? "updates" : "status", createdAt: row.createdAt }))
+      .map((row) => ({ url: row.url, title: row.title ?? undefined, kind: row.kind === "release" ? "release" : "status", createdAt: row.createdAt }))
   }
 
   subscribe(url: string, kind: FeedKind, now = Date.now()): boolean {

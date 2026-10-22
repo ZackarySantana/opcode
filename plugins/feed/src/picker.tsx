@@ -3,20 +3,19 @@
 import { usePalette } from "@opcode/ui"
 import { createMemo, For, Match, onCleanup, Switch } from "solid-js"
 import type { FeedsController } from "./host"
-import { kinds, kindTitles, managerRows, matchesText, type ManagerRow } from "./model"
-import { presets } from "./presets"
+import { managerRows, matchesText, type ManagerRow } from "./model"
+import { presets, type FeedKind } from "./presets"
 import { TabFrame } from "./frame"
-import { FeedLine, Heading, Row } from "./rows"
+import { FeedLine, Row } from "./rows"
 import { centered, useFocus, type TabHandlers } from "./tab"
 
-type PickerRow = { kind: "all" } | { kind: "heading"; title: string } | { kind: "feed"; row: ManagerRow }
-type Pickable = Exclude<PickerRow, { kind: "heading" }>
+type PickerRow = { kind: "all" } | { kind: "feed"; row: ManagerRow }
 const ALL = "\u0000all"
-const pickKey = (row: Pickable) => row.kind === "all" ? ALL : row.row.url
+const pickKey = (row: PickerRow) => row.kind === "all" ? ALL : row.row.url
 
-/** Chooses one subscribed feed to narrow the timeline to, or all of them. Replaces the list while open. */
+/** Chooses one subscribed feed of the tab's kind to narrow to, or all of them. Replaces the list while open. */
 export function FeedPicker(props: {
-  feeds: FeedsController; query: () => string; height: number; width: number
+  feeds: FeedsController; kind: FeedKind; query: () => string; height: number; width: number
   /** The feed to outline first: the focused item's, so f then enter shows more of it. */
   initial?: string
   handle(handlers: TabHandlers): void
@@ -24,19 +23,13 @@ export function FeedPicker(props: {
   pick(feed: string | undefined): void
 }) {
   const palette = usePalette()
-  const rows = createMemo((): PickerRow[] => {
-    const subscribed = managerRows(props.feeds.subscriptions(), presets, props.feeds.results())
-      .filter((row) => row.subscribed && matchesText(`${row.title} ${row.url}`, props.query()))
-    return [
-      ...props.query() ? [] : [{ kind: "all" } as const],
-      ...kinds.flatMap((kind): PickerRow[] => {
-        const group = subscribed.filter((row) => row.kind === kind)
-        return group.length ? [{ kind: "heading", title: kindTitles[kind] }, ...group.map((row) => ({ kind: "feed" as const, row }))] : []
-      }),
-    ]
-  })
-  const pickable = createMemo(() => rows().filter((row): row is Pickable => row.kind !== "heading"))
-  const focus = useFocus(pickable, pickKey)
+  const rows = createMemo((): PickerRow[] => [
+    ...props.query() ? [] : [{ kind: "all" } as const],
+    ...managerRows(props.feeds.subscriptions(), presets, props.feeds.results())
+      .filter((row) => row.subscribed && row.kind === props.kind && matchesText(`${row.title} ${row.url}`, props.query()))
+      .map((row) => ({ kind: "feed" as const, row })),
+  ])
+  const focus = useFocus(rows, pickKey)
   if (props.initial) focus.focus(props.initial)
   const visible = createMemo(() => centered(rows(), focus.current(), props.height))
   props.handle({
@@ -59,7 +52,6 @@ export function FeedPicker(props: {
         const marker = () => selected() ? "> " : "  "
         return (
           <Switch>
-            <Match when={row.kind === "heading" && row}>{(heading) => <Heading title={heading().title} />}</Match>
             <Match when={row.kind === "all"}>
               <Row selected={selected()}><text fg={selected() ? palette.selectedText : palette.text}>{marker()}All feeds</text></Row>
             </Match>

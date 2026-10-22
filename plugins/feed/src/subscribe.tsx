@@ -13,10 +13,10 @@ import { centered, navigationHints, useFocus, type TabProps } from "./tab"
 
 type Actionable = Exclude<EditRow, { kind: "heading" }>
 const rowKey = (row: Actionable) => row.kind === "add" ? `add:${row.feedKind}:${row.url}` : row.url
-const addLabel = { status: "status page", updates: "updates feed" } as const
+const addLabel = { status: "status page", release: "release feed" } as const
 
 /** Subscriptions under a heading per kind. The shared box filters them, and a new URL typed there offers an "Add" row per kind. */
-export function Edit(props: TabProps) {
+export function Subscribe(props: TabProps) {
   const api = usePlugin()
   const palette = usePalette()
   const text = useText()

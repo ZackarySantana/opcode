@@ -1,8 +1,8 @@
 # @lidtop/opencode-feed
 
-Know what's down before you debug. Follow the status pages and release feeds you depend on, with what's in progress in the sidebar and a full timeline one command away.
+Know what's down before you debug. Follow the status pages and release feeds you depend on, with what's in progress in the sidebar and the full picture one command away.
 
-![Feed timeline with in-progress npm, Claude, and OpenAI incidents, operational status pages grayed out, and recent updates](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/feed-timeline.png)
+![Feed Status tab with in-progress Claude and OpenAI incidents and operational status pages grayed out at the top](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/feed-status.png)
 
 ## Install
 
@@ -25,37 +25,43 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 
 ## Use
 
-Run `/feed` or select **Feeds** in the command palette. The dialog has four tabs: Timeline, Upcoming, Edit, and Settings.
+Run `/feed` or select **Feeds** in the command palette. The dialog has five tabs:
+
+- **Status:** in-progress incidents first, operational status pages grayed out, then recent status posts.
+- **Upcoming:** scheduled maintenance from status pages.
+- **Releases:** recent posts from release feeds.
+- **Subscribe:** choose presets, or paste any RSS or Atom URL.
+- **Settings:** the time window and where resolved incidents and releases appear.
 
 | Key | Action |
 | --- | --- |
 | `tab` / `shift+tab` | Next / previous tab |
 | `↑` / `↓`, `j` / `k` | Move the outline |
-| `/` | Focus the box at the top: search, or paste a URL in Edit |
-| `enter` | Open the outlined update's link (Timeline, Upcoming); subscribe or add (Edit) |
-| `space` | Subscribe or unsubscribe (Edit) |
-| `f` | Pick one feed to show its latest 20 items (Timeline, Upcoming) |
+| `/` | Focus the box at the top: search, or paste a URL in Subscribe |
+| `enter` | Open the outlined item's link (Status, Upcoming, Releases); subscribe or add (Subscribe) |
+| `space` | Subscribe or unsubscribe (Subscribe) |
+| `f` | Pick one feed of the tab's kind to show its latest 20 items (Status, Upcoming, Releases) |
 | `←` / `→`, `h` / `l` | Change the outlined setting (Settings) |
-| `d` | Remove a custom feed (Edit) |
+| `d` | Remove a custom feed (Subscribe) |
 | `r` | Refresh every feed now |
 | `esc` | Leave the box, close the picker, clear the search, show all feeds, then close |
 
 Changing tabs clears the search and the chosen feed. While typing in the box, the arrow keys still move the outline and `enter` acts on it.
 
-In-progress incidents come first, colored by urgency: red while investigating or identified, yellow while monitoring or during maintenance. Status pages with nothing in progress are listed, grayed out, at the top. Everything else from the time window follows, newest first. Future-dated items, such as scheduled maintenance, appear under Upcoming instead.
+On Status, in-progress incidents come first, colored by urgency: red while investigating or identified, yellow while monitoring or during maintenance. Status pages with nothing in progress are listed, grayed out, at the top. Everything else from the time window follows, newest first. Future-dated items, such as scheduled maintenance, appear under Upcoming instead.
 
-The sidebar shows the same timeline in short form: up to five items, then the two soonest scheduled items, with a count of the rest and a pointer to `/feed`. By default it leaves out updates feeds, keeping it for incidents; see **Show updates** below. It is omitted when you have no subscriptions; the plugin never forces it open.
+The sidebar combines them in short form: up to five items, then the two soonest scheduled items, with a count of the rest and a pointer to `/feed`. By default it leaves out release feeds, keeping it for incidents; see **Show releases** below. It is omitted when you have no subscriptions; the plugin never forces it open.
 
 `enter` opens links in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-open` (Linux); on WSL it tries `wslview`, `xdg-open`, then PowerShell. Only `http` and `https` links are opened.
 
 ## Subscriptions
 
-Each subscription is a **status page** or an **updates feed**:
+Each subscription is a **status page** or a **release feed**:
 
 - **Status pages** report incidents and maintenance. Statuspage, incident.io, and Google dashboard formats are recognized; other status feeds are judged by their wording ("resolved", "operating normally"). A status page with nothing in progress, including an empty feed, counts as operational.
-- **Updates feeds** are releases, blogs, and news. They are never read as incidents, and each contributes at most its three newest items to the timeline so a busy feed cannot bury an outage.
+- **Release feeds** are releases, blogs, and news, shown on the Releases tab. They are never read as incidents, and each contributes at most its three newest items so a busy feed cannot crowd out the others.
 
-Presets include npm, GitHub, Google Workspace, Google Cloud, Claude, OpenAI, Cloudflare, Fireworks, AWS, Azure, Fly.io, and Slack status pages, plus Claude Code, OpenCode, Bun, and Node.js releases, OpenRouter models, the GitHub changelog, the TypeScript, Go, and Deno blogs, OpenAI news, and Hacker News (300+ points). To add any other RSS or Atom feed, paste its URL in Edit's box and choose **Add as status page** or **Add as updates feed**.
+Presets include npm, GitHub, Google Workspace, Google Cloud, Claude, OpenAI, Cloudflare, Fireworks, AWS, Azure, Fly.io, and Slack status pages, plus Claude Code, OpenCode, Bun, and Node.js releases, OpenRouter models, the GitHub changelog, the TypeScript, Go, and Deno blogs, OpenAI news, and Hacker News (300+ points). To add any other RSS or Atom feed, paste its URL in the Subscribe tab's box and choose **Add as status page** or **Add as release feed**.
 
 ## Settings
 
@@ -63,9 +69,9 @@ Presets include npm, GitHub, Google Workspace, Google Cloud, Claude, OpenAI, Clo
 | --- | --- | --- |
 | Time window | 6h, 12h, 24h, 2d, 3d, 7d | 12h |
 | Show resolved | Both, Sidebar, /feed, None | None |
-| Show updates | Both, Sidebar, /feed, None | /feed |
+| Show releases | Both, Sidebar, /feed, None | /feed |
 
-The window sets how far back the timeline looks and how far ahead Upcoming looks; in-progress incidents always show, for up to seven days. **Show resolved** chooses where resolved and completed incidents appear, and **Show updates** where releases, blogs, and news from updates feeds appear; status pages always show. Showing a single feed with `f` ignores the window, the three-item cap, and both of these settings.
+The window sets how far back Status and Releases look and how far ahead Upcoming looks; in-progress incidents always show, for up to seven days. **Show resolved** chooses where resolved and completed incidents appear, and **Show releases** where posts from release feeds appear (/feed means the Releases tab); status pages always show. Showing a single feed with `f` ignores the window, the three-item cap, and both of these settings.
 
 ## Options
 

@@ -8,7 +8,7 @@
 | Cost | Normalized usage ledger and date/entity aggregates | Server-owned SQLite, live events, RPC; client history import | Dashboard and native filters |
 | Later | Ordered active items and completed history | Client-local SQLite and isolated prompt-paste bridge | Manager, native edit/confirmation dialogs, sidebar |
 | Sessions | Searchable user/assistant text and session metadata | Server-owned SQLite, live events, RPC; client history import | Browser, filters, preview, safe resume action |
-| Feed | Subscriptions, settings, and an interpreted timeline of feed items | Client-local SQLite, feed fetching, browser launcher | Timeline/Upcoming/Edit/Settings dialog, feed picker, sidebar |
+| Feed | Subscriptions, settings, and an interpreted timeline of feed items | Client-local SQLite, feed fetching, browser launcher | Status/Upcoming/Releases/Subscribe/Settings dialog, feed picker, sidebar |
 
 Later is deliberately not an execution engine: starting an item pastes it into
 the existing prompt, without submission. Cost is recorded message telemetry,

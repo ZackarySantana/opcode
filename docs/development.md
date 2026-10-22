@@ -57,7 +57,7 @@ When updating them, keep private session text and paths out of the images:
 | `context-content.png` | Content ranked by retained contributors |
 | `cost-dashboard.png` | Nonzero usage across several models, projects, and dates |
 | `sessions-browser.png` | Search matches across projects with a message preview |
-| `feed-timeline.png` | The Timeline with in-progress incidents and operational status pages |
+| `feed-status.png` | The Status tab with in-progress incidents and operational status pages |
 
 Use the same theme and terminal font throughout. Each Later/Context pair should
 have matching dimensions. Crop Context to the actual dialog so its text remains

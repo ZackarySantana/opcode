@@ -8,7 +8,7 @@ export type FetchResult =
   | { readonly status: "ok"; readonly feed: Feed; readonly fetchedAt: number }
   | { readonly status: "error"; readonly error: string; readonly feed?: Feed }
 
-/** Which surfaces show a kind of item: resolved incidents, or posts from updates feeds. */
+/** Which surfaces show a kind of item: resolved incidents, or posts from release feeds. */
 export type SurfaceScope = "both" | "sidebar" | "feed" | "none"
 /** The two places a timeline renders. */
 export type Surface = "sidebar" | "feed"
@@ -16,25 +16,26 @@ export type Surface = "sidebar" | "feed"
 export interface Settings {
   readonly windowHours: number
   readonly resolved: SurfaceScope
-  /** Releases, blogs, and news from updates feeds; by default only in /feed, keeping the sidebar for incidents. */
-  readonly updates: SurfaceScope
+  /** Posts from release feeds; by default only in /feed, keeping the sidebar for incidents. */
+  readonly releases: SurfaceScope
 }
 
-export const defaultSettings: Settings = { windowHours: 12, resolved: "none", updates: "feed" }
+export const defaultSettings: Settings = { windowHours: 12, resolved: "none", releases: "feed" }
 export const windowChoices = [6, 12, 24, 48, 72, 168] as const
 export const scopeChoices: readonly SurfaceScope[] = ["both", "sidebar", "feed", "none"]
 
 export const showsOn = (scope: SurfaceScope, surface: Surface) => scope === "both" || scope === surface
 /** In-progress items stay visible past the window, but not forever if a provider never closes one. */
 const CURRENT_HORIZON = 7 * 24 * 60 * 60_000
-/** Newest posts each updates feed may place in a timeline. */
-export const UPDATES_PER_FEED = 3
+/** Newest posts each release feed may place in a timeline. */
+export const RELEASES_PER_FEED = 3
 /** Items shown when the timeline is narrowed to one feed. */
 export const FEED_HISTORY = 20
 
 export interface TimelineEntry {
   readonly key: string
   readonly url: string
+  readonly kind: FeedKind
   readonly source: string
   readonly title: string
   readonly phase: Phase
@@ -53,7 +54,7 @@ export interface Timeline {
   readonly upcoming: readonly TimelineEntry[]
   /** Status feeds with nothing in progress. */
   readonly operational: readonly string[]
-  readonly unreachable: readonly { readonly source: string; readonly error: string }[]
+  readonly unreachable: readonly { readonly source: string; readonly error: string; readonly kind: FeedKind }[]
   /** Subscriptions still waiting for their first response. */
   readonly pending: number
 }
@@ -74,12 +75,12 @@ export function feedTitle(url: string, presets: readonly Preset[], subscription?
 }
 
 /** A preset's kind is authoritative; a custom feed keeps the kind chosen when it was added. */
-const kindOf = (subscription: Subscription, presets: readonly Preset[]) => presets.find((preset) => preset.url === subscription.url)?.kind ?? subscription.kind
+export const kindOf = (subscription: Subscription, presets: readonly Preset[]) => presets.find((preset) => preset.url === subscription.url)?.kind ?? subscription.kind
 
-export const kindTitles: Record<FeedKind, string> = { status: "STATUS PAGES", updates: "UPDATES" }
-export const kinds: readonly FeedKind[] = ["status", "updates"]
+export const kindTitles: Record<FeedKind, string> = { status: "STATUS PAGES", release: "RELEASES" }
+export const kinds: readonly FeedKind[] = ["status", "release"]
 
-/** Status pages, then updates; within each, custom subscriptions first, then presets in catalog order. */
+/** Status pages, then release feeds; within each, custom subscriptions first, then presets in catalog order. */
 export function managerRows(subscriptions: readonly Subscription[], presets: readonly Preset[], results: ReadonlyMap<string, FetchResult>): ManagerRow[] {
   const subscribed = new Map(subscriptions.map((subscription) => [subscription.url, subscription]))
   const custom = subscriptions.filter((subscription) => !presets.some((preset) => preset.url === subscription.url))
@@ -123,42 +124,42 @@ export function editRows(rows: readonly ManagerRow[], query: string, candidate: 
 
 export interface TimelineOptions {
   readonly now?: number
-  readonly updatesPerFeed?: number
+  readonly releasesPerFeed?: number
   /**
-   * Narrows to one subscribed feed and shows its history: the window, the updates cap, and the
-   * resolved and updates settings stop applying, and the newest FEED_HISTORY settled items are kept.
+   * Narrows to one subscribed feed and shows its history: the window, the release cap, and the
+   * resolved and releases settings stop applying, and the newest FEED_HISTORY settled items are kept.
    */
   readonly feed?: string
 }
 
 /** One timeline across every subscribed feed, or one feed's history. */
 export function timeline(subscriptions: readonly Subscription[], presets: readonly Preset[], results: ReadonlyMap<string, FetchResult>, settings: Settings, surface: Surface,
-  { now = Date.now(), updatesPerFeed = UPDATES_PER_FEED, feed }: TimelineOptions = {}): Timeline {
+  { now = Date.now(), releasesPerFeed = RELEASES_PER_FEED, feed }: TimelineOptions = {}): Timeline {
   const scoped = feed !== undefined
   const resolved = scoped || showsOn(settings.resolved, surface)
-  const updates = scoped || showsOn(settings.updates, surface)
+  const releases = scoped || showsOn(settings.releases, surface)
   const current: TimelineEntry[] = []
   const recent: TimelineEntry[] = []
   const upcoming: TimelineEntry[] = []
   const operational: string[] = []
-  const unreachable: { source: string; error: string }[] = []
+  const unreachable: { source: string; error: string; kind: FeedKind }[] = []
   let pending = 0
   const span = scoped ? Infinity : settings.windowHours * 60 * 60_000
-  const cap = scoped ? FEED_HISTORY : updatesPerFeed
+  const cap = scoped ? FEED_HISTORY : releasesPerFeed
   for (const subscription of scoped ? subscriptions.filter((subscription) => subscription.url === feed) : subscriptions) {
     const kind = kindOf(subscription, presets)
-    // A hidden updates feed leaves no trace on this surface, not even a failure.
-    if (kind === "updates" && !updates) continue
+    // A hidden release feed leaves no trace on this surface, not even a failure.
+    if (kind === "release" && !releases) continue
     const result = results.get(subscription.url)
     const source = feedTitle(subscription.url, presets, subscription, result)
-    if (result?.status === "error") unreachable.push({ source, error: result.error })
+    if (result?.status === "error") unreachable.push({ source, error: result.error, kind })
     if (!result?.feed) { if (result?.status !== "error") pending++; continue }
     let busy = false
     const posts: TimelineEntry[] = []
     for (const item of result.feed.items) {
       if (item.published === undefined) continue
       const meaning = interpret(item, kind)
-      const entry = { key: `${subscription.url}\n${item.id}`, url: subscription.url, source, link: item.link, time: item.published, ...meaning }
+      const entry = { key: `${subscription.url}\n${item.id}`, url: subscription.url, kind, source, link: item.link, time: item.published, ...meaning }
       if (inProgress(meaning.phase)) {
         if (item.published < now - CURRENT_HORIZON) continue
         busy = true
@@ -166,11 +167,11 @@ export function timeline(subscriptions: readonly Subscription[], presets: readon
       } else if (item.published > now) {
         if (item.published <= now + span) upcoming.push(entry)
       } else if (item.published >= now - span && (resolved || meaning.phase !== "resolved")) {
-        if (kind === "updates") posts.push(entry)
+        if (kind === "release") posts.push(entry)
         else recent.push(entry)
       }
     }
-    // A busy updates feed cannot bury incidents: only its newest few posts count.
+    // A busy release feed cannot bury incidents: only its newest few posts count.
     recent.push(...posts.sort((a, b) => b.time - a.time).slice(0, cap))
     // A status page with nothing in progress is operational, including an empty one (Azure).
     if (kind === "status" && !busy) operational.push(source)

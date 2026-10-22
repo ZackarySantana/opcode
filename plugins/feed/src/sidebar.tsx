@@ -29,9 +29,9 @@ export function Sidebar(props: { feeds: FeedsController }) {
   const layout = createMemo(() => sidebarLayout(view()))
   // The last overflow line carries the pointer to /feed.
   const pointer = () => layout().hiddenUpcoming ? "upcoming" : layout().hiddenEntries ? "entries" : undefined
-  const More = (more: { count: number; noun: string; last: boolean }) => (
+  const More = (more: { count: number; noun?: string; last: boolean }) => (
     <text minWidth={0} wrapMode="word" fg={palette.muted}>
-      +{more.count} more{more.last ? <> {more.noun} in <span style={{ fg: palette.text }}>/feed</span></> : ""}
+      +{more.count} more{more.noun ? ` ${more.noun}` : ""}{more.last ? <> in <span style={{ fg: palette.text }}>/feed</span></> : ""}
     </text>
   )
   return (
@@ -46,7 +46,7 @@ export function Sidebar(props: { feeds: FeedsController }) {
             <Show when={!layout().entries.length && !view().pending}>
               <text fg={palette.muted}>Nothing in the last {windowLabel(props.feeds.settings().windowHours)}</text>
             </Show>
-            <Show when={layout().hiddenEntries}><More count={layout().hiddenEntries} noun="updates" last={pointer() === "entries"} /></Show>
+            <Show when={layout().hiddenEntries}><More count={layout().hiddenEntries} last={pointer() === "entries"} /></Show>
             <Show when={layout().upcoming.length}>
               <box flexDirection="column" minWidth={0}>
                 <For each={layout().upcoming}>{(entry) => (

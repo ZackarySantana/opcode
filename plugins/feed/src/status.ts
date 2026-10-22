@@ -6,10 +6,10 @@ export type Phase = "active" | "monitoring" | "maintenance" | "scheduled" | "res
 
 export interface Interpretation {
   readonly phase: Phase
-  /** The provider's own label for the latest update, e.g. "Identified". */
+  /** The provider's own label for the latest post, e.g. "Identified". */
   readonly status?: string
   readonly title: string
-  /** The latest update's text, or the start of a post. */
+  /** The latest post's text, or the start of a release or article. */
   readonly summary?: string
 }
 
@@ -21,7 +21,8 @@ const phases: Record<string, Phase> = {
   resolved: "resolved", completed: "resolved", postmortem: "resolved", closed: "resolved", operational: "resolved",
 }
 
-const label = (status: string) => status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()
+// Statuspage's "Update" means still in progress; it reads as "Ongoing" here.
+const label = (status: string) => status.toLowerCase() === "update" ? "Ongoing" : status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()
 // Unknown labels are still a live status, but not presumed to be an outage.
 const phaseOf = (status: string): Phase => phases[status.toLowerCase()] ?? "monitoring"
 
@@ -40,14 +41,14 @@ function excerpt(markup: string, limit = 180): string | undefined {
 const settled = /\b(?:resolved|operating normally|functioning (?:normally|as expected)|returned to normal|fully recovered|has recovered)\b/i
 
 /**
- * Updates feeds are always news; their markup is never read as a status. Status feeds use the
- * Statuspage, incident.io, or Google formats, falling back to the wording of the latest update.
+ * Release feeds are always news; their markup is never read as a status. Status feeds use the
+ * Statuspage, incident.io, or Google formats, falling back to the wording of the latest post.
  */
 export function interpret(item: FeedItem, kind: FeedKind): Interpretation {
   const content = item.content ?? ""
-  if (kind === "updates") return { phase: "news", title: cleanTitle(item.title), summary: content ? excerpt(content) : undefined }
+  if (kind === "release") return { phase: "news", title: cleanTitle(item.title), summary: content ? excerpt(content) : undefined }
   let title = item.title
-  // Statuspage: newest update first, "<strong>Identified</strong> - text".
+  // Statuspage: newest post first, "<strong>Identified</strong> - text".
   const statuspage = content.match(/<strong>\s*([A-Za-z ]{3,30}?)\s*<\/strong>\s*-\s*([\s\S]*?)(?:<\/p>|$)/i)
   if (statuspage) return { phase: phaseOf(statuspage[1]!), status: label(statuspage[1]!), title, summary: excerpt(statuspage[2]!) }
   // incident.io: "<b>Status: Monitoring</b><br/><br/>text<br/><br/><b>Affected components</b>".
@@ -62,10 +63,10 @@ export function interpret(item: FeedItem, kind: FeedKind): Interpretation {
     const description = content.match(/Description:?\s*<\/strong>:?\s*<\/p>\s*<p>([\s\S]*?)<\/p>/i)?.[1]
     return { phase: phaseOf(status), status: label(status), title: cleanTitle(section ? plainText(section) : title), summary: description ? excerpt(description) : undefined }
   }
-  // Plain status feeds (Slack, AWS): "Incident: …" titles and prose updates.
+  // Plain status feeds (Slack, AWS): "Incident: …" titles and prose posts.
   title = title.replace(/^Incident:\s*/i, "")
   const resolved = settled.test(`${title} ${plainText(content)}`)
-  return { phase: resolved ? "resolved" : "monitoring", status: resolved ? "Resolved" : "Update", title: cleanTitle(title), summary: content ? excerpt(content) : undefined }
+  return { phase: resolved ? "resolved" : "monitoring", status: resolved ? "Resolved" : "Ongoing", title: cleanTitle(title), summary: content ? excerpt(content) : undefined }
 }
 
 export const inProgress = (phase: Phase) => phase === "active" || phase === "monitoring" || phase === "maintenance"
