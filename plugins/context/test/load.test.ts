@@ -2,18 +2,20 @@ import { expect, test } from "bun:test"
 import { loadSnapshot } from "../src/load"
 import { mockHost, user } from "./helpers"
 
-test("loads ascending history pages separately from retained context at the session location", async () => {
+test("loads ascending history with cursor-owned ordering separately from retained context at the session location", async () => {
   const { host, history, location, locations, catalogReads, sessionReads } = mockHost()
   const cursors: (string | undefined)[] = []
   host.client.message.list = async ({ cursor, sessionID, order }) => {
+    if (cursor && order !== undefined) throw new Error("Cursor cannot be combined with order")
     expect(sessionID).toBe("s")
-    expect(order).toBe("asc")
+    expect(order).toBe(cursor ? undefined : "asc")
     cursors.push(cursor)
     return cursor ? { data: [user("u2")], cursor: {} } : { data: history, cursor: { next: "next" } }
   }
   const snapshot = await loadSnapshot(host as never, "s")
   expect(cursors).toEqual([undefined, "next"])
   expect(snapshot.messageCount.user).toBe(2)
+  expect(snapshot.history).toBe("live")
   expect(snapshot.retained?.estimatedTokens).toBe(2)
   expect(snapshot.environment.map((item) => item.category)).toEqual(["agent", "instruction", "mcp", "skill", "skill", "tool"])
   expect(locations.length).toBeGreaterThan(0)

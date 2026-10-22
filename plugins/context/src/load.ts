@@ -26,7 +26,7 @@ export async function loadSnapshot(host: Host, sessionID?: string, signal?: Abor
       const seen = new Set<string>()
       do {
         signal?.throwIfAborted()
-        const page = await host.client.message.list({ sessionID, cursor, limit: 100, order: "asc" }, { signal })
+        const page = await host.client.message.list({ sessionID, limit: 100, ...(cursor ? { cursor } : { order: "asc" }) }, { signal })
         all.push(...page.data)
         cursor = page.cursor.next ?? undefined
         if (cursor && seen.has(cursor)) throw new Error("Repeated history cursor")
