@@ -97,8 +97,8 @@ describe("publish safety (all external operations injected; no network or publis
     run.statuses.set("https://registry.npmjs.org/%40lidtop%2Fopencode-context/1.2.3", 200)
     const output = join(run.root, "github-output")
     const pending = await unpublished(run.artifacts, { ...run.operations, environment: { GITHUB_OUTPUT: output } })
-    expect(pending.map(({ name }) => name)).toEqual(["@lidtop/opencode-cost", "@lidtop/opencode-later", "@lidtop/opencode-sessions"])
-    expect(await readFile(output, "utf8")).toBe(`packages=${JSON.stringify(["@lidtop/opencode-cost@2.2.3", "@lidtop/opencode-later@3.2.3", "@lidtop/opencode-sessions@4.2.3"])}\n`)
+    expect(pending.map(({ name }) => name)).toEqual(["@lidtop/opencode-cost", "@lidtop/opencode-later", "@lidtop/opencode-sessions", "@lidtop/opencode-feed"])
+    expect(await readFile(output, "utf8")).toBe(`packages=${JSON.stringify(["@lidtop/opencode-cost@2.2.3", "@lidtop/opencode-later@3.2.3", "@lidtop/opencode-sessions@4.2.3", "@lidtop/opencode-feed@5.2.3"])}\n`)
     expect(run.npmCommands()).toEqual([])
     expect(run.published).toEqual([])
 
@@ -113,10 +113,10 @@ describe("publish safety (all external operations injected; no network or publis
     const result = await publishTarballs(run.artifacts, run.operations)
     expect(run.builds()).toBe(0)
     expect(run.lookups).toEqual(pluginIDs.map((id, index) => `https://registry.npmjs.org/%40lidtop%2Fopencode-${id}/${index + 1}.2.3`))
-    expect(run.published).toEqual(["@lidtop/opencode-cost@2.2.3", "@lidtop/opencode-later@3.2.3", "@lidtop/opencode-sessions@4.2.3"])
+    expect(run.published).toEqual(["@lidtop/opencode-cost@2.2.3", "@lidtop/opencode-later@3.2.3", "@lidtop/opencode-sessions@4.2.3", "@lidtop/opencode-feed@5.2.3"])
     expect(result.map(({ name, version }) => `${name}@${version}`)).toEqual(run.published)
     const publishCommands = run.commands.filter((command) => command[1] === "publish")
-    expect(publishCommands.map((args) => args[2])).toEqual(["cost-2.2.3", "later-3.2.3", "sessions-4.2.3"].map((suffix) => join(run.artifacts, `lidtop-opencode-${suffix}.tgz`)))
+    expect(publishCommands.map((args) => args[2])).toEqual(["cost-2.2.3", "later-3.2.3", "sessions-4.2.3", "feed-5.2.3"].map((suffix) => join(run.artifacts, `lidtop-opencode-${suffix}.tgz`)))
     for (const args of publishCommands) {
       expect(args).toContain("--ignore-scripts")
       expect(args).toContain("--provenance")
@@ -162,7 +162,7 @@ describe("publish safety (all external operations injected; no network or publis
     )
     await publishTarballs(run.artifacts, run.operations)
     expect(run.sleeps).toEqual([5_000, 15_000])
-    expect(run.published).toEqual(pluginIDs.filter((id) => id !== "cost").map((id, index) => `${publicPackageName(id)}@${[1, 3, 4][index]}.2.3`))
+    expect(run.published).toEqual(pluginIDs.filter((id) => id !== "cost").map((id, index) => `${publicPackageName(id)}@${[1, 3, 4, 5][index]}.2.3`))
     expect(run.commands.filter((args) => args[1] === "publish" && args[2]!.includes("opencode-cost"))).toHaveLength(1)
   })
 
@@ -186,8 +186,8 @@ describe("publish safety (all external operations injected; no network or publis
     expect(run.published).toEqual(["@lidtop/opencode-context@1.2.3"])
     run.statuses.delete("https://registry.npmjs.org/%40lidtop%2Fopencode-cost/2.2.3")
     const retry = await publishTarballs(run.artifacts, run.operations)
-    expect(run.published).toEqual(["@lidtop/opencode-context@1.2.3", "@lidtop/opencode-cost@2.2.3", "@lidtop/opencode-later@3.2.3", "@lidtop/opencode-sessions@4.2.3"])
-    expect(retry.map(({ name }) => name)).toEqual(["@lidtop/opencode-cost", "@lidtop/opencode-later", "@lidtop/opencode-sessions"])
+    expect(run.published).toEqual(["@lidtop/opencode-context@1.2.3", "@lidtop/opencode-cost@2.2.3", "@lidtop/opencode-later@3.2.3", "@lidtop/opencode-sessions@4.2.3", "@lidtop/opencode-feed@5.2.3"])
+    expect(retry.map(({ name }) => name)).toEqual(["@lidtop/opencode-cost", "@lidtop/opencode-later", "@lidtop/opencode-sessions", "@lidtop/opencode-feed"])
   })
 
   test("invalid live environments fail before commands, registry access, or publishing", async () => {

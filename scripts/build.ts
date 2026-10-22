@@ -3,10 +3,10 @@ import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { join, relative } from "node:path"
 import ts from "typescript"
-import { inside, packageName, pluginIDs, privateWorkspaces, publicManifest, relativeModule, repositoryRoot, stagedManifest, workspaceSource, type BuildableID } from "./packaging"
+import { inside, packageName, pluginIDs, privateWorkspaces, publicManifest, relativeModule, repositoryRoot, stagedManifest, workspaceSource } from "./packaging"
 
 /** Stages into `.release/opcode-<id>` by default, or into a new empty directory elsewhere. */
-export async function buildPlugin(root: string, id: BuildableID, destination = join(root, ".release", `opcode-${id}`)) {
+export async function buildPlugin(root: string, id: typeof pluginIDs[number], destination = join(root, ".release", `opcode-${id}`)) {
   const directory = join(root, "plugins", id)
   const manifest = await publicManifest(root, id)
   const workspaceMap = await privateWorkspaces(root)

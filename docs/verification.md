@@ -56,7 +56,7 @@ sandbox for arbitrary plugin code.
 Use a disposable project and copies of existing databases. Do not point a test at
 your only copy of a production ledger or session index.
 
-- Load each built package individually, then all four together. Confirm plugin
+- Load each built package individually, then all of them together. Confirm plugin
   IDs and command palette entries without duplicate commands from the originals.
 - Context: open from home and a session; inspect each tab; navigate past one
   screen; resize; refresh during streaming; export and inspect permissions and

@@ -1,20 +1,19 @@
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
-import { pluginIDs, previewPluginIDs, publicPackageName, repositoryRoot, type BuildableID } from "./packaging"
+import { pluginIDs, publicPackageName, repositoryRoot } from "./packaging"
 
-type PluginID = BuildableID
-const previewable: readonly PluginID[] = [...pluginIDs, ...previewPluginIDs]
+type PluginID = typeof pluginIDs[number]
 // Client-local plugins load through the CLI config so their options reach the terminal process.
 const clientLocal: readonly PluginID[] = ["later", "feed"]
 type Environment = Record<string, string | undefined>
 const originals = ["opencode-context-tui", "opencode-cost", "opencode-later", "opencode-sessions-all"]
 
 export function selectPlugins(arguments_: string[]): PluginID[] {
-  if (!arguments_.length) return [...previewable]
+  if (!arguments_.length) return [...pluginIDs]
   return [...new Set(arguments_.map((argument) => {
-    const id = previewable.find((id) => argument === id || argument === `opcode-${id}` || argument === publicPackageName(id))
-    if (!id) throw new Error(`Unknown plugin '${argument}'. Choose: ${previewable.join(", ")}`)
+    const id = pluginIDs.find((id) => argument === id || argument === `opcode-${id}` || argument === publicPackageName(id))
+    if (!id) throw new Error(`Unknown plugin '${argument}'. Choose: ${pluginIDs.join(", ")}`)
     return id
   }))]
 }
@@ -50,7 +49,7 @@ export async function prepareDev(root: string, selected: PluginID[], environment
     }
     entries.push({ id, entry: { package: wrapper, options: { database: join(data, `${id}.sqlite`) } } })
   }
-  const disabled = [...originals, ...previewable.map((id) => `opcode-${id}`)].map((id) => `-${id}`)
+  const disabled = [...originals, ...pluginIDs.map((id) => `opcode-${id}`)].map((id) => `-${id}`)
   const local = entries.filter(({ id }) => clientLocal.includes(id)).map(({ entry }) => entry)
   const shared = entries.filter(({ id }) => !clientLocal.includes(id)).map(({ entry }) => entry)
   return {
@@ -92,7 +91,7 @@ async function attached(command: string[], cwd: string, environment: Environment
 
 export async function dev(arguments_: string[], root = repositoryRoot, environment: Environment = process.env) {
   if (arguments_.includes("--help")) {
-    console.log(`Usage: mise run dev [${previewable.join("|")} …]\nDefaults to every plugin, including unreleased previews. Plugin preview data persists under .release/dev/data.`)
+    console.log(`Usage: mise run dev [${pluginIDs.join("|")} …]\nDefaults to every plugin. Plugin preview data persists under .release/dev/data.`)
     return 0
   }
   const selected = selectPlugins(arguments_)

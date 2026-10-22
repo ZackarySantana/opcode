@@ -43,11 +43,11 @@ test("titles use only changed public package versions, never the root or bundled
   expect(releasePRUpdate(previousInstructions, releases).title).toBe("chore(release): publish context@0.1.1 cost@0.2.1")
 })
 
-test("all four independent releases are listed, including proposed prerelease versions", async () => {
+test("every independent release is listed, including proposed prerelease versions", async () => {
   const f = await fixture()
   for (const [index, id] of pluginIDs.entries()) await f.manifest(id, `0.${index + 2}.0${id === "sessions" ? "-beta.2" : ""}`)
   expect(releasePRUpdate(previousInstructions, await proposedReleases(f.root, f.base)).title)
-    .toBe("chore(release): publish context@0.2.0 cost@0.3.0 later@0.4.0 sessions@0.5.0-beta.2")
+    .toBe("chore(release): publish context@0.2.0 cost@0.3.0 later@0.4.0 sessions@0.5.0-beta.2 feed@0.6.0")
 })
 
 test("body updates preserve all release notes and are idempotent", () => {

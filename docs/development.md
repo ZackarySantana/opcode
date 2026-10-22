@@ -7,21 +7,21 @@ mise run dev
 ```
 
 Requires [mise](https://mise.jdx.dev/) and OpenCode V2. The launcher installs
-dependencies, builds all four plugins, and opens OpenCode with them enabled. To
+dependencies, builds every plugin, and opens OpenCode with them enabled. To
 preview just one:
 
 ```sh
 mise run dev cost
 ```
 
-Try `/context`, `/cost`, `/later`, and `/opcode-sessions` (avoids the built-in
-`/sessions` command). Relaunch after editing code to rebuild.
+Try `/context`, `/cost`, `/later`, `/feed`, and `/opcode-sessions` (avoids the
+built-in `/sessions` command). Relaunch after editing code to rebuild.
 
 Preview plugin databases persist in `.release/dev/data`, separate from the
 original plugins' databases. The launcher does not edit global configuration; it
 temporarily replaces the four originals and uses the preview extensions instead
-of your CLI-only plugin list. Later is configured on the CLI side so its
-client-local database option reaches the TUI.
+of your CLI-only plugin list. Later and Feed are configured on the CLI side so
+their client-local database options reach the TUI.
 
 **The preview uses a private server but your normal OpenCode login/session
 database.** It is not a sandbox: submitted prompts behave normally and may incur
@@ -43,8 +43,9 @@ OpenTUI, and Solid remain external. See [architecture](architecture.md) and
 
 ## README screenshots
 
-The root README uses six PNG captures under `docs/images/`. They show real V2
-terminal views with fictional demo data, not UI mockups. See the
+The root README uses seven PNG captures under `docs/images/`. They show real V2
+terminal views, not UI mockups: fictional demo data, except Feed's real public
+status feeds. See the
 [capture notes](images/README.md) for the theme, dimensions, and data boundaries.
 When updating them, keep private session text and paths out of the images:
 
@@ -56,6 +57,7 @@ When updating them, keep private session text and paths out of the images:
 | `context-content.png` | Content ranked by retained contributors |
 | `cost-dashboard.png` | Nonzero usage across several models, projects, and dates |
 | `sessions-browser.png` | Search matches across projects with a message preview |
+| `feed-timeline.png` | The Timeline with in-progress incidents and operational status pages |
 
 Use the same theme and terminal font throughout. Each Later/Context pair should
 have matching dimensions. Crop Context to the actual dialog so its text remains

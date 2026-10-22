@@ -33,6 +33,14 @@ personal sessions, credentials, or production databases were used.
 | `cost-dashboard.png` | Three projects/models and daily activity sorted newest first |
 | `sessions-browser.png` | Message-text search across the three fictional projects |
 
+## Feed
+
+`feed-timeline.png` is a maintainer's Windows Terminal capture of the `/feed`
+dialog in a `mise run dev` preview, 619 by 761 pixels. Unlike the images above,
+it shows **real public data**: the preset status pages and feeds as they were at
+capture time (npm, Claude, and OpenAI incidents in progress). Feeds are public;
+no private sessions, credentials, or paths are visible.
+
 For future captures, use the isolation approach in `test/tui-smoke.ts`. Keep the
 screenshots aligned with the current source, preserve visible limitations and
 status labels, and never edit an image to hide an application error.

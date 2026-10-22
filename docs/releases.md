@@ -1,7 +1,7 @@
 # Builds and independent releases
 
 The public packages are `@lidtop/opencode-context`, `@lidtop/opencode-cost`,
-`@lidtop/opencode-later`, and `@lidtop/opencode-sessions`. Each has its own version and
+`@lidtop/opencode-later`, `@lidtop/opencode-sessions`, and `@lidtop/opencode-feed`. Each has its own version and
 changelog. Changesets has no fixed or linked groups. Private `@opcode/core` and `@opcode/ui` are never published.
 Each public manifest keeps `publishConfig.access: "public"`; scoped packages must
 not fall back to npm's private-access default.
@@ -131,8 +131,8 @@ that PR's changed consumers; unrelated plugins retain their versions.
 After Changesets creates or regenerates the PR, the workflow updates its title
 and publishing instructions together. Titles list only public plugins with a
 proposed version different from the workflow's starting commit, in stable package
-order, for example `chore(release): publish context@0.1.1 cost@0.2.1`. All four
-packages are included when all four change. The private root/core/ui versions
+order, for example `chore(release): publish context@0.1.1 cost@0.2.1`. Every
+package is included when every package changes. The private root/core/ui versions
 never contribute, and release notes remain intact. This is a presentation change,
 not approval to merge or publish; the npm environment protections and validation
 still apply.
@@ -231,8 +231,8 @@ Each public package needs its own npm trusted-publisher configuration:
 
 These values identify the actual GitHub origin, `ZackarySantana/opcode`; the npm
 organization `@lidtop` is not the GitHub owner. Confirm the origin during preflight.
-Check all four packages: `@lidtop/opencode-context`, `@lidtop/opencode-cost`,
-`@lidtop/opencode-later`, and `@lidtop/opencode-sessions`. Their staged `repository.url`
+Check every package: `@lidtop/opencode-context`, `@lidtop/opencode-cost`,
+`@lidtop/opencode-later`, `@lidtop/opencode-sessions`, and `@lidtop/opencode-feed`. Their staged `repository.url`
 metadata must match the actual repository. Newly created trusted publishers can
 default to stage-only access; that does not authorize this workflow's direct
 `npm publish`. Standalone

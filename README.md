@@ -9,8 +9,9 @@
 | [Context](#context-know-whats-taking-up-space) | A clearer picture of your current session | [![Context version](https://img.shields.io/npm/v/@lidtop/opencode-context?label=context)](https://www.npmjs.com/package/@lidtop/opencode-context) |
 | [Cost](#cost-see-where-the-usage-goes) | Perspective on costs, tokens, and activity | [![Cost version](https://img.shields.io/npm/v/@lidtop/opencode-cost?label=cost)](https://www.npmjs.com/package/@lidtop/opencode-cost) |
 | [Sessions](#sessions-find-the-conversation-not-just-the-project) | Work worth coming back to | [![Sessions version](https://img.shields.io/npm/v/@lidtop/opencode-sessions?label=sessions)](https://www.npmjs.com/package/@lidtop/opencode-sessions) |
+| [Feed](#feed-know-whats-down-before-you-debug) | What's happening with the services you depend on | [![Feed version](https://img.shields.io/npm/v/@lidtop/opencode-feed?label=feed)](https://www.npmjs.com/package/@lidtop/opencode-feed) |
 
-*Screenshots show the OpenCode terminal UI with fictional demo data.*
+*Screenshots show the OpenCode terminal UI with fictional demo data, except Feed, which shows real public status feeds.*
 
 ## Later: save the thought, keep the flow
 
@@ -78,6 +79,16 @@ Remember the discussion but not where it happened? Search session titles, projec
 
 [Explore Sessions →](plugins/sessions/README.md)
 
+## Feed: know what's down before you debug
+
+Is it your code, or is npm having a bad day? Follow the status pages and release feeds you depend on, with what's in progress in the sidebar and a full timeline one command away.
+
+**Glance at the sidebar → open `/feed` for the details → jump to the incident.** In-progress incidents come first, status pages with nothing going on are grayed out at the top, and scheduled maintenance waits under Upcoming. Pick from presets like npm, GitHub, Claude, OpenAI, AWS, and Cloudflare, plus release feeds and blogs, or paste any RSS or Atom URL.
+
+![Feed timeline with in-progress npm, Claude, and OpenAI incidents, operational status pages grayed out, and recent updates](docs/images/feed-timeline.png)
+
+[Explore Feed →](plugins/feed/README.md)
+
 ## Install
 
 Requires the **OpenCode 2.1.1+ terminal UI, within the 2.x release line**.
@@ -89,6 +100,7 @@ opencode plugin add @lidtop/opencode-later
 opencode plugin add @lidtop/opencode-context
 opencode plugin add @lidtop/opencode-cost
 opencode plugin add @lidtop/opencode-sessions
+opencode plugin add @lidtop/opencode-feed
 ```
 
 **Prefer editing your config?** Instead, add the packages you want to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `opencode.json`), keeping your existing entries:
@@ -100,7 +112,8 @@ opencode plugin add @lidtop/opencode-sessions
     "@lidtop/opencode-later",
     "@lidtop/opencode-context",
     "@lidtop/opencode-cost",
-    "@lidtop/opencode-sessions"
+    "@lidtop/opencode-sessions",
+    "@lidtop/opencode-feed"
   ]
 }
 ```
@@ -111,6 +124,6 @@ Replacing the original plugins? Remove their old configuration entries rather th
 
 ---
 
-**Make it yours:** [Later guide](plugins/later/README.md) · [Context guide](plugins/context/README.md) · [Cost guide](plugins/cost/README.md) · [Sessions guide](plugins/sessions/README.md)
+**Make it yours:** [Later guide](plugins/later/README.md) · [Context guide](plugins/context/README.md) · [Cost guide](plugins/cost/README.md) · [Sessions guide](plugins/sessions/README.md) · [Feed guide](plugins/feed/README.md)
 
 **Working on Opcode?** [Local development](docs/development.md) · [Architecture](docs/architecture.md) · [Verification](docs/verification.md) · [Releases](docs/releases.md)
