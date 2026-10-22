@@ -1,3 +1,5 @@
+import { errorMessage } from "@opcode/core"
+import type { Context } from "@opencode/plugin/tui/context"
 import { release } from "node:os"
 
 type Which = (command: string) => string | null
@@ -22,4 +24,15 @@ export function openURL(url: string, which: Which = (command) => Bun.which(comma
   const command = candidates.find(([name]) => which(name!))
   if (!command) throw new Error(`No browser launcher found (tried ${candidates.map(([name]) => name).join(", ")})`)
   Bun.spawn(command, { stdin: "ignore", stdout: "ignore", stderr: "ignore" }).unref()
+}
+
+/** Opens an item's link from /feed or the sidebar, reporting the outcome in a toast. */
+export function openLink(api: Pick<Context, "ui">, link: string | undefined): void {
+  if (!link) { api.ui.toast.show({ title: "Feed", message: "This item has no link.", variant: "warning" }); return }
+  try {
+    openURL(link)
+    api.ui.toast.show({ title: "Feed", message: `Opening ${link}`, variant: "info" })
+  } catch (error) {
+    api.ui.toast.show({ title: "Feed", message: errorMessage(error), variant: "error" })
+  }
 }

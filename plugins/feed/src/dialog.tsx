@@ -1,6 +1,5 @@
 /** @jsxImportSource @opentui/solid */
 
-import { errorMessage } from "@opcode/core"
 import { Card, CenterEmpty, KeyHints, usePalette } from "@opcode/ui"
 import { useDialogCommands } from "@opcode/ui/screen"
 import { usePlugin } from "@opencode/plugin/tui"
@@ -9,7 +8,7 @@ import { useTerminalDimensions } from "@opentui/solid"
 import { createMemo, createSignal, For, Show, type Accessor } from "solid-js"
 import type { FeedsController } from "./host"
 import { FEED_HISTORY, kindOf, matches, matchesText, relative, scopeChoices, sidebarItemChoices, windowChoices, windowLabel, windowShort, type SurfaceScope, type Settings as FeedSettings, type TimelineEntry } from "./model"
-import { openURL } from "./open"
+import { openLink } from "./open"
 import { TabFrame } from "./frame"
 import { FeedPicker } from "./picker"
 import { presets, type FeedKind } from "./presets"
@@ -173,14 +172,7 @@ function Browser(props: TabProps & {
     move: focus.move,
     activate() {
       const entry = focus.current()
-      if (!entry) return
-      if (!entry.link) { api.ui.toast.show({ title: "Feed", message: "This item has no link.", variant: "warning" }); return }
-      try {
-        openURL(entry.link)
-        api.ui.toast.show({ title: "Feed", message: `Opening ${entry.link}`, variant: "info" })
-      } catch (error) {
-        api.ui.toast.show({ title: "Feed", message: errorMessage(error), variant: "error" })
-      }
+      if (entry) openLink(api, entry.link)
     },
   }
   props.handle(handlers)

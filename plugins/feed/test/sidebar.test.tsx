@@ -1,0 +1,55 @@
+/** @jsxImportSource @opentui/solid */
+
+import { expect, test } from "bun:test"
+import { mockTheme } from "@opcode/ui/test-support/host"
+import { PluginContextProvider } from "@opencode/plugin/tui"
+import type { Context } from "@opencode/plugin/tui/context"
+import type { MouseButton } from "@opentui/core/testing"
+import { testRender } from "@opentui/solid"
+import { FeedsController } from "../src/host"
+import { Sidebar } from "../src/sidebar"
+import { FeedsDatabase } from "../src/sqlite"
+
+const item = (title: string, status: string, hoursAgo: number, link?: string) => `<item><title>${title}</title><guid>${title}</guid>
+  <description>&lt;p&gt;&lt;strong&gt;${status}&lt;/strong&gt; - details&lt;/p&gt;</description>
+  <pubDate>${new Date(Date.now() - hoursAgo * 3_600_000).toUTCString()}</pubDate>${link ? `<link>${link}</link>` : ""}</item>`
+// Six incidents overflow the sidebar's five; an ftp link is refused before any browser is launched.
+const rss = `<rss><channel><title>npm</title>
+  ${item("Outage 1", "Identified", 1, "ftp://status.test/1")}${[2, 3, 4, 5, 6].map((n) => item(`Outage ${n}`, "Identified", n)).join("")}
+  ${item("Planned work", "Scheduled", -3)}
+</channel></rss>`
+
+test("clicking a sidebar item opens its link like enter in /feed, and the /feed pointer opens the dialog", async () => {
+  const database = new FeedsDatabase(":memory:")
+  const feeds = new FeedsController(database, async () => rss)
+  const toasts: { message: string; variant: string }[] = []
+  const commands: string[] = []
+  const host = {
+    theme: mockTheme(),
+    ui: { toast: { show: (toast: { message: string; variant: string }) => toasts.push({ message: toast.message, variant: toast.variant }) } },
+    keymap: { dispatch: (id: string) => commands.push(id) },
+  } as unknown as Context
+  const view = await testRender(() => <PluginContextProvider value={host}><Sidebar feeds={feeds} /></PluginContextProvider>, { width: 48, height: 30 })
+  const click = async (text: string, button?: MouseButton) => {
+    const lines = (await view.waitForFrame((frame) => frame.includes(text))).split("\n")
+    const y = lines.findIndex((line) => line.includes(text))
+    await view.mockMouse.click(lines[y]!.indexOf(text), y, button)
+  }
+  try {
+    feeds.subscribe("https://npm.test/rss", "status")
+    await click("Outage 1", 2)
+    expect(toasts).toEqual([])
+    await click("Outage 1")
+    await click("maintenance scheduled")
+    expect(toasts).toEqual([
+      { message: "Refusing to open ftp://status.test/1", variant: "error" },
+      { message: "This item has no link.", variant: "warning" },
+    ])
+    await click("/feed")
+    expect(commands).toEqual(["opcode-feed.open"])
+  } finally {
+    await view.dispose()
+    feeds.dispose()
+    database.close()
+  }
+})

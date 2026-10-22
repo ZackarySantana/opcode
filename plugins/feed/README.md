@@ -50,9 +50,9 @@ Changing tabs clears the search and the chosen feed. While typing in the box, th
 
 On Status, in-progress incidents come first, colored by urgency: red while investigating or identified, yellow while monitoring or during maintenance. Status pages with nothing in progress are listed, grayed out, at the top. Everything else from the time window follows, newest first. Future-dated items, such as scheduled maintenance, appear under Upcoming instead.
 
-The sidebar combines them in short form: up to five items by default (see **Sidebar items** below), then the two soonest scheduled items, with a count of the rest and a pointer to `/feed`. By default it leaves out release feeds, keeping it for incidents; see **Sidebar releases** below. It is omitted when you have no subscriptions; the plugin never forces it open.
+The sidebar combines them in short form: up to five items by default (see **Sidebar items** below), then the two soonest scheduled items, with a count of the rest and a pointer to `/feed`. By default it leaves out release feeds, keeping it for incidents; see **Sidebar releases** below. It is omitted when you have no subscriptions; the plugin never forces it open. Click an item or scheduled maintenance there to open its link, as `enter` does in `/feed`; click a "+N more" line to open the dialog.
 
-`enter` opens links in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-open` (Linux); on WSL it tries `wslview`, `xdg-open`, then PowerShell. Only `http` and `https` links are opened.
+Links open in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-open` (Linux); on WSL it tries `wslview`, `xdg-open`, then PowerShell. Only `http` and `https` links are opened.
 
 ## Subscriptions
 
