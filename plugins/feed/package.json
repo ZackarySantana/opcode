@@ -1,6 +1,6 @@
 {
   "name": "@lidtop/opencode-feed",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Follow RSS and Atom feeds in the OpenCode sidebar",
   "type": "module",
   "license": "MIT",
