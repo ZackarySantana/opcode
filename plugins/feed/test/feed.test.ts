@@ -1,10 +1,11 @@
 import { afterAll, expect, test } from "bun:test"
+import { Database } from "bun:sqlite"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createRoot } from "solid-js"
 import { FeedsController, type Fetcher } from "../src/host"
-import { age, editRows, managerRows, matches, sidebarLayout, timeline, type EditRow, type FetchResult, type ResolvedScope, type Surface, type TimelineEntry } from "../src/model"
+import { age, editRows, managerRows, matches, sidebarLayout, timeline, type EditRow, type FetchResult, type Surface, type SurfaceScope, type TimelineEntry } from "../src/model"
 import { launchers, openURL } from "../src/open"
 import { parseFeed } from "../src/parse"
 import { candidateURL, feedURL, presets } from "../src/presets"
@@ -124,7 +125,7 @@ test("the timeline pins in-progress items, applies the window, and lists quiet s
     ["https://down.test/rss", { status: "error", error: "HTTP 503" }],
     ["https://slow.test/rss", { status: "loading" }],
   ])
-  const view = timeline(subscriptions, [], results, { windowHours: 24, resolved: "both" }, "feed", { now })
+  const view = timeline(subscriptions, [], results, { windowHours: 24, resolved: "both", updates: "feed" }, "feed", { now })
   // The 30h-old incident is outside the 24h window but still in progress.
   expect(view.current.map((entry) => [entry.source, entry.status, entry.title])).toEqual([["npm.test", "Identified", "Publishing degraded"]])
   expect(view.recent.map((entry) => entry.title)).toEqual(["New release", "Story 1", "Old outage", "Story 2", "Story 3", "Webhooks delayed"])
@@ -133,16 +134,16 @@ test("the timeline pins in-progress items, applies the window, and lists quiet s
   expect(view.unreachable).toEqual([{ source: "down.test", error: "HTTP 503" }])
   expect(view.pending).toBe(1)
 
-  const quiet = timeline(subscriptions, [], results, { windowHours: 6, resolved: "none" }, "feed", { now })
+  const quiet = timeline(subscriptions, [], results, { windowHours: 6, resolved: "none", updates: "feed" }, "feed", { now })
   expect(quiet.current).toHaveLength(1)
   expect(quiet.recent.map((entry) => entry.title)).toEqual(["New release", "Story 1", "Story 2", "Story 3"])
 
   // One feed shows its history: past the window, past the updates cap, and resolved items too.
-  const github = timeline(subscriptions, [], results, { windowHours: 6, resolved: "none" }, "feed", { now, feed: "https://gh.test/rss" })
+  const github = timeline(subscriptions, [], results, { windowHours: 6, resolved: "none", updates: "none" }, "feed", { now, feed: "https://gh.test/rss" })
   expect(github.recent.map((entry) => entry.title)).toEqual(["Webhooks delayed", "Ancient"])
   expect(github.upcoming.map((entry) => entry.title)).toEqual(["Maintenance soon", "Maintenance later"])
   expect(github.operational).toEqual(["gh.test"])
-  const news = timeline(subscriptions, [], results, { windowHours: 6, resolved: "none" }, "feed", { now, feed: "https://news.test/rss" })
+  const news = timeline(subscriptions, [], results, { windowHours: 6, resolved: "none", updates: "none" }, "feed", { now, feed: "https://news.test/rss" })
   expect(news.recent.map((entry) => entry.title)).toEqual(["Story 1", "Story 2", "Story 3", "Story 4", "Story 5"])
 })
 
@@ -150,7 +151,7 @@ test("one feed's history keeps its newest twenty items", () => {
   const now = Date.parse("2026-10-22T12:00:00Z")
   const items = Array.from({ length: 30 }, (_, index) => ({ id: `${index}`, title: `Post ${index}`, published: now - (index + 1) * 24 * 60 * 60_000 }))
   const view = timeline([{ url: "https://blog.test/rss", kind: "updates", createdAt: 0 }], [], new Map([["https://blog.test/rss", { status: "ok", fetchedAt: now, feed: { items } }]]),
-    { windowHours: 12, resolved: "none" }, "feed", { now, feed: "https://blog.test/rss" })
+    { windowHours: 12, resolved: "none", updates: "none" }, "feed", { now, feed: "https://blog.test/rss" })
   expect(view.recent).toHaveLength(20)
   expect(view.recent[0]!.title).toBe("Post 0")
   expect(view.recent.at(-1)!.title).toBe("Post 19")
@@ -162,8 +163,8 @@ test("resolved items appear only on the surfaces the setting names", () => {
     { id: "1", title: "Fixed", published: now - 60_000, content: "<p><strong>Resolved</strong> - Done.</p>" },
     { id: "2", title: "Broken", published: now - 60_000, content: "<p><strong>Investigating</strong> - Looking.</p>" },
   ] } }]])
-  const titles = (resolved: ResolvedScope, surface: Surface) => {
-    const view = timeline([{ url: "https://npm.test/rss", kind: "status", createdAt: 0 }], [], results, { windowHours: 24, resolved }, surface, { now })
+  const titles = (resolved: SurfaceScope, surface: Surface) => {
+    const view = timeline([{ url: "https://npm.test/rss", kind: "status", createdAt: 0 }], [], results, { windowHours: 24, resolved, updates: "both" }, surface, { now })
     return [...view.current, ...view.recent].map((entry) => entry.title)
   }
   expect(titles("both", "sidebar")).toEqual(["Broken", "Fixed"])
@@ -172,6 +173,34 @@ test("resolved items appear only on the surfaces the setting names", () => {
   expect(titles("feed", "sidebar")).toEqual(["Broken"])
   expect(titles("feed", "feed")).toEqual(["Broken", "Fixed"])
   expect(titles("none", "feed")).toEqual(["Broken"])
+})
+
+test("updates feeds appear only on the surfaces the setting names; status pages always do", () => {
+  const now = Date.parse("2026-10-22T12:00:00Z")
+  const subscriptions = [
+    { url: "https://npm.test/rss", kind: "status" as const, createdAt: 0 },
+    { url: "https://bun.test/releases", kind: "updates" as const, createdAt: 1 },
+    { url: "https://down.test/blog", kind: "updates" as const, createdAt: 2 },
+  ]
+  const results = new Map<string, FetchResult>([
+    ["https://npm.test/rss", { status: "ok", fetchedAt: now, feed: { items: [{ id: "1", title: "Broken", published: now - 60_000, content: "<p><strong>Investigating</strong> - Looking.</p>" }] } }],
+    ["https://bun.test/releases", { status: "ok", fetchedAt: now, feed: { items: [{ id: "2", title: "Bun v2", published: now - 60_000 }] } }],
+    ["https://down.test/blog", { status: "error", error: "HTTP 503" }],
+  ])
+  const view = (updates: SurfaceScope, surface: Surface) => timeline(subscriptions, [], results, { windowHours: 24, resolved: "none", updates }, surface, { now })
+  const titles = (updates: SurfaceScope, surface: Surface) => { const v = view(updates, surface); return [...v.current, ...v.recent].map((entry) => entry.title) }
+  // The default keeps releases in /feed and out of the sidebar.
+  expect(titles("feed", "sidebar")).toEqual(["Broken"])
+  expect(titles("feed", "feed")).toEqual(["Broken", "Bun v2"])
+  expect(titles("sidebar", "sidebar")).toEqual(["Broken", "Bun v2"])
+  expect(titles("sidebar", "feed")).toEqual(["Broken"])
+  expect(titles("both", "sidebar")).toEqual(["Broken", "Bun v2"])
+  expect(titles("none", "feed")).toEqual(["Broken"])
+  // A hidden updates feed's failure is hidden too.
+  expect(view("feed", "sidebar").unreachable).toEqual([])
+  expect(view("feed", "feed").unreachable).toEqual([{ source: "down.test", error: "HTTP 503" }])
+  // Picking one updates feed still shows it.
+  expect(timeline(subscriptions, [], results, { windowHours: 24, resolved: "none", updates: "none" }, "feed", { now, feed: "https://bun.test/releases" }).recent.map((entry) => entry.title)).toEqual(["Bun v2"])
 })
 
 test("the editor's box filters feeds under kind headings and offers to add a new URL as either kind", () => {
@@ -227,17 +256,40 @@ test("settings persist across reopening the database", async () => {
   const path = join(directory, "feed.sqlite")
   const first = new FeedsDatabase(path)
   // A fresh install looks back 12 hours and hides resolved incidents.
-  expect(first.settings()).toEqual({ windowHours: 12, resolved: "none" })
+  expect(first.settings()).toEqual({ windowHours: 12, resolved: "none", updates: "feed" })
   await createRoot(async (dispose) => {
     const feeds = new FeedsController(first, async () => rss)
     feeds.updateSettings({ windowHours: 72 })
     feeds.updateSettings({ resolved: "sidebar" })
+    feeds.updateSettings({ updates: "both" })
     dispose()
   })
   first.close()
   const second = new FeedsDatabase(path)
-  expect(second.settings()).toEqual({ windowHours: 72, resolved: "sidebar" })
+  expect(second.settings()).toEqual({ windowHours: 72, resolved: "sidebar", updates: "both" })
   second.close()
+})
+
+test("databases from 0.1.0 gain the updates setting with its default, keeping saved choices", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "opcode-feed-"))
+  afterAll(() => rm(directory, { recursive: true, force: true }))
+  const path = join(directory, "feed.sqlite")
+  const legacy = new Database(path)
+  legacy.exec(`
+    CREATE TABLE subscriptions (url TEXT PRIMARY KEY, title TEXT, kind TEXT NOT NULL, created_at INTEGER NOT NULL);
+    CREATE TABLE settings (id INTEGER PRIMARY KEY CHECK (id = 1), window_hours INTEGER NOT NULL, resolved TEXT NOT NULL);
+    INSERT INTO settings (id, window_hours, resolved) VALUES (1, 6, 'both');
+    INSERT INTO subscriptions VALUES ('https://bun.test/releases', NULL, 'updates', 1);
+  `)
+  legacy.close()
+  const migrated = new FeedsDatabase(path)
+  expect(migrated.settings()).toEqual({ windowHours: 6, resolved: "both", updates: "feed" })
+  expect(migrated.list().map((subscription) => subscription.url)).toEqual(["https://bun.test/releases"])
+  migrated.saveSettings({ windowHours: 6, resolved: "both", updates: "sidebar" })
+  migrated.close()
+  const reopened = new FeedsDatabase(path)
+  expect(reopened.settings().updates).toBe("sidebar")
+  reopened.close()
 })
 
 test("ages are compact", () => {

@@ -8,21 +8,23 @@ export type FetchResult =
   | { readonly status: "ok"; readonly feed: Feed; readonly fetchedAt: number }
   | { readonly status: "error"; readonly error: string; readonly feed?: Feed }
 
-/** Where resolved and completed items appear. */
-export type ResolvedScope = "both" | "sidebar" | "feed" | "none"
+/** Which surfaces show a kind of item: resolved incidents, or posts from updates feeds. */
+export type SurfaceScope = "both" | "sidebar" | "feed" | "none"
 /** The two places a timeline renders. */
 export type Surface = "sidebar" | "feed"
 
 export interface Settings {
   readonly windowHours: number
-  readonly resolved: ResolvedScope
+  readonly resolved: SurfaceScope
+  /** Releases, blogs, and news from updates feeds; by default only in /feed, keeping the sidebar for incidents. */
+  readonly updates: SurfaceScope
 }
 
-export const defaultSettings: Settings = { windowHours: 12, resolved: "none" }
+export const defaultSettings: Settings = { windowHours: 12, resolved: "none", updates: "feed" }
 export const windowChoices = [6, 12, 24, 48, 72, 168] as const
-export const resolvedChoices: readonly ResolvedScope[] = ["both", "sidebar", "feed", "none"]
+export const scopeChoices: readonly SurfaceScope[] = ["both", "sidebar", "feed", "none"]
 
-export const showsResolved = (scope: ResolvedScope, surface: Surface) => scope === "both" || scope === surface
+export const showsOn = (scope: SurfaceScope, surface: Surface) => scope === "both" || scope === surface
 /** In-progress items stay visible past the window, but not forever if a provider never closes one. */
 const CURRENT_HORIZON = 7 * 24 * 60 * 60_000
 /** Newest posts each updates feed may place in a timeline. */
@@ -124,7 +126,7 @@ export interface TimelineOptions {
   readonly updatesPerFeed?: number
   /**
    * Narrows to one subscribed feed and shows its history: the window, the updates cap, and the
-   * resolved setting stop applying, and the newest FEED_HISTORY settled items are kept.
+   * resolved and updates settings stop applying, and the newest FEED_HISTORY settled items are kept.
    */
   readonly feed?: string
 }
@@ -133,7 +135,8 @@ export interface TimelineOptions {
 export function timeline(subscriptions: readonly Subscription[], presets: readonly Preset[], results: ReadonlyMap<string, FetchResult>, settings: Settings, surface: Surface,
   { now = Date.now(), updatesPerFeed = UPDATES_PER_FEED, feed }: TimelineOptions = {}): Timeline {
   const scoped = feed !== undefined
-  const resolved = scoped || showsResolved(settings.resolved, surface)
+  const resolved = scoped || showsOn(settings.resolved, surface)
+  const updates = scoped || showsOn(settings.updates, surface)
   const current: TimelineEntry[] = []
   const recent: TimelineEntry[] = []
   const upcoming: TimelineEntry[] = []
@@ -143,11 +146,13 @@ export function timeline(subscriptions: readonly Subscription[], presets: readon
   const span = scoped ? Infinity : settings.windowHours * 60 * 60_000
   const cap = scoped ? FEED_HISTORY : updatesPerFeed
   for (const subscription of scoped ? subscriptions.filter((subscription) => subscription.url === feed) : subscriptions) {
+    const kind = kindOf(subscription, presets)
+    // A hidden updates feed leaves no trace on this surface, not even a failure.
+    if (kind === "updates" && !updates) continue
     const result = results.get(subscription.url)
     const source = feedTitle(subscription.url, presets, subscription, result)
     if (result?.status === "error") unreachable.push({ source, error: result.error })
     if (!result?.feed) { if (result?.status !== "error") pending++; continue }
-    const kind = kindOf(subscription, presets)
     let busy = false
     const posts: TimelineEntry[] = []
     for (const item of result.feed.items) {

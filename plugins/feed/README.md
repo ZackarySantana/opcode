@@ -44,7 +44,7 @@ Changing tabs clears the search and the chosen feed. While typing in the box, th
 
 In-progress incidents come first, colored by urgency: red while investigating or identified, yellow while monitoring or during maintenance. Status pages with nothing in progress are listed, grayed out, at the top. Everything else from the time window follows, newest first. Future-dated items, such as scheduled maintenance, appear under Upcoming instead.
 
-The sidebar shows the same timeline in short form: up to five updates, then the two soonest scheduled items, with a count of the rest and a pointer to `/feed`. It is omitted when you have no subscriptions; the plugin never forces it open.
+The sidebar shows the same timeline in short form: up to five items, then the two soonest scheduled items, with a count of the rest and a pointer to `/feed`. By default it leaves out updates feeds, keeping it for incidents; see **Show updates** below. It is omitted when you have no subscriptions; the plugin never forces it open.
 
 `enter` opens links in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-open` (Linux); on WSL it tries `wslview`, `xdg-open`, then PowerShell. Only `http` and `https` links are opened.
 
@@ -63,8 +63,9 @@ Presets include npm, GitHub, Google Workspace, Google Cloud, Claude, OpenAI, Clo
 | --- | --- | --- |
 | Time window | 6h, 12h, 24h, 2d, 3d, 7d | 12h |
 | Show resolved | Both, Sidebar, /feed, None | None |
+| Show updates | Both, Sidebar, /feed, None | /feed |
 
-The window sets how far back the timeline looks and how far ahead Upcoming looks; in-progress incidents always show, for up to seven days. Showing a single feed with `f` ignores the window, the three-item cap, and the resolved setting.
+The window sets how far back the timeline looks and how far ahead Upcoming looks; in-progress incidents always show, for up to seven days. **Show resolved** chooses where resolved and completed incidents appear, and **Show updates** where releases, blogs, and news from updates feeds appear; status pages always show. Showing a single feed with `f` ignores the window, the three-item cap, and both of these settings.
 
 ## Options
 

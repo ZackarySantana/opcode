@@ -9,7 +9,7 @@ import { useTerminalDimensions } from "@opentui/solid"
 import { createMemo, createSignal, For, Show, type Accessor } from "solid-js"
 import { Edit } from "./edit"
 import type { FeedsController } from "./host"
-import { FEED_HISTORY, matches, matchesText, relative, resolvedChoices, windowChoices, windowLabel, windowShort, type ResolvedScope, type Settings as FeedSettings, type TimelineEntry } from "./model"
+import { FEED_HISTORY, matches, matchesText, relative, scopeChoices, windowChoices, windowLabel, windowShort, type SurfaceScope, type Settings as FeedSettings, type TimelineEntry } from "./model"
 import { openURL } from "./open"
 import { TabFrame } from "./frame"
 import { FeedPicker } from "./picker"
@@ -223,7 +223,8 @@ function Browser(props: TabProps & {
   )
 }
 
-const resolvedLabels: Record<ResolvedScope, string> = { both: "Both", sidebar: "Sidebar", feed: "/feed", none: "None" }
+const scopeLabels: Record<SurfaceScope, string> = { both: "Both", sidebar: "Sidebar", feed: "/feed", none: "None" }
+const scopes = scopeChoices.map((scope) => ({ value: scope, label: scopeLabels[scope] }))
 
 interface SettingRow<Value> {
   id: string
@@ -245,10 +246,17 @@ const settingRows = [
   {
     id: "resolved", label: "Show resolved",
     description: "Where resolved and completed incidents appear.",
-    choices: resolvedChoices.map((scope) => ({ value: scope, label: resolvedLabels[scope] })),
+    choices: scopes,
     current: (settings: FeedSettings) => settings.resolved,
-    update: (resolved: ResolvedScope) => ({ resolved }),
-  } satisfies SettingRow<ResolvedScope>,
+    update: (resolved: SurfaceScope) => ({ resolved }),
+  } satisfies SettingRow<SurfaceScope>,
+  {
+    id: "updates", label: "Show updates",
+    description: "Where releases, blogs, and news from updates feeds appear. Status pages always show.",
+    choices: scopes,
+    current: (settings: FeedSettings) => settings.updates,
+    update: (updates: SurfaceScope) => ({ updates }),
+  } satisfies SettingRow<SurfaceScope>,
 ] as SettingRow<unknown>[]
 
 /** Every choice stays visible; ←/→ move between them, stopping at either end. */
