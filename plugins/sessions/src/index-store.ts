@@ -1,56 +1,48 @@
-import { Database } from "bun:sqlite"
-import { chmodSync, existsSync, mkdirSync } from "node:fs"
-import { homedir } from "node:os"
-import { basename, dirname, isAbsolute, join, resolve } from "node:path"
+import type { Database } from "bun:sqlite"
+import { basename, join, resolve } from "node:path"
+import { openDatabase, resolveStatePath, stateDirectory } from "@opcode/core/state"
 import { createSerialQueue } from "@opcode/core"
 import type { MessageRecord, ProjectOption, SearchInput, SessionRecord, SessionResult } from "./domain"
 import { RegexMatcher, validateQuery } from "./regex"
 
 type StoredSession = Omit<SessionRecord, "parentID"> & { parentID: string | null }
 
-export function databasePath(configured?: unknown, env = process.env, home = homedir()) {
-  const state = join(env.XDG_STATE_HOME || join(home, ".local", "state"), "opencode")
-  if (typeof configured === "string" && configured.trim()) {
-    const path = configured.trim()
-    return path === ":memory:" || isAbsolute(path) ? path : resolve(state, path)
-  }
-  return join(state, "opencode-sessions-all", "sessions.sqlite")
+export function databasePath(configured?: unknown, state = stateDirectory()) {
+  return resolveStatePath(configured, join("opencode-sessions-all", "sessions.sqlite"), state)
 }
 
 /** Original tables/columns remain intact; new metadata guards stale writes and deletions. */
 export class SessionIndex {
   readonly db: Database
   constructor(path: string) {
-    const fresh = path !== ":memory:" && !existsSync(path)
-    if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-    this.db = new Database(path, { create: true, strict: true })
-    if (fresh) chmodSync(path, 0o600)
-    this.db.run("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;")
-    this.db.run(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY, project_id TEXT NOT NULL, directory TEXT NOT NULL, title TEXT NOT NULL,
-        parent_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, indexed_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS messages (
-        id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id), role TEXT NOT NULL,
-        created_at INTEGER NOT NULL, text TEXT NOT NULL, provider_id TEXT, model_id TEXT,
-        cost REAL NOT NULL DEFAULT 0, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0,
-        reasoning_tokens INTEGER NOT NULL DEFAULT 0, cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_write_tokens INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE TABLE IF NOT EXISTS backfill (project_id TEXT PRIMARY KEY, directory TEXT NOT NULL, completed_at INTEGER NOT NULL);
-      CREATE INDEX IF NOT EXISTS sessions_updated ON sessions(updated_at DESC);
-      CREATE INDEX IF NOT EXISTS messages_session ON messages(session_id);
-      CREATE TABLE IF NOT EXISTS opcode_sessions_deleted (id TEXT PRIMARY KEY, deleted_at INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS opcode_sessions_message_revision (id TEXT PRIMARY KEY, revision REAL NOT NULL);
-      CREATE TABLE IF NOT EXISTS opcode_sessions_message_keys (
-        session_id TEXT NOT NULL, source_id TEXT NOT NULL, index_id TEXT NOT NULL UNIQUE, PRIMARY KEY(session_id,source_id)
-      );
-    `)
-    // Additive data migration only, including older text-only indexes. No V1 runtime API.
-    const columns = new Set(this.db.query<{ name: string }, []>("PRAGMA table_info(messages)").all().map((item) => item.name))
-    for (const [name, type] of Object.entries({ provider_id: "TEXT", model_id: "TEXT", cost: "REAL", input_tokens: "INTEGER", output_tokens: "INTEGER", reasoning_tokens: "INTEGER", cache_read_tokens: "INTEGER", cache_write_tokens: "INTEGER" })) {
-      if (!columns.has(name)) this.db.run(`ALTER TABLE messages ADD COLUMN ${name} ${type}${type === "TEXT" ? "" : " NOT NULL DEFAULT 0"}`)
-    }
+    this.db = openDatabase(path, (db) => {
+      db.run("PRAGMA foreign_keys=ON")
+      db.run(`
+        CREATE TABLE IF NOT EXISTS sessions (
+          id TEXT PRIMARY KEY, project_id TEXT NOT NULL, directory TEXT NOT NULL, title TEXT NOT NULL,
+          parent_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, indexed_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS messages (
+          id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id), role TEXT NOT NULL,
+          created_at INTEGER NOT NULL, text TEXT NOT NULL, provider_id TEXT, model_id TEXT,
+          cost REAL NOT NULL DEFAULT 0, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0,
+          reasoning_tokens INTEGER NOT NULL DEFAULT 0, cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_write_tokens INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS backfill (project_id TEXT PRIMARY KEY, directory TEXT NOT NULL, completed_at INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS sessions_updated ON sessions(updated_at DESC);
+        CREATE INDEX IF NOT EXISTS messages_session ON messages(session_id);
+        CREATE TABLE IF NOT EXISTS opcode_sessions_deleted (id TEXT PRIMARY KEY, deleted_at INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS opcode_sessions_message_revision (id TEXT PRIMARY KEY, revision REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS opcode_sessions_message_keys (
+          session_id TEXT NOT NULL, source_id TEXT NOT NULL, index_id TEXT NOT NULL UNIQUE, PRIMARY KEY(session_id,source_id)
+        );
+      `)
+      // Additive data migration only, including older text-only indexes. No V1 runtime API.
+      const columns = new Set(db.query<{ name: string }, []>("PRAGMA table_info(messages)").all().map((item) => item.name))
+      for (const [name, type] of Object.entries({ provider_id: "TEXT", model_id: "TEXT", cost: "REAL", input_tokens: "INTEGER", output_tokens: "INTEGER", reasoning_tokens: "INTEGER", cache_read_tokens: "INTEGER", cache_write_tokens: "INTEGER" })) {
+        if (!columns.has(name)) db.run(`ALTER TABLE messages ADD COLUMN ${name} ${type}${type === "TEXT" ? "" : " NOT NULL DEFAULT 0"}`)
+      }
+    })
   }
 
   close() { this.db.close() }

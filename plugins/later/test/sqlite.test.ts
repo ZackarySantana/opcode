@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { databasePath, LaterDatabase, stateDirectory } from "../src/sqlite"
+import { databasePath, LaterDatabase } from "../src/sqlite"
 
 const cleanup: Array<() => void> = []
 afterEach(() => { for (const stop of cleanup.splice(0).reverse()) stop() })
@@ -174,11 +174,9 @@ test("opens an existing legacy schema without losing IDs, timestamps, order, or 
 })
 
 test("keeps the legacy state path and resolves custom paths relative to state, not cwd", () => {
-  expect(stateDirectory({}, "/home/example")).toBe("/home/example/.local/state/opencode")
-  expect(stateDirectory({ XDG_STATE_HOME: "/custom" })).toBe("/custom/opencode")
-  expect(databasePath("/state")).toBe("/state/opencode-later/later.sqlite")
-  expect(databasePath("/state", " nested/custom.sqlite ")).toBe("/state/nested/custom.sqlite")
-  expect(databasePath("/state", "/absolute/list.sqlite")).toBe("/absolute/list.sqlite")
-  expect(databasePath("/state", ":memory:")).toBe(":memory:")
-  for (const option of [undefined, null, 12, "  "]) expect(databasePath("/state", option)).toBe("/state/opencode-later/later.sqlite")
+  expect(databasePath(undefined, "/state")).toBe("/state/opencode-later/later.sqlite")
+  expect(databasePath(" nested/custom.sqlite ", "/state")).toBe("/state/nested/custom.sqlite")
+  expect(databasePath("/absolute/list.sqlite", "/state")).toBe("/absolute/list.sqlite")
+  expect(databasePath(":memory:", "/state")).toBe(":memory:")
+  for (const option of [undefined, null, 12, "  "]) expect(databasePath(option, "/state")).toBe("/state/opencode-later/later.sqlite")
 })

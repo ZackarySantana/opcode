@@ -3,7 +3,7 @@
 import { expect, spyOn, test } from "bun:test"
 import { PluginContextProvider } from "@opencode/plugin/tui"
 import { testRender } from "@opentui/solid"
-import { RGBA, ScrollBoxRenderable } from "@opentui/core"
+import { ScrollBoxRenderable } from "@opentui/core"
 import { Show } from "solid-js"
 import { isDashboardRoute, PLUGIN_ID, ROUTE } from "../src/navigation.js"
 import { createTuiHarness, dashboard } from "./tui-harness.js"
@@ -12,9 +12,6 @@ const destination = (range: string, projectID?: string, model?: string) => ({
   type: "plugin" as const, id: PLUGIN_ID, name: ROUTE, data: { range, projectID, model },
 })
 
-const raised = RGBA.fromHex("#222222")
-const border = RGBA.fromHex("#667788")
-
 async function renderDashboard(harness: Awaited<ReturnType<typeof createTuiHarness>>, height = 32, width = 72, availableHeight = height) {
   const Page = () => harness.page().render({
     get data() {
@@ -22,12 +19,8 @@ async function renderDashboard(harness: Awaited<ReturnType<typeof createTuiHarne
       return route.type === "plugin" ? route.data : undefined
     },
   })
-  const api = {
-    ...harness.api,
-    theme: { ...harness.api.theme, background: { ...harness.api.theme.background, raised: { base: raised } }, border: { base: border } },
-  }
   return testRender(() => (
-    <PluginContextProvider value={api as never}>
+    <PluginContextProvider value={harness.api as never}>
       <box width="100%" height={availableHeight}>
         <Show when={isDashboardRoute(harness.route())}><Page /></Show>
       </box>
@@ -177,7 +170,7 @@ test("wide dashboard restores raised stat cards, filter chips, three cost-bar pa
     expect(frame).toContain("############")
     const titleSpans = scene.captureSpans().lines.flatMap((line) => line.spans).filter((span) => /TOTAL COST|ALL TOKENS|OUTPUT|CACHE|BY MODEL|BY PROJECT|DAILY ACTIVITY/.test(span.text))
     expect(titleSpans.length).toBeGreaterThanOrEqual(7)
-    for (const span of titleSpans) expect(span.bg).toEqual(raised)
+    for (const span of titleSpans) expect(span.bg).toEqual(harness.api.theme.background.raised.base)
     const spans = scene.captureSpans().lines.flatMap((line) => line.spans)
     const accent = harness.api.theme.hue.accent[300]
     const value = harness.api.theme.hue.interactive[300]
@@ -186,7 +179,26 @@ test("wide dashboard restores raised stat cards, filter chips, three cost-bar pa
     expect(spans.find((span) => span.text.includes("BY MODEL"))?.fg).toEqual(accent)
     expect(spans.filter((span) => span.text.includes("$2.00")).every((span) => span.fg.equals(value))).toBe(true)
     expect(spans.some((span) => span.text.includes("####") && span.fg.equals(accent))).toBe(true)
-    expect(spans.some((span) => span.text.includes("----") && span.fg.equals(border))).toBe(true)
+    expect(spans.some((span) => span.text.includes("----") && span.fg.equals(harness.api.theme.border.base))).toBe(true)
+  } finally { await scene.dispose(); await harness.cleanup() }
+})
+
+test("header hints are clickable through the same registered commands", async () => {
+  const harness = await createTuiHarness(destination("7d"))
+  const scene = await renderDashboard(harness, 40, 144)
+  try {
+    await scene.waitFor(() => harness.queries.length > 0)
+    harness.queries.at(-1)!.resolve(dashboard())
+    const click = async (text: string) => {
+      const lines = (await scene.waitForFrame((frame) => frame.includes(text))).split("\n")
+      const y = lines.findIndex((line) => line.includes(text))
+      await scene.mockMouse.click(lines[y]!.indexOf(text), y)
+      await scene.flush()
+    }
+    await click("x reset")
+    expect(harness.route()).toMatchObject({ type: "plugin", data: { range: "30d" } })
+    await click("esc back")
+    expect(harness.route()).toEqual({ type: "home" })
   } finally { await scene.dispose(); await harness.cleanup() }
 })
 

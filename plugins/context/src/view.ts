@@ -6,6 +6,4 @@ export function listWindow(length: number, selection: number, height: number) {
   return { selected, start, end: Math.min(length, start + size) }
 }
 
-export { cellWidth, shorten } from "@opcode/ui"
-
 export const percent = (value: number | undefined) => value === undefined ? "unavailable" : `${(value * 100).toFixed(1)}%`

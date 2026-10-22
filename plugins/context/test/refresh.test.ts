@@ -1,12 +1,11 @@
 import { expect, test } from "bun:test"
 import { createSnapshotRefresh, type RefreshState } from "../src/refresh"
 import { buildSnapshot, type Snapshot } from "../src/snapshot"
-import { deferred } from "./helpers"
 
 const snapshot = (sessionID: string) => buildSnapshot({ sessionID, messages: [] })
 
 test("new requests cancel old work and late completion cannot replace new data", async () => {
-  const first = deferred<Snapshot>(), second = deferred<Snapshot>()
+  const first = Promise.withResolvers<Snapshot>(), second = Promise.withResolvers<Snapshot>()
   const states: RefreshState[] = [], signals: AbortSignal[] = []
   const refresh = createSnapshotRefresh((signal) => { signals.push(signal); return signals.length === 1 ? first.promise : second.promise }, (state) => states.push(state))
   const a = refresh.refresh(), b = refresh.refresh()
@@ -18,7 +17,7 @@ test("new requests cancel old work and late completion cannot replace new data",
 })
 
 test("disposal cancels active work and prevents subsequent publications or scheduled reads", async () => {
-  const pending = deferred<Snapshot>()
+  const pending = Promise.withResolvers<Snapshot>()
   const states: RefreshState[] = []
   let signal: AbortSignal | undefined, calls = 0
   const refresh = createSnapshotRefresh((value) => { signal = value; calls++; return pending.promise }, (state) => states.push(state), 1)
@@ -43,7 +42,7 @@ test("failures stop loading, preserve previous data as stale, and permit retry",
 })
 
 test("event bursts coalesce and events during a read schedule one follow-up", async () => {
-  const pending = deferred<Snapshot>()
+  const pending = Promise.withResolvers<Snapshot>()
   let calls = 0
   const refresh = createSnapshotRefresh(async () => { calls++; return calls === 1 ? pending.promise : snapshot("fresh") }, () => {}, 2)
   refresh.schedule(); refresh.schedule(); refresh.schedule()

@@ -2,16 +2,9 @@ import type { Dashboard, DashboardFilter } from "../src/domain.js"
 import type { Destination, DialogSelectOptions, KeymapLayer, Page, Route } from "@opencode/plugin/tui/context"
 import { createRoot, createSignal } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
-import { RGBA } from "@opentui/core"
+import { mockTheme } from "@opcode/ui/test-support/host"
 import tuiPlugin from "../src/tui.js"
 import { PLUGIN_ID } from "../src/navigation.js"
-
-export function deferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (error: unknown) => void
-  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no })
-  return { promise, resolve, reject }
-}
 
 export function dashboard(cost = 2, projectLabel = "Alpha", day = "2026-07-10"): Dashboard {
   return {
@@ -33,8 +26,8 @@ export async function createTuiHarness(initial: Route = { type: "home" }, mutabl
     else setSignalRoute(next)
   }
   const [location, setLocation] = createSignal({ directory: "/remote/project" })
-  const queries: Array<ReturnType<typeof deferred<Dashboard>> & { filter: DashboardFilter; signal: AbortSignal }> = []
-  const dialogs: Array<ReturnType<typeof deferred<string | undefined>> & { options: DialogSelectOptions<string> }> = []
+  const queries: Array<ReturnType<typeof Promise.withResolvers<Dashboard>> & { filter: DashboardFilter; signal: AbortSignal }> = []
+  const dialogs: Array<ReturnType<typeof Promise.withResolvers<string | undefined>> & { options: DialogSelectOptions<string> }> = []
   const navigations: Destination[] = []
   const layers: KeymapLayer[] = []
   const usageListeners = new Set<() => void>()
@@ -42,20 +35,16 @@ export async function createTuiHarness(initial: Route = { type: "home" }, mutabl
   let modes = 0
   let page!: Page
   let unregistered = false
-  const white = RGBA.fromHex("#ffffff")
   const api = {
     get location() { return location() },
-    theme: {
-      hue: { accent: { 300: RGBA.fromHex("#77cccc"), 600: RGBA.fromHex("#336666") }, interactive: { 300: RGBA.fromHex("#88aaff") } },
-      background: { base: RGBA.fromHex("#000000") },
-      text: { base: white, muted: white, action: { primary: { base: white } }, feedback: { success: { base: white }, warning: { base: white }, error: { base: white } } },
-    },
+    renderer: { widthMethod: "unicode" },
+    theme: mockTheme({ panel: "#222222", border: "#667788" }),
     client: {
       rpc: () => ({
         status: async () => ({ projectID: "p", directory: "/remote/project", lastImport: null }),
         completeImport: async () => ({}),
         dashboard: (filter: DashboardFilter, options: { signal: AbortSignal }) => {
-          const request = { ...deferred<Dashboard>(), filter, signal: options.signal }
+          const request = { ...Promise.withResolvers<Dashboard>(), filter, signal: options.signal }
           queries.push(request)
           return request.promise // Deliberately ignores abort: callers must reject stale responses themselves.
         },
@@ -65,6 +54,7 @@ export async function createTuiHarness(initial: Route = { type: "home" }, mutabl
     data: { on: (_type: string, callback: () => void) => { usageListeners.add(callback); return () => { usageListeners.delete(callback) } } },
     keymap: {
       layer: (factory: () => KeymapLayer) => { layers.push(factory()) },
+      dispatch: (id: string) => { void layers.flatMap((layer) => layer.commands ?? []).find((item) => item.id === id)?.run() },
       mode: { push: () => { modes++; return () => { modes-- } } },
     },
     ui: {
@@ -80,7 +70,7 @@ export async function createTuiHarness(initial: Route = { type: "home" }, mutabl
       dialog: {
         clear: () => undefined,
         select: (options: DialogSelectOptions<string>) => {
-          const selection = { ...deferred<string | undefined>(), options }
+          const selection = { ...Promise.withResolvers<string | undefined>(), options }
           dialogs.push(selection)
           return selection.promise
         },

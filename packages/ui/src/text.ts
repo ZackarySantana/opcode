@@ -1,3 +1,4 @@
+import { usePlugin } from "@opencode/plugin/tui"
 import { measureEditText, type WidthMethod } from "@opentui/core"
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
@@ -20,4 +21,13 @@ export function shorten(text: string, width: number, widthMethod: WidthMethod = 
     used += cells
   }
   return `${result}…`
+}
+
+/** Measurement bound to the host renderer, so wide graphemes fit the cells actually drawn. */
+export function useText() {
+  const context = usePlugin()
+  return {
+    shorten: (text: string, width: number) => shorten(text, width, context.renderer.widthMethod),
+    cellWidth: (text: string) => cellWidth(text, context.renderer.widthMethod),
+  }
 }

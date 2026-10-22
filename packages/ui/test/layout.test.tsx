@@ -7,6 +7,7 @@ import { RGBA, TextAttributes, type CapturedFrame } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"
 import { Card, CenterEmpty, FilterChip, KeyHints, Page, Section, StatCard, ThemeSurface } from "@opcode/ui"
+import { mockTheme } from "../test-support/host"
 
 const colors = {
   background: RGBA.fromHex("#101112"),
@@ -16,18 +17,12 @@ const colors = {
   muted: RGBA.fromHex("#819293"),
   primary: RGBA.fromHex("#ffaf87"),
   accent: RGBA.fromHex("#b39df3"),
-  accentBorder: RGBA.fromHex("#3b6965"),
 }
 
 function context(primary = () => colors.primary) {
-  return {
-    theme: {
-      hue: { accent: { 300: colors.accent, 600: colors.accentBorder }, interactive: { get 300() { return primary() } } },
-      background: { base: colors.background, raised: { base: colors.raised } },
-      border: { base: colors.border },
-      text: { base: colors.text, muted: colors.muted, action: { primary: { base: colors.text } } },
-    },
-  } as unknown as Context
+  const theme = mockTheme({ ...colors, panel: colors.raised })
+  Object.defineProperty(theme.hue.interactive, 300, { get: primary })
+  return { theme } as unknown as Context
 }
 
 function position(frame: string, text: string) {
