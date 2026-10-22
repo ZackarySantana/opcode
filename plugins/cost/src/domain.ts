@@ -1,6 +1,12 @@
 export const DATE_RANGES = ["today", "7d", "30d", "all"] as const
 export type DateRange = (typeof DATE_RANGES)[number]
 export const IMPORT_BATCH_SIZE = 100
+/** Shared by the RPC schema and handler validation. A model filter is `provider/model`. */
+export const MAX_ID_LENGTH = 512
+export const MAX_MODEL_FILTER_LENGTH = MAX_ID_LENGTH * 2 + 1
+export const MAX_TIME = 8.64e15
+export const MAX_COST = 1e12
+export const MAX_TOKENS = 1e15
 
 /** Only usage metadata crosses RPC or reaches the ledger. */
 export interface Usage {
@@ -83,8 +89,8 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function parseFilter(value: unknown): DashboardFilter {
   if (!isRecord(value) || !DATE_RANGES.includes(value.range as DateRange)) throw new Error("Invalid date range")
-  for (const key of ["projectID", "model"] as const) {
-    if (value[key] !== undefined && (typeof value[key] !== "string" || value[key].length > 1025)) {
+  for (const [key, max] of [["projectID", MAX_ID_LENGTH], ["model", MAX_MODEL_FILTER_LENGTH]] as const) {
+    if (value[key] !== undefined && (typeof value[key] !== "string" || value[key].length > max)) {
       throw new Error(`Invalid ${key}`)
     }
   }
@@ -100,9 +106,9 @@ export function parseImportBatch(value: unknown): { sessionID: string; records: 
       throw new Error("Invalid usage identity")
     }
     for (const key of ["createdAt", "cost", "input", "output", "reasoning", "cacheRead", "cacheWrite"] as const) {
-      if (!validNumber(record[key], key === "createdAt" ? 8.64e15 : key === "cost" ? 1e12 : 1e15)) throw new Error(`Invalid usage ${key}`)
+      if (!validNumber(record[key], key === "createdAt" ? MAX_TIME : key === "cost" ? MAX_COST : MAX_TOKENS)) throw new Error(`Invalid usage ${key}`)
     }
-    if (record.completedAt !== undefined && (!validNumber(record.completedAt, 8.64e15) || (record.completedAt as number) < (record.createdAt as number))) {
+    if (record.completedAt !== undefined && (!validNumber(record.completedAt, MAX_TIME) || (record.completedAt as number) < (record.createdAt as number))) {
       throw new Error("Invalid completion timestamp")
     }
     // Reconstruct, rather than persisting arbitrary client-supplied fields.
@@ -117,7 +123,7 @@ export function parseImportBatch(value: unknown): { sessionID: string; records: 
 }
 
 function validID(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && value.length <= 512
+  return typeof value === "string" && value.length > 0 && value.length <= MAX_ID_LENGTH
 }
 
 function validNumber(value: unknown, max: number): value is number {

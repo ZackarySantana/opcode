@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 
-import { expect, spyOn, test } from "bun:test"
+import { expect, test } from "bun:test"
 import { PluginContextProvider } from "@opencode/plugin/tui"
 import { testRender } from "@opentui/solid"
 import { ScrollBoxRenderable } from "@opentui/core"
@@ -82,6 +82,39 @@ test("history reconciliation runs silently without moving the dashboard", async 
     await scene.dispose()
     await harness.cleanup()
   }
+})
+
+test("import failures belong to their location; switching cancels the old import, and r retries the current one", async () => {
+  const harness = await createTuiHarness(destination("30d"))
+  const scene = await renderDashboard(harness, 40, 144)
+  const failure = "History import failed: offline. Press r to retry."
+  try {
+    await scene.waitFor(() => harness.queries.length > 0)
+    harness.queries.at(-1)!.resolve(dashboard())
+    // A transport that ignores cancellation, failing only after the location changed.
+    const late = Promise.withResolvers<never>()
+    const listed = Promise.withResolvers<AbortSignal>()
+    harness.api.client.session.list = ((_input: unknown, options: { signal: AbortSignal }) => {
+      listed.resolve(options.signal)
+      return late.promise
+    }) as never
+    const pending = harness.run("refresh")
+    const first = await listed.promise
+    harness.api.client.session.list = async () => ({ data: [], cursor: {} })
+    harness.setLocation({ directory: "/another/location" })
+    expect(first.aborted).toBe(true)
+    late.reject(new Error("offline"))
+    await pending
+    await scene.flush()
+    expect(scene.captureCharFrame()).not.toContain("History import failed")
+
+    harness.api.client.session.list = async () => { throw new Error("offline") }
+    harness.setLocation({ directory: "/remote/project" })
+    await scene.waitForFrame((text) => text.includes(failure))
+    harness.api.client.session.list = async () => ({ data: [], cursor: {} })
+    await harness.run("refresh")
+    await scene.waitForFrame((text) => !text.includes("History import failed"))
+  } finally { await scene.dispose(); await harness.cleanup() }
 })
 
 test("real narrow dashboard keeps daily activity reachable with both filters, and query labels/totals update reactively", async () => {
@@ -203,8 +236,6 @@ test("header hints are clickable through the same registered commands", async ()
 })
 
 test("rendered requests reject stale responses; usage events refresh, and unmount cancels queries/listeners/timers", async () => {
-  const intervals = spyOn(globalThis, "setInterval")
-  const clearIntervals = spyOn(globalThis, "clearInterval")
   const harness = await createTuiHarness(destination("30d"))
   const scene = await renderDashboard(harness)
   try {
@@ -225,20 +256,17 @@ test("rendered requests reject stale responses; usage events refresh, and unmoun
 
     const beforeEvent = harness.queries.length
     harness.emitUsage()
-    await Bun.sleep(120)
+    expect(harness.queries).toHaveLength(beforeEvent) // Debounced.
+    harness.settle()
     await scene.waitFor(() => harness.queries.length > beforeEvent)
     harness.queries.at(-1)!.resolve(dashboard(5, "Updated"))
     await scene.waitForFrame((text) => text.includes("$5.00") && text.includes("Updated"))
     expect(harness.usageListeners.size).toBe(1)
     expect(harness.modes()).toBe(1)
 
-    // Drive the periodic refresh without a five-second sleep or replacing renderer clocks.
-    const intervalIndex = intervals.mock.calls.findIndex((args) => args[1] === 5_000)
-    expect(intervalIndex).toBeGreaterThanOrEqual(0)
-    const interval = intervals.mock.results[intervalIndex]!.value
-    const tick = intervals.mock.calls[intervalIndex]![0] as () => void
+    expect(harness.intervals.size).toBe(1)
     const beforeTick = harness.queries.length
-    tick()
+    harness.tick()
     await scene.waitFor(() => harness.queries.length > beforeTick)
     const pending = harness.queries.at(-1)!
     harness.emitUsage() // A debounce is also pending when the route leaves.
@@ -247,22 +275,17 @@ test("rendered requests reject stale responses; usage events refresh, and unmoun
     expect(pending.signal.aborted).toBe(true)
     expect(harness.usageListeners.size).toBe(0)
     expect(harness.modes()).toBe(0)
-    expect(clearIntervals).toHaveBeenCalledWith(interval)
+    expect(harness.intervals.size).toBe(0)
+    expect(harness.debounces.size).toBe(0)
     const atUnmount = harness.queries.length
     pending.resolve(dashboard(100, "Unmounted"))
     harness.emitUsage()
-    await Bun.sleep(120)
     await scene.flush()
     expect(harness.queries).toHaveLength(atUnmount)
     frame = scene.captureCharFrame()
     expect(frame).not.toContain("Cost ledger")
     expect(frame).not.toContain("Unmounted")
-  } finally {
-    await scene.dispose()
-    await harness.cleanup()
-    intervals.mockRestore()
-    clearIntervals.mockRestore()
-  }
+  } finally { await scene.dispose(); await harness.cleanup() }
 })
 
 test("shared screen mount releases keyboard scope and cancels a pending selector when the view alone unmounts", async () => {
@@ -293,7 +316,6 @@ test("shared screen mount releases keyboard scope and cancels a pending selector
 })
 
 test("same-query streaming refreshes keep cards and scroll mounted, coalesce requests, and recover quietly from failure", async () => {
-  const intervals = spyOn(globalThis, "setInterval")
   const harness = await createTuiHarness(destination("30d"))
   const scene = await renderDashboard(harness, 24)
   try {
@@ -308,12 +330,10 @@ test("same-query streaming refreshes keep cards and scroll mounted, coalesce req
     await scene.flush()
     const position = scroll.scrollTop
     expect(position).toBeGreaterThan(0)
-    const intervalIndex = intervals.mock.calls.findIndex((args) => args[1] === 5_000)
-    const tick = intervals.mock.calls[intervalIndex]![0] as () => void
     const beforeRefresh = harness.queries.length
 
     harness.emitUsage()
-    await Bun.sleep(120)
+    harness.settle()
     await scene.waitFor(() => harness.queries.length === beforeRefresh + 1)
     const request = harness.queries.at(-1)!
     await scene.flush()
@@ -322,10 +342,10 @@ test("same-query streaming refreshes keep cards and scroll mounted, coalesce req
     expect(scene.captureCharFrame()).not.toContain("Loading server ledger")
     expect(scroll.scrollTop).toBe(position)
 
-    for (let index = 0; index < 20; index++) { tick(); harness.emitUsage() }
+    for (let index = 0; index < 20; index++) { harness.tick(); harness.emitUsage() }
     // Even a new route object with identical filter values is the same query.
     harness.setRoute(destination("30d"))
-    await Bun.sleep(120)
+    harness.settle()
     await scene.flush()
     expect(harness.queries).toHaveLength(beforeRefresh + 1)
     expect(request.signal.aborted).toBe(false)
@@ -348,7 +368,7 @@ test("same-query streaming refreshes keep cards and scroll mounted, coalesce req
     expect(scroll.scrollTop).toBe(position)
     expect(scene.renderer.root.findDescendantById("opcode-cost.totals")).toBe(totals)
 
-    tick()
+    harness.tick()
     await scene.waitFor(() => harness.queries.length === beforeRefresh + 3)
     await scene.flush()
     expect(scene.captureCharFrame()).toContain("Refresh failed: offline")
@@ -358,11 +378,7 @@ test("same-query streaming refreshes keep cards and scroll mounted, coalesce req
     expect(scroll.scrollTop).toBe(position)
     expect(scene.renderer.root.findDescendantById("opcode-cost.totals")).toBe(totals)
     expect(harness.queries).toHaveLength(beforeRefresh + 3)
-  } finally {
-    await scene.dispose()
-    await harness.cleanup()
-    intervals.mockRestore()
-  }
+  } finally { await scene.dispose(); await harness.cleanup() }
 })
 
 test("changed filters clear loaded values, reject late old-query results, and show an honest new-query failure", async () => {
@@ -375,7 +391,7 @@ test("changed filters clear loaded values, reject late old-query results, and sh
     const originalTotals = scene.renderer.root.findDescendantById("opcode-cost.totals")
     const beforeRefresh = harness.queries.length
     harness.emitUsage()
-    await Bun.sleep(120)
+    harness.settle()
     await scene.waitFor(() => harness.queries.length === beforeRefresh + 1)
     const oldQuery = harness.queries.at(-1)!
 
@@ -401,7 +417,7 @@ test("changed filters clear loaded values, reject late old-query results, and sh
     expect(frame).toContain("Unable to read ledger")
 
     harness.emitUsage()
-    await Bun.sleep(120)
+    harness.settle()
     await scene.waitFor(() => harness.queries.length === beforeRefresh + 3)
     harness.queries.at(-1)!.resolve(dashboard(7, "Beta"))
     frame = await scene.waitForFrame((text) => text.includes("Beta") && text.includes("$7.00"))
@@ -420,7 +436,7 @@ test("changing server location clears same-filter data and cannot accept the pre
     await scene.waitForFrame((frame) => frame.includes("Alpha") && frame.includes("TOTAL COST"))
     const beforeRefresh = harness.queries.length
     harness.emitUsage()
-    await Bun.sleep(120)
+    harness.settle()
     await scene.waitFor(() => harness.queries.length === beforeRefresh + 1)
     const oldQuery = harness.queries.at(-1)!
     harness.setLocation({ directory: "/another/location" })

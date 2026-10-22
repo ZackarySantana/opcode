@@ -49,28 +49,45 @@ test("revisions are idempotent, persist on reopen, and survive session deletion 
   expect(reopened.lastImport(record.projectID)).toBeNumber()
 })
 
-test("later historical completions and equal-version live corrections work; live precedence survives a true reopen", () => {
+test("live usage takes precedence over history; equal versions correct, older versions are ignored", () => {
+  const ledger = open()
+  ledger.recordLive({ ...record, cost: 9 }, 10)
+  ledger.recordLive({ ...record, cost: 10 }, 10)
+  ledger.recordLive({ ...record, cost: 0 }, 9)
+  ledger.importBatch([{ ...record, cost: 1, completedAt: record.completedAt! + 100 }])
+  expect(ledger.dashboard({ range: "all" }).total.cost).toBe(10)
+})
+
+test("later historical completions replace history, but equal completions do not", () => {
+  const ledger = open()
+  ledger.importBatch([record])
+  ledger.importBatch([{ ...record, cost: 2, completedAt: record.completedAt! + 100 }])
+  ledger.importBatch([{ ...record, cost: 0, completedAt: record.completedAt! + 100 }])
+  expect(ledger.dashboard({ range: "all" }).total.cost).toBe(2)
+})
+
+test("live precedence persists across separate connections and a reopen", () => {
   const path = temporaryDatabase()
   const first = open(path)
-  first.recordLive({ ...record, cost: 9 }, 10)
   const second = open(path)
-  first.recordLive({ ...record, cost: 10 }, 10) // Equal-version corrections are not mistaken for older events.
-  first.recordLive({ ...record, cost: 0 }, 9)
+  first.recordLive({ ...record, cost: 9 }, 10)
   second.importBatch([{ ...record, cost: 1, completedAt: record.completedAt! + 100 }])
-  const historical = { ...record, messageID: "historical", modelID: "history" }
-  second.importBatch([historical])
-  second.importBatch([{ ...historical, cost: 2, completedAt: record.completedAt! + 100 }])
-  second.importBatch([{ ...historical, cost: 0, completedAt: record.completedAt! + 100 }])
-  expect(first.dashboard({ range: "all", model: "provider/history" }).total.cost).toBe(2)
-  expect(first.dashboard({ range: "all" }).total).toMatchObject({ cost: 12, messages: 2 })
   close(first)
   close(second)
   const reopened = open(path)
   reopened.importBatch([{ ...record, cost: 99, completedAt: record.completedAt! + 1_000 }])
   reopened.recordLive({ ...record, cost: 0 }, 9)
-  expect(reopened.dashboard({ range: "all" }).total.cost).toBe(12)
+  expect(reopened.dashboard({ range: "all" }).total.cost).toBe(9)
   reopened.recordLive({ ...record, cost: 11 }, 10)
-  expect(reopened.dashboard({ range: "all" }).total.cost).toBe(13)
+  expect(reopened.dashboard({ range: "all" }).total.cost).toBe(11)
+})
+
+test("live completion without usage keeps recorded usage but starts a new row from its record", () => {
+  const ledger = open()
+  ledger.recordLive({ ...record, cost: 0.3 }, 10)
+  ledger.recordLive({ ...record, cost: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, completedAt: record.completedAt! + 1 }, 11, { usage: false })
+  ledger.recordLive({ ...record, messageID: "new", cost: 0 }, 11, { usage: false })
+  expect(ledger.dashboard({ range: "all" }).total).toMatchObject({ cost: 0.3, messages: 2, tokens: 30 })
 })
 
 test("history can complete partial history but cannot regress completed records", () => {
@@ -184,17 +201,38 @@ test("breakdowns are bounded, daily activity shows the newest 14 dates first, an
   expect(dashboard.daily.map((day) => day.id)).toEqual(Array.from({ length: 14 }, (_, index) => `2026-07-${String(20 - index).padStart(2, "0")}`))
 })
 
-test("project options distinguish matching names by path and retain project-wide worktree filtering", () => {
+test("project options label by the most recently used directory, show paths, and retain project-wide worktree filtering", () => {
   const ledger = open()
   ledger.importBatch([
-    { ...record, messageID: "worktree", projectID: "project-a", directory: "/worktrees/feature/main" },
+    { ...record, messageID: "worktree", projectID: "project-a", directory: "/worktrees/feature/main", createdAt: record.createdAt + 1 },
     { ...record, messageID: "other-project", projectID: "project-b", directory: "/projects/b/main" },
     { ...record, messageID: "main", projectID: "project-a", directory: "/projects/a/main" },
   ])
   const dashboard = ledger.dashboard({ range: "all", projectID: "project-a" })
   expect(dashboard.projectOptions).toEqual([
-    { id: "project-a", label: "main", directory: "/projects/a/main" },
+    { id: "project-a", label: "main", directory: "/worktrees/feature/main" },
     { id: "project-b", label: "main", directory: "/projects/b/main" },
   ])
   expect(dashboard.total).toMatchObject({ messages: 2, cost: 1 })
+})
+
+test("daily buckets follow local midnights across a DST change", () => {
+  const timezone = process.env.TZ
+  process.env.TZ = "America/New_York"
+  try {
+    const ledger = open()
+    // 2026-03-08 has 23 local hours; a fixed 24-hour bucket would misplace the late entries.
+    for (const [id, createdAt, cost] of [
+      ["before", new Date(2026, 2, 7, 23, 59).getTime(), 1],
+      ["start", new Date(2026, 2, 8, 0, 0).getTime(), 2],
+      ["end", new Date(2026, 2, 8, 23, 59).getTime(), 4],
+      ["after", new Date(2026, 2, 9, 0, 0).getTime(), 8],
+    ] as const) ledger.importBatch([{ ...record, messageID: id, createdAt, cost }])
+    expect(ledger.dashboard({ range: "all" }).daily.map(({ id, cost }) => [id, cost])).toEqual([
+      ["2026-03-09", 8], ["2026-03-08", 6], ["2026-03-07", 1],
+    ])
+  } finally {
+    if (timezone === undefined) delete process.env.TZ
+    else process.env.TZ = timezone
+  }
 })

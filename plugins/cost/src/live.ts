@@ -5,18 +5,28 @@ import type { CostLedger } from "./ledger.js"
 
 type Host = { location: { directory: string }; session: Pick<Plugin.Context["session"], "get" | "context"> }
 
+/** Steps that never end must not grow memory without bound. */
+const MAX_STARTED = 256
+
 export function createLiveCollector(host: Host, ledger: CostLedger) {
   const started = new Map<string, SessionMessageAssistant>()
   return {
     clear: () => started.clear(),
+    /** Host reads may overlap other work; each ledger write runs synchronously after a final abort check. */
     async handle(event: OpenCodeEvent, signal: AbortSignal) {
       signal.throwIfAborted()
-      if (event.location && event.location.directory !== host.location.directory) return
+      if (event.location && event.location.directory !== host.location.directory) {
+        if ("assistantMessageID" in event.data) started.delete(event.data.assistantMessageID)
+        return
+      }
       if (event.type === "session.step.started") {
-        started.set(event.data.assistantMessageID, {
-          id: event.data.assistantMessageID, type: "assistant", agent: event.data.agent, model: event.data.model,
+        const id = event.data.assistantMessageID
+        started.delete(id)
+        started.set(id, {
+          id, type: "assistant", agent: event.data.agent, model: event.data.model,
           time: { created: event.data.started }, content: [],
         })
+        if (started.size > MAX_STARTED) started.delete(started.keys().next().value!)
         return
       }
       if (event.type === "session.compaction.ended") {
@@ -37,17 +47,22 @@ export function createLiveCollector(host: Host, ledger: CostLedger) {
         const session = await host.session.get({ sessionID }, { signal })
         if (session.location.directory !== host.location.directory) return
         let message = started.get(assistantMessageID)
+        // A started step carries no usage; a context read does.
+        const fromContext = !message
         if (!message) {
           const messages = await host.session.context({ sessionID }, { signal })
           message = messages.find((item): item is SessionMessageAssistant => item.type === "assistant" && item.id === assistantMessageID)
         }
         signal.throwIfAborted()
         if (!message) return
+        // Like the host, a failure replaces usage only when it reports both cost and tokens. A retried
+        // step reuses its message, so a failure without usage must not erase earlier recorded usage.
+        const reported = event.data.cost !== undefined && event.data.tokens !== undefined
         ledger.recordLive({
           ...usageFromMessage({ ...message, time: { ...message.time, completed: event.created },
-            cost: event.data.cost ?? message.cost, tokens: event.data.tokens ?? message.tokens }),
+            cost: reported ? event.data.cost : message.cost, tokens: reported ? event.data.tokens : message.tokens }),
           sessionID, projectID: session.projectID, directory: session.location.directory,
-        }, event.created)
+        }, event.created, { usage: reported || fromContext })
       } finally {
         started.delete(assistantMessageID)
       }
