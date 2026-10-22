@@ -2,15 +2,18 @@ import { expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import { OpenCode } from "@opencode/client"
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { existsSync } from "node:fs"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { SessionsRpc } from "../src/rpc"
 import type { SearchOutput } from "../src/domain"
 
-const executable = Bun.which("opencode")
+const installed = join(homedir(), ".opencode", "bin", "opencode")
+const executable = Bun.which("opencode") ?? (existsSync(installed) ? installed : undefined)
+if (!executable) console.warn("SKIPPED rpc-host.test.ts: no OpenCode binary on PATH or at ~/.opencode/bin/opencode; real RPC validation is untested.")
 
 /** Real host validation happens before JSON encoding; mock handlers/JSON round trips cannot cover it. */
-test.skipIf(!executable)("populated legacy SQLite rows pass the real server RPC output validator and typed client", async () => {
+test.skipIf(!executable)("[requires OpenCode binary] populated legacy SQLite rows pass the real server RPC output validator and typed client", async () => {
   const root = await mkdtemp(join(tmpdir(), "sessions-rpc-host-"))
   const plugin = join(root, "plugin")
   const legacyDirectory = join(root, "legacy-project")
@@ -111,6 +114,10 @@ test.skipIf(!executable)("populated legacy SQLite rows pass the real server RPC 
     expect(child).toMatchObject({ parentID: "legacy-root", providerID: "fixture-provider", modelID: "fixture-model", snippet: "Retained child text" })
     expect(partial?.modelID).toBe("legacy-model")
     expect(Object.hasOwn(partial!, "providerID")).toBe(false)
+    expect(result.truncated).toBe(false)
+    // Exercises the bundled regex worker and per-field anchors in the real server.
+    const matched = await rpc.search({ query: "^Retained legacy", showSubagents: true }, options) as SearchOutput
+    expect(matched.rows.map((row) => row.id)).toEqual(["legacy-root"])
     const rootsOnly = await rpc.search({ query: "", showSubagents: false }, options) as SearchOutput
     expect(rootsOnly.rows.map((row) => row.id)).toEqual(["legacy-root", "legacy-partial", "legacy-provider-only", "legacy-empty"])
     const persisted = new Database(database, { readonly: true })
