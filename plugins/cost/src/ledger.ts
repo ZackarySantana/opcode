@@ -136,7 +136,7 @@ export class CostLedger {
     const ranked = (groups: Map<string, Breakdown>) => [...groups.values()].sort((a, b) => b.cost - a.cost || a.label.localeCompare(b.label)).slice(0, 8)
     return {
       total, projects: ranked(projects), models: ranked(models),
-      daily: [...days.values()].sort((a, b) => a.id.localeCompare(b.id)).slice(-14),
+      daily: [...days.values()].sort((a, b) => b.id.localeCompare(a.id)).slice(0, 14),
       projectOptions, modelOptions: [...modelIDs].sort().map((id) => ({ id, label: id })),
     }
   }

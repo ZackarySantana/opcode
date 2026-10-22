@@ -170,7 +170,7 @@ test("local-calendar boundaries and combined date/project/model filters", () => 
   expect(empty.projectOptions).toHaveLength(2)
 })
 
-test("breakdowns are bounded, daily dates chronological, and totals remain complete", () => {
+test("breakdowns are bounded, daily activity shows the newest 14 dates first, and totals remain complete", () => {
   const ledger = open()
   for (let index = 1; index <= 20; index++) ledger.importBatch([{
     ...record, messageID: `m${index}`, projectID: `p${index}`, directory: `/work/p${index}`, modelID: `model${index}`,
@@ -181,8 +181,7 @@ test("breakdowns are bounded, daily dates chronological, and totals remain compl
   expect(dashboard.projects).toHaveLength(8)
   expect(dashboard.models[0]?.id).toBe("provider/model20")
   expect(dashboard.daily).toHaveLength(14)
-  expect(dashboard.daily[0]?.id).toBe("2026-07-07")
-  expect(dashboard.daily.at(-1)?.id).toBe("2026-07-20")
+  expect(dashboard.daily.map((day) => day.id)).toEqual(Array.from({ length: 14 }, (_, index) => `2026-07-${String(20 - index).padStart(2, "0")}`))
 })
 
 test("project options distinguish matching names by path and retain project-wide worktree filtering", () => {
