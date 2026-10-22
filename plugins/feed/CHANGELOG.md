@@ -1,5 +1,11 @@
 # @lidtop/opencode-feed
 
+## 0.2.0
+
+### Minor Changes
+
+- 2745c6e: Add a **Show updates** setting (Both, Sidebar, /feed, None) choosing where releases, blogs, and news from updates feeds appear. It defaults to /feed, so the sidebar shows status pages only; existing settings keep their values.
+
 ## 0.1.1
 
 ### Patch Changes
