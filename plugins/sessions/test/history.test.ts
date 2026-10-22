@@ -19,8 +19,8 @@ test("historical import follows both cursors, excludes controls, and sends bound
         : { data: [...Array.from({ length: 70 }, (_, n) => user(`${input.sessionID}-${n}`, `before compaction ${n}`)), { id: "control", type: "synthetic", text: "skip", time: { created: 1 } }], cursor: { next: "messages-next" } }
     } },
   }
-  const remote = remoteStub({ begin: async ({ sessionID }) => ({ token: sessionID }), import: async (input) => { uploads.push(input); return { accepted: input.messages.length } } })
-  expect(await importHistory(client, remote, new AbortController().signal)).toBe(2)
+  const remote = remoteStub({ begin: async ({ sessionID }) => ({ current: false, token: sessionID }), import: async (input) => { uploads.push(input); return { accepted: input.messages.length } } })
+  expect(await importHistory(client, remote, new AbortController().signal)).toEqual({ imported: 2, unchanged: 0, skipped: 0, oversized: 0 })
   expect(sessionInputs).toEqual([{ limit: 100 }, { limit: 100, cursor: "sessions-next" }])
   expect(messageInputs).toEqual([
     { sessionID: "s1", limit: 100, order: "asc" }, { sessionID: "s1", limit: 100, cursor: "messages-next" },
@@ -44,9 +44,46 @@ test("cancellation stops subsequent pages and does not send cleanup requests to 
   expect(finished).toBe(false)
 })
 
-test("oversized historical messages fail explicitly rather than leaking or truncating text", async () => {
-  let uploaded = false
-  const client: HistorySource = { session: { list: async () => ({ data: [session()], cursor: {} }) }, message: { list: async () => ({ data: [user("large", "x".repeat(1_048_577))], cursor: {} }) } }
-  await expect(importHistory(client, remoteStub({ import: async () => { uploaded = true; return { accepted: 1 } } }), new AbortController().signal)).rejects.toThrow("1 MiB")
-  expect(uploaded).toBe(false)
+test("oversized messages are left out and counted, and later messages and sessions still import", async () => {
+  const uploaded: string[] = []
+  const client: HistorySource = {
+    session: { list: async () => ({ data: [session("s1"), session("s2")], cursor: {} }) },
+    message: { list: async ({ sessionID }) => ({ data: [user(`${sessionID}-large`, "x".repeat(1_048_577)), user(`${sessionID}-small`, "fits")], cursor: {} }) },
+  }
+  const remote = remoteStub({ import: async ({ messages }) => { uploaded.push(...messages.map((message) => message.id)); return { accepted: messages.length } } })
+  expect(await importHistory(client, remote, new AbortController().signal)).toEqual({ imported: 2, unchanged: 0, skipped: 0, oversized: 2 })
+  expect(uploaded).toEqual(["s1-small", "s2-small"])
+})
+
+test("deleted, changed, and already-imported sessions are skipped without stopping the pass", async () => {
+  const listed: string[] = []
+  const finished: Array<{ token: string; complete: boolean }> = []
+  const client: HistorySource = {
+    session: { list: async () => ({ data: ["gone", "busy", "same", "late", "ok"].map((id) => session(id)), cursor: {} }) },
+    message: { list: async ({ sessionID }) => { listed.push(sessionID); return { data: [user(`${sessionID}-message`)], cursor: {} } } },
+  }
+  const remote = remoteStub({
+    begin: async ({ sessionID }) => {
+      if (sessionID === "gone") throw { type: "missing", message: "deleted" }
+      if (sessionID === "busy") throw { type: "stale", message: "changed" }
+      return sessionID === "same" ? { current: true } : { current: false, token: sessionID }
+    },
+    import: async ({ token, messages }) => {
+      if (token === "late") throw { type: "stale", message: "changed during import" }
+      return { accepted: messages.length }
+    },
+    finish: async (input) => { finished.push(input) },
+  })
+  expect(await importHistory(client, remote, new AbortController().signal)).toEqual({ imported: 1, unchanged: 1, skipped: 3, oversized: 0 })
+  expect(listed).toEqual(["late", "ok"])
+  expect(finished).toEqual([{ token: "late", complete: false }, { token: "ok", complete: true }])
+})
+
+test("other failures stop the pass, and a failed release cannot mask them", async () => {
+  const client: HistorySource = { session: { list: async () => ({ data: [session("s1"), session("s2")], cursor: {} }) }, message: { list: async () => ({ data: [user()], cursor: {} }) } }
+  const remote = remoteStub({
+    import: async () => { throw { type: "failed", message: "disk full" } },
+    finish: async () => { throw new Error("connection closed") },
+  })
+  await expect(importHistory(client, remote, new AbortController().signal)).rejects.toMatchObject({ message: "disk full" })
 })

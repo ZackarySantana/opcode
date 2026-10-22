@@ -12,20 +12,27 @@ export interface BrowserState {
   selected: number
   rows: SessionResult[]
   projects: ProjectOption[]
+  /** The server's scan budget expired: rows are partial. */
+  truncated: boolean
   loading: boolean
   syncing: boolean
   searchError: string
   syncError: string
+  /** Non-failure synchronization outcome, such as busy sessions left for later. */
+  syncNotice: string
 }
+
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
 
 /** Selection changes are local; asynchronous results cannot replace a newer query. */
 export function createBrowser(client: HistorySource, remote: SessionsRemote) {
   const lifetime = new AbortController()
-  const [state, setState] = createSignal<BrowserState>({ query: "", showSubagents: false, selected: 0, rows: [], projects: [], loading: false, syncing: false, searchError: "", syncError: "" })
+  const [state, setState] = createSignal<BrowserState>({ query: "", showSubagents: false, selected: 0, rows: [], projects: [], truncated: false, loading: false, syncing: false, searchError: "", syncError: "", syncNotice: "" })
   const patch = (value: Partial<BrowserState>) => { if (!lifetime.signal.aborted) setState((current) => ({ ...current, ...value })) }
   let search: AbortController | undefined
   let generation = 0
   let refreshing: Promise<void> | undefined
+  let synchronized = false
 
   async function load() {
     if (lifetime.signal.aborted) return
@@ -44,28 +51,37 @@ export function createBrowser(client: HistorySource, remote: SessionsRemote) {
       const position = selectedID ? result.rows.findIndex((row) => row.id === selectedID) : -1
       patch({ ...result, selected: position >= 0 ? position : clampSelection(current.selected, result.rows.length) })
     } catch (error) {
-      if (!signal.aborted && request === generation) patch({ rows: [], selected: 0, searchError: errorMessage(error) })
+      if (!signal.aborted && request === generation) patch({ rows: [], selected: 0, truncated: false, searchError: errorMessage(error) })
     } finally { if (request === generation && !signal.aborted) patch({ loading: false }) }
   }
 
   function filters(value: Partial<Pick<BrowserState, "query" | "projectID" | "showSubagents">>) {
-    patch({ ...value, rows: [], selected: 0 })
+    patch({ ...value, rows: [], selected: 0, truncated: false })
     return load()
   }
 
+  /** Server failures for individual sessions are counted, and history import still runs after them. */
   function refresh() {
     if (refreshing || lifetime.signal.aborted) return refreshing ?? Promise.resolve()
-    patch({ syncing: true, syncError: "" })
+    synchronized = true
+    patch({ syncing: true, syncError: "", syncNotice: "" })
     refreshing = (async () => {
+      const errors: string[] = []
+      const notices: string[] = []
       try {
-        await remote.refresh(lifetime.signal)
-        await importHistory(client, remote, lifetime.signal)
-      } catch (error) {
-        if (!lifetime.signal.aborted) patch({ syncError: `Some history could not be synchronized: ${errorMessage(error)}` })
-      } finally {
-        patch({ syncing: false })
-        if (!lifetime.signal.aborted) await load()
-      }
+        const server = await remote.refresh(lifetime.signal)
+        if (server.failed) errors.push(`${plural(server.failed, "session")} could not be indexed`)
+        if (server.deferred) notices.push(`${plural(server.deferred, "busy session")} will be indexed when idle`)
+      } catch (error) { errors.push(`server refresh failed: ${errorMessage(error)}`) }
+      try {
+        if (!lifetime.signal.aborted) {
+          const history = await importHistory(client, remote, lifetime.signal)
+          if (history.skipped) notices.push(`${plural(history.skipped, "changed session")} left for the next history import`)
+          if (history.oversized) notices.push(`${plural(history.oversized, "message")} over 1 MiB not indexed`)
+        }
+      } catch (error) { errors.push(`history import stopped: ${errorMessage(error)}`) }
+      patch({ syncing: false, syncError: errors.length ? `Some history could not be synchronized: ${errors.join("; ")}.` : "", syncNotice: notices.join("; ") })
+      await load()
     })().finally(() => { refreshing = undefined })
     return refreshing
   }
@@ -73,7 +89,12 @@ export function createBrowser(client: HistorySource, remote: SessionsRemote) {
   return {
     state, load, filters, refresh,
     move(delta: number) { patch({ selected: clampSelection(state().selected + delta, state().rows.length) }) },
-    reset() { return filters({ query: "", projectID: undefined, showSubagents: false }) },
+    /** Opening resets filters; the first opening also synchronizes, so launching a TUI stays cheap. */
+    activate() {
+      const reset = filters({ query: "", projectID: undefined, showSubagents: false })
+      if (!synchronized) void refresh()
+      return reset
+    },
     clear() { return filters({ query: "", projectID: undefined }) },
     async dispose() { lifetime.abort(); search?.abort(); await refreshing },
   }

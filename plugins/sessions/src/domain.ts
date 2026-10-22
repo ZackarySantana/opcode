@@ -42,7 +42,10 @@ export interface SessionResult extends SessionRecord {
 
 export interface SearchInput { query: string; projectID?: string; showSubagents: boolean; limit?: number }
 export interface ProjectOption { id: string; directory: string; label: string }
-export interface SearchOutput { rows: SessionResult[]; projects: ProjectOption[] }
+/** `truncated`: the scan budget expired; rows are the matches found before it did. */
+export interface SearchOutput { rows: SessionResult[]; projects: ProjectOption[]; truncated: boolean }
+export interface RefreshOutput { sessions: number; deferred: number; failed: number }
+export interface HistoryOutput { imported: number; unchanged: number; skipped: number; oversized: number }
 
 export function sessionRecord(session: SessionInfo): SessionRecord {
   return {

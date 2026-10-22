@@ -1,17 +1,17 @@
 import { Plugin } from "@opencode/plugin"
-import type { OpenCodeEvent } from "@opencode/client"
+import { isSessionNotFoundError, type OpenCodeEvent } from "@opencode/client"
 import { errorMessage } from "@opcode/core"
 import { consumeLive, sleep } from "@opcode/core/live"
 import { acquireIndex, databasePath } from "./index-store"
-import { SessionsRpc } from "./rpc"
-import { SessionsService } from "./service"
-import { isMissing } from "./service"
+import { SessionsRpc, type SessionErrorType } from "./rpc"
+import { MissingSessionError, SessionsService, StaleSessionError } from "./service"
 import type { MessageRecord, SearchInput } from "./domain"
 
+// A committed revert drops messages from context; resynchronizing prunes them from the index.
 const updates = new Set([
   "session.created", "session.renamed", "session.moved", "session.inbox.delivered", "session.text.ended",
   "session.step.ended", "session.step.failed", "session.usage.updated", "session.execution.succeeded",
-  "session.execution.failed", "session.execution.interrupted",
+  "session.execution.failed", "session.execution.interrupted", "session.revert.committed", "session.message.content.updated",
 ])
 
 const liveWarnings = { stream: "reconnecting event stream", event: "event handling failed", reconnect: "reconnect reconciliation failed" }
@@ -23,7 +23,15 @@ export async function watchSessions(
 ) {
   const pending = new Map<string, boolean>()
   const attempts = new Map<string, number>()
+  // Retries wait per ID, never inside the shared drain loop.
+  const retries = new Map<string, ReturnType<typeof setTimeout>>()
   let drain: Promise<void> | undefined
+  const queue = (id: string, deleted: boolean) => {
+    clearTimeout(retries.get(id))
+    retries.delete(id)
+    pending.set(id, deleted || pending.get(id) === true)
+    startDrain()
+  }
   const startDrain = () => {
     if (drain || signal.aborted) return
     drain = (async () => {
@@ -31,13 +39,13 @@ export async function watchSessions(
         const [id, deleted] = pending.entries().next().value!
         pending.delete(id)
         try { if (deleted) await service.remove(id); else await service.syncSession(id, signal) } catch (error) {
-          if (!signal.aborted && !isMissing(error)) {
-            warn(`opcode-sessions: event indexing failed: ${errorMessage(error)}`)
+          if (!signal.aborted && !isSessionNotFoundError(error)) {
+            // A streaming session changes mid-read: retry quietly; later events also requeue it.
+            if (!(error instanceof StaleSessionError)) warn(`opcode-sessions: event indexing failed: ${errorMessage(error)}`)
             const attempt = (attempts.get(id) ?? 0) + 1
             if (attempt < 3) {
               attempts.set(id, attempt)
-              pending.set(id, deleted || pending.get(id) === true)
-              try { await sleep(retryMilliseconds, signal) } catch { break }
+              if (!pending.has(id)) retries.set(id, setTimeout(() => { retries.delete(id); if (!pending.has(id)) queue(id, deleted) }, retryMilliseconds))
               continue
             }
           }
@@ -48,8 +56,7 @@ export async function watchSessions(
   }
   const enqueue = (id: string, deleted: boolean) => {
     attempts.delete(id)
-    pending.set(id, deleted || pending.get(id) === true)
-    startDrain()
+    queue(id, deleted)
   }
   try {
     await consumeLive({
@@ -65,7 +72,10 @@ export async function watchSessions(
       },
       warn: (error, source) => warn(`opcode-sessions: ${liveWarnings[source]}: ${errorMessage(error)}`),
     })
-  } finally { await drain }
+  } finally {
+    await drain
+    for (const timer of retries.values()) clearTimeout(timer)
+  }
 }
 
 export default Plugin.define({
@@ -81,12 +91,17 @@ export default Plugin.define({
         refresh: async (_input, call) => guarded(call, () => service.refresh(call.signal)),
         begin: async (input, call) => guarded(call, () => service.begin(input as { sessionID: string; updatedAt: number }, call.signal)),
         import: async (input, call) => guarded(call, () => service.import(input as { token: string; messages: MessageRecord[] }, call.signal)),
-        finish: async (input) => { service.finish((input as { token: string }).token); return {} },
+        finish: async (input, call) => guarded(call, async () => { await service.finish(input as { token: string; complete: boolean }); return {} }),
       })
     } catch (error) { controller.abort(); lease.release(); throw error }
     const initial = (async () => {
       while (!controller.signal.aborted) {
-        try { await service.refresh(controller.signal, context.location.directory); return } catch (error) {
+        try {
+          const result = await service.refresh(controller.signal, context.location.directory)
+          // Busy sessions are indexed by their live events; failures by reconnects and refresh.
+          if (result.failed) console.warn(`opcode-sessions: ${result.failed} sessions could not be indexed; refresh to retry`)
+          return
+        } catch (error) {
           if (controller.signal.aborted) return
           console.warn(`opcode-sessions: initial indexing failed; retrying: ${errorMessage(error)}`)
           await sleep(5_000, controller.signal)
@@ -105,6 +120,11 @@ export default Plugin.define({
   },
 })
 
-async function guarded<T>(call: { error(type: "failed", message: string, data: Record<string, never>): unknown }, action: () => Promise<T>): Promise<T> {
-  try { return await action() } catch (error) { throw call.error("failed", errorMessage(error), {}) }
+function errorType(error: unknown): SessionErrorType {
+  if (error instanceof StaleSessionError) return "stale"
+  return error instanceof MissingSessionError || isSessionNotFoundError(error) ? "missing" : "failed"
+}
+
+async function guarded<T>(call: { error(type: SessionErrorType, message: string, data: Record<string, never>): unknown }, action: () => Promise<T>): Promise<T> {
+  try { return await action() } catch (error) { throw call.error(errorType(error), errorMessage(error), {}) }
 }

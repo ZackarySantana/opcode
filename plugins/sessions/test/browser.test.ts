@@ -16,7 +16,7 @@ test("movement never searches again, and newer filters win over late async respo
   const model = createBrowser(emptyClient, remoteStub({ search: async (input) => {
     calls++
     if (input.query === "slow") return pending.promise
-    return { rows: [result("one"), result("two")], projects: [] }
+    return { rows: [result("one"), result("two")], projects: [], truncated: false }
   } }))
   try {
     await model.load()
@@ -25,7 +25,7 @@ test("movement never searches again, and newer filters win over late async respo
     expect(calls).toBe(1)
     const slow = model.filters({ query: "slow" })
     await model.filters({ query: "fast" })
-    pending.resolve({ rows: [result("stale")], projects: [] })
+    pending.resolve({ rows: [result("stale")], projects: [], truncated: false })
     await slow
     expect(model.state().query).toBe("fast")
     expect(model.state().rows.map((row) => row.id)).toEqual(["one", "two"])
@@ -40,11 +40,31 @@ test("refresh actually synchronizes server state and imports connected-client hi
   const order: string[] = []
   const client: HistorySource = { session: { list: async () => { order.push("history"); return { data: [session()], cursor: {} } } }, message: { list: async () => ({ data: [user()], cursor: {} }) } }
   const model = createBrowser(client, remoteStub({
-    refresh: async () => { order.push("server"); return { sessions: 1 } },
+    refresh: async () => { order.push("server"); return { sessions: 1, deferred: 0, failed: 0 } },
     import: async () => { order.push("import"); return { accepted: 1 } },
-    search: async () => { order.push("search"); return { rows: [], projects: [] } },
+    search: async () => { order.push("search"); return { rows: [], projects: [], truncated: false } },
   }))
   try { await model.refresh(); expect(order).toEqual(["server", "history", "import", "search"]) } finally { await model.dispose() }
+})
+
+test("only the first opening synchronizes; partial server failures still import history and are reported", async () => {
+  const order: string[] = []
+  const client: HistorySource = { session: { list: async () => { order.push("history"); return { data: [session()], cursor: {} } } }, message: { list: async () => ({ data: [user()], cursor: {} }) } }
+  let server = async () => { order.push("server"); return { sessions: 3, deferred: 1, failed: 1 } }
+  const model = createBrowser(client, remoteStub({ refresh: () => server() }))
+  try {
+    await model.activate()
+    await model.refresh()
+    expect(order).toEqual(["server", "history"])
+    expect(model.state().syncError).toContain("1 session could not be indexed")
+    expect(model.state().syncNotice).toContain("1 busy session will be indexed when idle")
+    await model.activate()
+    expect(order).toEqual(["server", "history"])
+    server = async () => { order.push("server"); throw new Error("offline") }
+    await model.refresh()
+    expect(order).toEqual(["server", "history", "server", "history"])
+    expect(model.state().syncError).toContain("offline")
+  } finally { await model.dispose() }
 })
 
 test("unload aborts pending full-history work and prevents subsequent uploads", async () => {
