@@ -39,10 +39,13 @@ async function fixture() {
   const lookups: string[] = []
   const published: string[] = []
   const statuses = new Map<string, number>()
+  const sleeps: number[] = []
+  const publishFailures: Array<{ name: string; error: string; lands?: boolean }> = []
   let builds = 0
   const operations: PublishOperations = {
     environment: { GITHUB_ACTIONS: "true", GITHUB_REF: "refs/heads/main", ACTIONS_ID_TOKEN_REQUEST_URL: "https://oidc.example.invalid" },
     build: async () => { builds++ },
+    sleep: async (ms) => { sleeps.push(ms) },
     registryStatus: async (url) => {
       lookups.push(url)
       return statuses.get(url) ?? 404
@@ -58,6 +61,12 @@ async function fixture() {
       }
       if (args[0] === "npm" && args[1] === "publish") {
         const manifest = JSON.parse(await exec(["tar", "-xzOf", args[2]!, "package/package.json"], cwd))
+        const failure = publishFailures.findIndex((item) => item.name === manifest.name)
+        if (failure >= 0) {
+          const [{ error, lands }] = publishFailures.splice(failure, 1) as [typeof publishFailures[number]]
+          if (lands) statuses.set(`https://registry.npmjs.org/${encodeURIComponent(manifest.name)}/${encodeURIComponent(manifest.version)}`, 200)
+          throw new Error(`npm publish failed: ${error}`)
+        }
         published.push(`${manifest.name}@${manifest.version}`)
         statuses.set(`https://registry.npmjs.org/${encodeURIComponent(manifest.name)}/${encodeURIComponent(manifest.version)}`, 200)
         return "Published (test double only)"
@@ -66,7 +75,7 @@ async function fixture() {
     },
   }
   const npmCommands = () => commands.filter((args) => args[0] === "npm")
-  return { root, artifacts, operations, commands, npmCommands, lookups, published, statuses, builds: () => builds }
+  return { root, artifacts, operations, commands, npmCommands, lookups, published, statuses, sleeps, publishFailures, builds: () => builds }
 }
 
 describe("publish safety (all external operations injected; no network or publishing)", () => {
@@ -141,6 +150,33 @@ describe("publish safety (all external operations injected; no network or publis
     const run = await fixture()
     await expect(publishTarballs(run.artifacts, { ...run.operations, registryStatus: async () => { throw new Error("connection failed") } })).rejects.toThrow("connection failed")
     expect(run.published).toEqual([])
+  })
+
+  test("transient registry failures retry with backoff, and a PUT that landed is not republished", async () => {
+    const run = await fixture()
+    const unavailable = "npm error code E503\nnpm error 503 Service Unavailable - PUT https://registry.npmjs.org/x"
+    run.publishFailures.push(
+      { name: publicPackageName("context"), error: unavailable },
+      { name: publicPackageName("context"), error: "npm error code ECONNRESET" },
+      { name: publicPackageName("cost"), error: unavailable, lands: true },
+    )
+    await publishTarballs(run.artifacts, run.operations)
+    expect(run.sleeps).toEqual([5_000, 15_000])
+    expect(run.published).toEqual(pluginIDs.filter((id) => id !== "cost").map((id, index) => `${publicPackageName(id)}@${[1, 3, 4][index]}.2.3`))
+    expect(run.commands.filter((args) => args[1] === "publish" && args[2]!.includes("opencode-cost"))).toHaveLength(1)
+  })
+
+  test("non-transient publish errors and exhausted retries fail without further attempts", async () => {
+    const auth = await fixture()
+    auth.publishFailures.push({ name: publicPackageName("context"), error: "npm error code E403\nnpm error 403 Forbidden" })
+    await expect(publishTarballs(auth.artifacts, auth.operations)).rejects.toThrow("E403")
+    expect(auth.sleeps).toEqual([])
+    expect(auth.published).toEqual([])
+    const outage = await fixture()
+    for (let attempt = 0; attempt < 3; attempt++) outage.publishFailures.push({ name: publicPackageName("context"), error: "npm error code E503" })
+    await expect(publishTarballs(outage.artifacts, outage.operations)).rejects.toThrow("E503")
+    expect(outage.sleeps).toEqual([5_000, 15_000])
+    expect(outage.published).toEqual([])
   })
 
   test("partial-release retries skip successful versions and resume the remaining packages", async () => {

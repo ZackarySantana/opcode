@@ -270,7 +270,10 @@ The release workflow runs only on `main`, as three jobs:
 
 Publishing uses pinned Node 24.22.0 and its bundled npm 11.19.1 (npm OIDC requires
 at least 11.5.1). It fails closed on registry errors and skips exact versions
-already published, so retries do not republish unrelated packages. The default
+already published, so retries do not republish unrelated packages. A publish that
+fails with a registry 5xx or network error is retried twice (after 5s and 15s);
+before each retry it re-checks the exact version, because a failed `PUT` may still
+have landed. Auth, conflict, and validation errors are never retried. The default
 local command only packs; `--publish` additionally requires the main-branch
 GitHub OIDC environment.
 

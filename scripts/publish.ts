@@ -7,6 +7,7 @@ export type PublishOperations = {
   command: (args: string[], cwd: string) => Promise<string>
   build: (root: string) => Promise<void>
   registryStatus: (url: string) => Promise<number>
+  sleep: (ms: number) => Promise<void>
 }
 
 export type Tarball = { name: string; version: string; tarball: string }
@@ -18,6 +19,7 @@ function operations(overrides: Partial<PublishOperations>): PublishOperations {
     // Loaded lazily: publishing prebuilt tarballs must not need build dependencies installed.
     build: async (root) => (await import("./build")).buildAll(root),
     registryStatus: async (url) => (await fetch(url)).status,
+    sleep: (ms) => Bun.sleep(ms),
     ...overrides,
   }
 }
@@ -70,6 +72,33 @@ async function isPublished({ name, version }: Tarball, registryStatus: PublishOp
   return false
 }
 
+const RETRY_DELAYS = [5_000, 15_000]
+
+/** Registry 5xx and network failures; auth, conflict, and validation errors are never retried. */
+function transient(error: unknown) {
+  return /\bcode E5\d\d\b|\b5\d\d (?:Service Unavailable|Bad Gateway|Gateway Time-?out|Internal Server Error)\b|\b(?:ECONNRESET|ETIMEDOUT|ECONNREFUSED|EAI_AGAIN|EPIPE)\b|socket hang up/i.test(String(error))
+}
+
+/** A failed PUT may still have landed, so re-check the exact version before each retry. */
+async function publishOne(tarball: Tarball, directory: string, { command, registryStatus, sleep }: PublishOperations) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      console.log(await command(["npm", "publish", tarball.tarball, "--access", "public", "--provenance", "--ignore-scripts", "--registry", "https://registry.npmjs.org/"], directory))
+      return
+    } catch (error) {
+      if (!transient(error)) throw error
+      if (await isPublished(tarball, registryStatus)) {
+        console.log(`${tarball.name}@${tarball.version} was published despite a registry error`)
+        return
+      }
+      const delay = RETRY_DELAYS[attempt]
+      if (delay === undefined) throw error
+      console.error(`Transient registry failure publishing ${tarball.name}@${tarball.version}; retrying in ${delay / 1000}s`)
+      await sleep(delay)
+    }
+  }
+}
+
 /** Read-only: which tarball versions npm does not have yet, exposed as the `packages` step output. */
 export async function unpublished(directory: string, overrides: Partial<PublishOperations> = {}): Promise<Tarball[]> {
   const { environment, registryStatus } = operations(overrides)
@@ -85,7 +114,8 @@ export async function unpublished(directory: string, overrides: Partial<PublishO
 
 /** Publishes prebuilt tarballs only; reruns skip exact versions already on npm. */
 export async function publishTarballs(directory: string, overrides: Partial<PublishOperations> = {}): Promise<Tarball[]> {
-  const { environment, command, registryStatus } = operations(overrides)
+  const resolved = operations(overrides)
+  const { environment, command, registryStatus } = resolved
   if (environment.GITHUB_ACTIONS !== "true" || environment.GITHUB_REF !== "refs/heads/main" || !environment.ACTIONS_ID_TOKEN_REQUEST_URL) {
     throw new Error("Live publishing requires the main-branch GitHub Actions OIDC environment")
   }
@@ -99,7 +129,7 @@ export async function publishTarballs(directory: string, overrides: Partial<Publ
       console.log(`Skipping published ${tarball.name}@${tarball.version}`)
       continue
     }
-    console.log(await command(["npm", "publish", tarball.tarball, "--access", "public", "--provenance", "--ignore-scripts", "--registry", "https://registry.npmjs.org/"], directory))
+    await publishOne(tarball, directory, resolved)
     published.push(tarball)
   }
   return published
