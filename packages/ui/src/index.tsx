@@ -4,7 +4,7 @@ import type { JSX } from "@opentui/solid/jsx-runtime"
 import { usePalette } from "./palette"
 
 export { ThemeSurface, usePalette } from "./palette"
-export { cellWidth, shorten } from "./text"
+export { cellWidth, shorten, useText } from "./text"
 export { Card, CenterEmpty, FilterChip, KeyHints, Page, StatCard } from "./layout"
 export type { CardProps, CenterEmptyProps, FilterChipProps, KeyHint, KeyHintsProps, PageProps, StatCardProps } from "./layout"
 

@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test"
-import { cellWidth, shorten } from "@opcode/ui"
+import { PluginContextProvider } from "@opencode/plugin/tui"
+import type { Context } from "@opencode/plugin/tui/context"
+import { createRoot } from "solid-js"
+import { cellWidth, shorten, useText } from "@opcode/ui"
 
 test("truncation budgets terminal cells without splitting combining or joined graphemes", () => {
   expect(shorten("😀😀😀", 3)).toBe("😀…")
@@ -26,4 +29,16 @@ test("cell widths account for wide and combining characters", () => {
   expect(cellWidth("東京")).toBe(4)
   expect(cellWidth("e\u0301")).toBe(1)
   expect(cellWidth("👩‍💻")).toBe(2)
+})
+
+test("bound text measurement follows the host renderer's width method", () => {
+  const bound = (widthMethod: string) => createRoot((dispose) => {
+    let text!: ReturnType<typeof useText>
+    PluginContextProvider({ value: { renderer: { widthMethod } } as unknown as Context, get children() { text = useText(); return null } })
+    dispose()
+    return text
+  })
+  expect(bound("wcwidth").cellWidth("👩‍💻")).toBe(4)
+  expect(bound("wcwidth").shorten("👩‍💻👩‍💻", 5)).toBe("👩‍💻…")
+  expect(bound("unicode").shorten("👩‍💻👩‍💻", 5)).toBe("👩‍💻👩‍💻")
 })

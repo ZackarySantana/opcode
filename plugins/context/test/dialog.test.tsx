@@ -12,7 +12,7 @@ import { createComputed, createSignal, getOwner, onCleanup } from "solid-js"
 import plugin, { currentSessionID } from "../src/tui"
 import server from "../src/index"
 import { ContextRpc } from "../src/rpc"
-import { cellWidth, shorten } from "../src/view"
+import { cellWidth, shorten } from "@opcode/ui"
 import { deferred, mockHost } from "./helpers"
 
 async function openDialog(options: {

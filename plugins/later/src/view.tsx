@@ -26,6 +26,9 @@ function ItemRow(props: { item: LaterItem; label: string; labelWidth: number; se
   )
 }
 
+const addHint = { key: "a", label: "add", command: "opcode-later.add" }
+const pasteHint = { key: "enter", label: "paste+complete", command: "opcode-later.paste" }
+
 export function Manager(props: { view: Accessor<LaterView>; screen?: Screen }) {
   const api = usePlugin()
   const palette = usePalette()
@@ -54,31 +57,29 @@ export function Manager(props: { view: Accessor<LaterView>; screen?: Screen }) {
   const labelWidth = () => Math.max(3, String(props.view().active.length).length + 2)
   const hasItems = () => props.view().active.length > 0 || (props.view().history && props.view().completed.length > 0)
   const actionHints = () => dimensions().width < 100
-    ? [{ key: "a", label: "add" }, { key: "enter", label: "paste+complete" }]
+    ? [addHint, pasteHint]
     : [
-      { key: "a", label: "add" }, { key: "e", label: "edit" },
-      { key: "space", label: "complete" }, { key: "enter", label: "paste+complete" },
-      { key: "d", label: "delete" },
+      addHint, { key: "e", label: "edit", command: "opcode-later.edit" },
+      { key: "space", label: "complete", command: "opcode-later.complete" }, pasteHint,
+      { key: "d", label: "delete", command: "opcode-later.delete" },
     ]
   return (
     <Page title="Later" subtitle="global list"
       actions={(
         <box flexDirection="row" minWidth={0} flexWrap="wrap" gap={1} justifyContent="flex-end">
           <KeyHints items={actionHints()} />
-          <box onMouseDown={(event) => { if (event.button === 0) api.keymap.dispatch("opcode-later.close") }}>
-            <KeyHints items={[{ key: "esc", label: "back" }]} />
-          </box>
+          <KeyHints items={[{ key: "esc", label: "back", command: "opcode-later.close" }]} />
         </box>
       )}
       filters={(
         <box flexDirection="row" minWidth={0} flexWrap="wrap" gap={1}>
           <text fg={palette.value}>{formatCount(props.view().active.length)} active<span style={{ fg: palette.muted }}> / </span><span style={{ fg: palette.success }}>{formatCount(props.view().completed.length)} completed</span></text>
-          <KeyHints items={[{ key: "h", label: "history" }, { key: "J/K", label: "reorder" }]} />
+          <KeyHints items={[{ key: "h", label: "history", command: "opcode-later.history" }, { key: "J/K", label: "reorder" }]} />
         </box>
       )}
       footer={(
         <box width="100%" flexDirection="row" minWidth={0} justifyContent="space-between" gap={2}>
-          <text minWidth={0} flexShrink={1} wrapMode="word" fg={api.theme.text.muted}>{dimensions().width < 80 ? "Shared across projects" : "Changes are shared across projects and OpenCode instances."}</text>
+          <text minWidth={0} flexShrink={1} wrapMode="word" fg={palette.muted}>{dimensions().width < 80 ? "Shared across projects" : "Changes are shared across projects and OpenCode instances."}</text>
           <text flexShrink={0} fg={palette.value}>{props.view().history ? "history shown" : "active only"}</text>
         </box>
       )}>

@@ -190,6 +190,25 @@ test("wide dashboard restores raised stat cards, filter chips, three cost-bar pa
   } finally { await scene.dispose(); await harness.cleanup() }
 })
 
+test("header hints are clickable through the same registered commands", async () => {
+  const harness = await createTuiHarness(destination("7d"))
+  const scene = await renderDashboard(harness, 40, 144)
+  try {
+    await scene.waitFor(() => harness.queries.length > 0)
+    harness.queries.at(-1)!.resolve(dashboard())
+    const click = async (text: string) => {
+      const lines = (await scene.waitForFrame((frame) => frame.includes(text))).split("\n")
+      const y = lines.findIndex((line) => line.includes(text))
+      await scene.mockMouse.click(lines[y]!.indexOf(text), y)
+      await scene.flush()
+    }
+    await click("x reset")
+    expect(harness.route()).toMatchObject({ type: "plugin", data: { range: "30d" } })
+    await click("esc back")
+    expect(harness.route()).toEqual({ type: "home" })
+  } finally { await scene.dispose(); await harness.cleanup() }
+})
+
 test("rendered requests reject stale responses; usage events refresh, and unmount cancels queries/listeners/timers", async () => {
   const intervals = spyOn(globalThis, "setInterval")
   const clearIntervals = spyOn(globalThis, "clearInterval")

@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 
 import { errorMessage, formatCount, formatMoney } from "@opcode/core"
-import { Card, CenterEmpty, FilterChip, KeyHints, Page, shorten, StatCard, usePalette } from "@opcode/ui"
+import { Card, CenterEmpty, FilterChip, KeyHints, Page, StatCard, usePalette, useText } from "@opcode/ui"
 import { createScreen } from "@opcode/ui/screen"
 import { Plugin } from "@opencode/plugin/tui"
 import type { LocationRef } from "@opencode/client"
@@ -23,10 +23,14 @@ interface ScreenProps {
   mount: () => void
 }
 
+const backHint = { key: "esc", label: "back", command: "opcode-cost.close" }
+const refreshHint = { key: "r", label: "refresh", command: "opcode-cost.refresh" }
+
 function DashboardScreen(props: ScreenProps) {
   props.mount()
   const dimensions = useTerminalDimensions()
   const palette = usePalette()
+  const { shorten } = useText()
   const [data, setData] = createSignal<Dashboard>()
   const [error, setError] = createSignal("")
   const [refreshWarning, setRefreshWarning] = createSignal("")
@@ -99,9 +103,9 @@ function DashboardScreen(props: ScreenProps) {
   const wide = () => dimensions().width >= 100
   const panelWidth = () => Math.floor((dimensions().width - 6) / (wide() ? 1 + Number(sections().models) + Number(sections().projects) : 1))
   const hints = () => wide() ? [
-    { key: "esc", label: "back" }, { key: "d", label: "date" }, { key: "p", label: "project" },
-    { key: "m", label: "model" }, { key: "x", label: "reset" }, { key: "r", label: "refresh" },
-  ] : [{ key: "esc", label: "back" }, { key: "d/p/m", label: "filters" }, { key: "r", label: "refresh" }, { key: "↑/↓", label: "scroll" }]
+    backHint, { key: "d", label: "date", command: "opcode-cost.date" }, { key: "p", label: "project", command: "opcode-cost.project" },
+    { key: "m", label: "model", command: "opcode-cost.model" }, { key: "x", label: "reset", command: "opcode-cost.reset" }, refreshHint,
+  ] : [backHint, { key: "d/p/m", label: "filters" }, refreshHint, { key: "↑/↓", label: "scroll" }]
   return (
     <box width="100%" height="100%" minHeight={0} flexDirection="column">
       <Page
@@ -168,6 +172,7 @@ function DashboardScreen(props: ScreenProps) {
 
 function BreakdownPanel(props: { title: string; rows: Breakdown[]; width: number }) {
   const palette = usePalette()
+  const { shorten } = useText()
   const max = () => Math.max(0, ...props.rows.map((row) => row.cost))
   const width = () => Math.min(20, Math.max(4, props.width - 26))
   return (

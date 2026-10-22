@@ -45,6 +45,7 @@ export async function createTuiHarness(initial: Route = { type: "home" }, mutabl
   const white = RGBA.fromHex("#ffffff")
   const api = {
     get location() { return location() },
+    renderer: { widthMethod: "unicode" },
     theme: {
       hue: { accent: { 300: RGBA.fromHex("#77cccc"), 600: RGBA.fromHex("#336666") }, interactive: { 300: RGBA.fromHex("#88aaff") } },
       background: { base: RGBA.fromHex("#000000") },
@@ -65,6 +66,7 @@ export async function createTuiHarness(initial: Route = { type: "home" }, mutabl
     data: { on: (_type: string, callback: () => void) => { usageListeners.add(callback); return () => { usageListeners.delete(callback) } } },
     keymap: {
       layer: (factory: () => KeymapLayer) => { layers.push(factory()) },
+      dispatch: (id: string) => { void layers.flatMap((layer) => layer.commands ?? []).find((item) => item.id === id)?.run() },
       mode: { push: () => { modes++; return () => { modes-- } } },
     },
     ui: {

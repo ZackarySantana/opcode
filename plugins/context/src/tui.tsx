@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { errorMessage, formatCount } from "@opcode/core"
-import { Card, CenterEmpty, cellWidth, KeyHints, shorten, StatCard, ThemeSurface, usePalette } from "@opcode/ui"
+import { Card, CenterEmpty, KeyHints, StatCard, ThemeSurface, usePalette, useText } from "@opcode/ui"
 import { useDialogCommands } from "@opcode/ui/screen"
 import { Plugin, usePlugin } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
@@ -23,13 +23,12 @@ export function currentSessionID(context: Pick<Context, "ui">) {
 export function ContextDialog(props: { sessionID?: string }) {
   const context = usePlugin()
   const dimensions = useTerminalDimensions()
-  const colors = createMemo(() => context.theme.surface("dialog"))
   const palette = usePalette()
+  const text = useText()
   const [width, setWidth] = createSignal(dimensions().width)
   const [listSize, setListSize] = createSignal({ width: 0, height: 1 })
-  const truncate = (text: string, cells: number) => shorten(text, cells, context.renderer.widthMethod)
   const detailBudget = () => Math.min(24, Math.max(0, Math.floor((listSize().width - 3) / 3)))
-  const detailWidth = (text: string) => Math.min(cellWidth(text, context.renderer.widthMethod), detailBudget())
+  const detailWidth = (value: string) => Math.min(text.cellWidth(value), detailBudget())
   const [tab, setTab] = createSignal(0)
   const [selection, setSelection] = createSignal(0)
   const [state, setState] = createSignal<RefreshState>({ loading: true })
@@ -77,46 +76,46 @@ export function ContextDialog(props: { sessionID?: string }) {
 
   return (
     <box width="100%" maxWidth="100%" overflow="hidden" flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}
-      backgroundColor={colors().background.base} onSizeChange={function () { setWidth(this.width) }}>
+      backgroundColor={palette.background} onSizeChange={function () { setWidth(this.width) }}>
         <box flexDirection="row" justifyContent="space-between" gap={1} paddingBottom={1}>
-          <text wrapMode="none" fg={palette.text}><b>Current context</b><span style={{ fg: colors().text.muted }}> {truncate(props.sessionID ?? "no active session", Math.max(0, width() - 31 - (state().loading ? 12 : 0)))}</span></text>
+          <text wrapMode="none" fg={palette.text}><b>Current context</b><span style={{ fg: palette.muted }}> {text.shorten(props.sessionID ?? "no active session", Math.max(0, width() - 31 - (state().loading ? 12 : 0)))}</span></text>
           <box flexDirection="row">
-            <Show when={state().loading}><text fg={colors().text.muted}>refreshing  </text></Show>
+            <Show when={state().loading}><text fg={palette.muted}>refreshing  </text></Show>
             <KeyHints items={[{ key: "esc", label: "close", command: "opcode-context.close" }]} />
           </box>
         </box>
         <box flexDirection="row" gap={1} paddingBottom={1}>
           <For each={tabs}>{(name, index) => (
-            <box border borderColor={index() === tab() ? palette.value : colors().border.base}
+            <box border borderColor={index() === tab() ? palette.value : palette.border}
               paddingLeft={width() >= 44 ? 1 : 0} paddingRight={width() >= 44 ? 1 : 0}
               onMouseDown={(event) => {
                 if (event.button !== 0) return
                 event.stopPropagation()
                 switchTab(index() - tab())
               }}>
-              <text fg={index() === tab() ? palette.value : colors().text.muted}>{name}</text>
+              <text fg={index() === tab() ? palette.value : palette.muted}>{name}</text>
             </box>
           )}</For>
         </box>
-        <Show when={state().error}><text wrapMode="none" fg={colors().text.feedback.error.base}>{truncate(`Refresh failed: ${state().error}; previous data is stale. r retry`, width() - 4)}</text></Show>
+        <Show when={state().error}><text wrapMode="none" fg={palette.error}>{text.shorten(`Refresh failed: ${state().error}; previous data is stale. r retry`, width() - 4)}</text></Show>
         <Show when={snapshot()?.warnings.length}>
-          <text wrapMode="none" fg={colors().text.feedback.warning.base}>{truncate(`Degraded (${snapshot()!.warnings.length}): ${snapshot()!.warnings[0]}`, width() - 4)}</text>
+          <text wrapMode="none" fg={palette.warning}>{text.shorten(`Degraded (${snapshot()!.warnings.length}): ${snapshot()!.warnings[0]}`, width() - 4)}</text>
         </Show>
         <box height={bodyHeight()} flexDirection="column" overflow="hidden">
           <Show when={props.sessionID} fallback={<Card compact grow><CenterEmpty title="No active session" description="Open a session, then run /context again." /></Card>}>
             <Show when={snapshot()} fallback={<Card compact grow><CenterEmpty title={state().error ? "Context could not be loaded" : "Loading context…"} /></Card>}>
               <Show when={tab() === 0} fallback={
-                <Card title={truncate(`${tab() === 1 ? "LARGEST RETAINED CONTRIBUTORS" : "OBSERVABLE ENVIRONMENT"}  ${rows().length}`, width() - 8)} compact grow>
+                <Card title={text.shorten(`${tab() === 1 ? "LARGEST RETAINED CONTRIBUTORS" : "OBSERVABLE ENVIRONMENT"}  ${rows().length}`, width() - 8)} compact grow>
                   <box flexGrow={1} minHeight={0} overflow="hidden" flexDirection="column" onSizeChange={function () { setListSize({ width: this.width, height: this.height }) }}>
                   <Show when={rows().length} fallback={<CenterEmpty title={tab() === 1 && !snapshot()?.retained ? "Retained context unavailable" : "No observable entries"}
                     description={tab() === 1 && !snapshot()?.retained ? "History is not a retained estimate." : undefined} />}>
                     <For each={rows().slice(window().start, window().end)}>{(row, index) => (
                       <box flexDirection="row" height={1} flexShrink={0} justifyContent="space-between" gap={1}
                         backgroundColor={window().start + index() === window().selected ? palette.selectedBackground : undefined}>
-                        <text wrapMode="none" fg={window().start + index() === window().selected ? palette.selectedText : colors().text.base}>
-                          {window().start + index() === window().selected ? "> " : "  "}{truncate(row.label, Math.max(0, listSize().width - 3 - detailWidth(row.detail)))}
+                        <text wrapMode="none" fg={window().start + index() === window().selected ? palette.selectedText : palette.text}>
+                          {window().start + index() === window().selected ? "> " : "  "}{text.shorten(row.label, Math.max(0, listSize().width - 3 - detailWidth(row.detail)))}
                         </text>
-                        <text wrapMode="none" fg={window().start + index() === window().selected ? palette.selectedText : colors().text.muted}>{truncate(row.detail, detailBudget())}</text>
+                        <text wrapMode="none" fg={window().start + index() === window().selected ? palette.selectedText : palette.muted}>{text.shorten(row.detail, detailBudget())}</text>
                       </box>
                     )}</For>
                   </Show>
@@ -139,20 +138,19 @@ export function ContextDialog(props: { sessionID?: string }) {
 }
 
 function Overview(props: { snapshot: Snapshot; width: number }) {
-  const context = usePlugin()
   const palette = usePalette()
-  const colors = createMemo(() => context.theme.surface("dialog"))
+  const text = useText()
   const snapshot = () => props.snapshot
   const tokens = (value: number) => snapshot().usageReports ? formatCount(value) : "unavailable"
   const narrow = () => props.width < 60
-  const truncate = (text: string, width = props.width - 4) => shorten(text, Math.max(0, width), context.renderer.widthMethod)
+  const truncate = (value: string, width = props.width - 4) => text.shorten(value, Math.max(0, width))
   const model = () => snapshot().model
   const cardWidth = () => narrow() ? props.width : Math.floor((props.width - 1) / 2)
   return (
     <box flexDirection="column" gap={1}>
       <Card compact>
         <text wrapMode="none" fg={palette.value}><b>{truncate(model() ? `${model()!.providerName ?? model()!.providerID}/${model()!.modelName ?? model()!.modelID}` : "Model unavailable")}</b></text>
-        <text fg={colors().text.muted}>Context limit <span style={{ fg: palette.value }}>{model()?.contextLimit ? formatCount(model()!.contextLimit!) : "unavailable"}</span> · Estimated utilization <span style={{ fg: colors().text.feedback.warning.base }}>{percent(snapshot().utilization)}</span></text>
+        <text fg={palette.muted}>Context limit <span style={{ fg: palette.value }}>{model()?.contextLimit ? formatCount(model()!.contextLimit!) : "unavailable"}</span> · Estimated utilization <span style={{ fg: palette.warning }}>{percent(snapshot().utilization)}</span></text>
       </Card>
       <box flexDirection={narrow() ? "column" : "row"} gap={1}>
         <box width={cardWidth()}><StatCard compact label="RECORDED INPUT" value={tokens(snapshot().usage.input + snapshot().usage.cacheRead + snapshot().usage.cacheWrite)} detail={`${tokens(snapshot().usage.input)} fresh`} /></box>
@@ -164,14 +162,14 @@ function Overview(props: { snapshot: Snapshot; width: number }) {
           detail={snapshot().retained ? `${formatCount(snapshot().retained!.characters)} chars` : "Retained context unavailable"} /></box>
       </box>
       <Card compact title="ACTIVITY">
-        <text fg={colors().text.muted}>Messages: <span style={{ fg: palette.value }}>{snapshot().messageCount.user} user / {snapshot().messageCount.assistant} assistant</span></text>
-        <text fg={colors().text.muted}>Tools / compactions: <span style={{ fg: palette.value }}>{snapshot().toolCalls} / {snapshot().compaction.count}</span></text>
-        <text wrapMode="none" fg={colors().text.muted}>{truncate(`Latest checkpoint: ${snapshot().compaction.latestBoundary ?? "unavailable"}`)}</text>
-        <text fg={colors().text.muted}>History: <span style={{ fg: colors().text.base }}>{snapshot().history}</span> · Retained: <span style={{ fg: colors().text.base }}>{snapshot().retained ? "estimated" : "unavailable"}</span></text>
+        <text fg={palette.muted}>Messages: <span style={{ fg: palette.value }}>{snapshot().messageCount.user} user / {snapshot().messageCount.assistant} assistant</span></text>
+        <text fg={palette.muted}>Tools / compactions: <span style={{ fg: palette.value }}>{snapshot().toolCalls} / {snapshot().compaction.count}</span></text>
+        <text wrapMode="none" fg={palette.muted}>{truncate(`Latest checkpoint: ${snapshot().compaction.latestBoundary ?? "unavailable"}`)}</text>
+        <text fg={palette.muted}>History: <span style={{ fg: palette.text }}>{snapshot().history}</span> · Retained: <span style={{ fg: palette.text }}>{snapshot().retained ? "estimated" : "unavailable"}</span></text>
       </Card>
-      <text fg={colors().text.muted}>Provider tokens are <span style={{ fg: colors().text.feedback.success.base }}>recorded</span>; retained size and utilization are <span style={{ fg: colors().text.feedback.warning.base }}>estimated</span>.</text>
-      <text fg={colors().text.muted}>Excludes hidden instructions, tool schemas &amp; attachment payloads.</text>
-      <For each={snapshot().warnings}>{(warning) => <text wrapMode="none" fg={colors().text.feedback.warning.base}>{truncate(warning)}</text>}</For>
+      <text fg={palette.muted}>Provider tokens are <span style={{ fg: palette.success }}>recorded</span>; retained size and utilization are <span style={{ fg: palette.warning }}>estimated</span>.</text>
+      <text fg={palette.muted}>Excludes hidden instructions, tool schemas &amp; attachment payloads.</text>
+      <For each={snapshot().warnings}>{(warning) => <text wrapMode="none" fg={palette.warning}>{truncate(warning)}</text>}</For>
     </box>
   )
 }
