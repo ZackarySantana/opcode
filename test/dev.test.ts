@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { pathToFileURL } from "node:url"
-import { prepareDev, selectPlugins } from "../scripts/dev"
+import { globalConfigFiles, prepareDev, selectPlugins, suspendPublished } from "../scripts/dev"
 
 const temporary: string[] = []
 afterAll(async () => { for (const root of temporary) await rm(root, { recursive: true, force: true }) })
@@ -88,4 +88,65 @@ test("missing builds and malformed inline settings fail rather than silently dro
   await expect(prepareDev(root, ["cost"], {})).rejects.toThrow("Missing build")
   await expect(prepareDev(root, ["later"], { OPENCODE_CONFIG_CONTENT: "[]" })).rejects.toThrow("JSON object")
   await expect(prepareDev(root, ["later"], { OPENCODE_CONFIG_CONTENT: '{"plugins":"wrong"}' })).rejects.toThrow("plugins must be an array")
+})
+
+async function globalConfig() {
+  const root = await mkdtemp(join(tmpdir(), "opcode-dev-global-"))
+  temporary.push(root)
+  const directory = join(root, "opencode")
+  const files = {
+    server: join(directory, "opencode.jsonc"),
+    cli: join(directory, "cli.json"),
+    // Nothing to take out, so it must stay exactly as it is, comments included.
+    other: join(directory, "opencode.json"),
+  }
+  const original = {
+    server: `// pinned and configured copies
+{
+  "model": "example/model",
+  "plugins": ["@lidtop/opencode-cost@0.2.3", { "package": "@lidtop/opencode-context", "options": {} }, "@lidtop/opencode-later", "another-plugin"],
+}
+`,
+    cli: JSON.stringify({ plugins: ["@lidtop/opencode-feed"] }),
+    other: `// untouched\n{ "plugins": ["@lidtop/opencode-later"] }\n`,
+  }
+  for (const name of ["server", "cli", "other"] as const) await Bun.write(files[name], original[name])
+  return { configs: globalConfigFiles({ XDG_CONFIG_HOME: root }), files, original, state: join(root, "state") }
+}
+
+const packages = ["@lidtop/opencode-cost", "@lidtop/opencode-context", "@lidtop/opencode-feed"]
+
+test("a preview takes its plugins' published copies out of global config and restores the files exactly", async () => {
+  const { configs, files, original, state } = await globalConfig()
+  const published = await suspendPublished(configs, packages, state)
+  expect(published.files.sort()).toEqual([files.cli, files.server].sort())
+  expect(Bun.JSONC.parse(await Bun.file(files.server).text())).toEqual({ model: "example/model", plugins: ["@lidtop/opencode-later", "another-plugin"] })
+  expect(await Bun.file(files.cli).json()).toEqual({ plugins: [] })
+  expect(await Bun.file(files.other).text()).toBe(original.other)
+  expect(await published.restore()).toEqual([])
+  for (const name of ["server", "cli", "other"] as const) expect(await Bun.file(files[name]).text()).toBe(original[name])
+})
+
+test("the next preview restores what a killed one left suspended", async () => {
+  const { configs, files, original, state } = await globalConfig()
+  await suspendPublished(configs, packages, state)
+  const next = await suspendPublished(configs, packages, state)
+  expect(next.files).toHaveLength(2)
+  expect(await Bun.file(files.cli).json()).toEqual({ plugins: [] })
+  await next.restore()
+  for (const name of ["server", "cli", "other"] as const) expect(await Bun.file(files[name]).text()).toBe(original[name])
+})
+
+test("a file changed during the preview keeps the change and gets its published plugins back", async () => {
+  const { configs, files, original, state } = await globalConfig()
+  const published = await suspendPublished(configs, packages, state)
+  // OpenCode saving a setting, or the user adding a plugin.
+  await Bun.write(files.server, JSON.stringify({ model: "other/model", plugins: ["another-plugin", "added-during-preview"] }))
+  const warnings = await published.restore()
+  expect(warnings).toEqual([expect.stringContaining(files.server)])
+  expect(Bun.JSONC.parse(await Bun.file(files.server).text())).toEqual({
+    model: "other/model",
+    plugins: ["another-plugin", "added-during-preview", "@lidtop/opencode-cost@0.2.3", { package: "@lidtop/opencode-context", options: {} }],
+  })
+  expect(await Bun.file(files.cli).text()).toBe(original.cli)
 })

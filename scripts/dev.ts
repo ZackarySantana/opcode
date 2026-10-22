@@ -1,5 +1,6 @@
-import { mkdir } from "node:fs/promises"
-import { join } from "node:path"
+import { mkdir, rm, writeFile } from "node:fs/promises"
+import { homedir } from "node:os"
+import { basename, join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { pluginIDs, publicPackageName, repositoryRoot } from "./packaging"
 
@@ -25,7 +26,7 @@ function inlineSettings(value: string | undefined, name: string): Record<string,
   return settings as Record<string, unknown>
 }
 
-/** Prepare only checkout-owned files. Global config and existing databases are never edited. */
+/** Prepare only checkout-owned files. Existing databases are never edited; see suspendPublished for global config. */
 export async function prepareDev(root: string, selected: PluginID[], environment: Environment, directory = join(root, ".release/dev")): Promise<{
   data: string
   environment: Environment & { OPENCODE_CONFIG_CONTENT: string; OPENCODE_CLI_CONFIG_CONTENT: string }
@@ -64,12 +65,106 @@ export async function prepareDev(root: string, selected: PluginID[], environment
   }
 }
 
+/** Global server and CLI config, where published copies of the plugins are usually installed. */
+export function globalConfigFiles(environment: Environment): string[] {
+  const directory = join(environment.XDG_CONFIG_HOME || join(environment.HOME || homedir(), ".config"), "opencode")
+  return ["opencode.json", "opencode.jsonc", "cli.json"].map((name) => join(directory, name))
+}
+
+/** The package an entry installs, without its version: "@scope/name@1.0.0" is "@scope/name". */
+function packageOf(entry: unknown): string {
+  const spec = typeof entry === "string" ? entry : (entry as { package?: unknown } | null)?.package
+  return typeof spec === "string" ? spec.replace(/(?!^)@.*$/, "") : ""
+}
+
+const read = (path: string) => Bun.file(path).text().catch(() => undefined)
+const plugins = (text: string) => (Bun.JSONC.parse(text) as { plugins?: unknown[] }).plugins ?? []
+// Backups can hold provider keys from the config they copy.
+const save = (path: string, text: string) => writeFile(path, text, { mode: 0o600 })
+
+/** A suspended file's original, and what the preview wrote in its place. */
+function backupOf(path: string, directory: string) {
+  const original = join(directory, basename(path))
+  return { original, written: `${original}.preview` }
+}
+
+/**
+ * Puts a suspended file back: exactly as it was, or, if it changed during the preview (OpenCode saves settings
+ * there too), with the removed entries added to the changed version. Returns a warning when it can't be exact.
+ */
+async function resume(path: string, directory: string): Promise<string | undefined> {
+  const backup = backupOf(path, directory)
+  const [current, original, written] = await Promise.all([read(path), read(backup.original), read(backup.written)])
+  if (original === undefined || written === undefined) return
+  let warning: string | undefined
+  if (current !== original) {
+    if (current === undefined || current === written) await save(path, original)
+    else {
+      const kept = new Set(plugins(written).map((entry) => JSON.stringify(entry)))
+      const removed = plugins(original).filter((entry) => !kept.has(JSON.stringify(entry)))
+      await save(path, `${JSON.stringify({ ...Bun.JSONC.parse(current) as object, plugins: [...plugins(current), ...removed] }, null, 2)}\n`)
+      warning = `${path} changed during the preview, so its published Opcode plugins were added back to your changes; comments from before the preview are in ${backup.original}.`
+    }
+  }
+  await rm(backup.written)
+  if (!warning) await rm(backup.original)
+  return warning
+}
+
+const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
+
+/**
+ * OpenCode imports every plugin entry before applying `-id` removals, so a published copy of a previewed plugin in
+ * global config collides with the local one and fails to load. Take those entries out for the preview, and put them
+ * back with `restore`. Backups in `directory` let the next preview restore what a killed one left behind.
+ */
+export async function suspendPublished(files: readonly string[], packages: readonly string[], directory: string) {
+  await mkdir(directory, { recursive: true, mode: 0o700 })
+  const lock = join(directory, "pid")
+  const owner = Number(await read(lock))
+  if (owner && owner !== process.pid && alive(owner)) throw new Error(`Another Opcode preview (PID ${owner}) has your global config. Exit it first.`)
+  await save(lock, String(process.pid))
+  const warnings: string[] = []
+  const restore = async () => {
+    for (const path of files) {
+      try { const warning = await resume(path, directory); if (warning) warnings.push(warning) }
+      catch (error) { warnings.push(`Could not restore ${path}: ${error instanceof Error ? error.message : error}. Its original is in ${backupOf(path, directory).original}.`) }
+    }
+    await rm(lock, { force: true })
+    return warnings.splice(0)
+  }
+  // Recover first, so nothing is written over a file a killed preview left suspended.
+  for (const path of files) warnings.push(...await resume(path, directory).then((warning) => warning ? [warning] : []))
+  const suspended: string[] = []
+  try {
+    for (const path of files) {
+      const original = await read(path)
+      if (original === undefined) continue
+      const config = Bun.JSONC.parse(original) as { plugins?: unknown }
+      if (!Array.isArray(config.plugins)) continue
+      const kept = config.plugins.filter((entry) => !packages.includes(packageOf(entry)))
+      if (kept.length === config.plugins.length) continue
+      const backup = backupOf(path, directory)
+      const written = `${JSON.stringify({ ...config, plugins: kept }, null, 2)}\n`
+      // The preview copy marks a suspension, so it is written after the original it restores.
+      await save(backup.original, original)
+      await save(backup.written, written)
+      await save(path, written)
+      suspended.push(path)
+    }
+  } catch (error) {
+    await restore()
+    throw new Error(`Could not take published Opcode plugins out of global config: ${error instanceof Error ? error.message : error}`)
+  }
+  return { files: suspended, warnings: warnings.splice(0), restore }
+}
+
 /** Keep the terminal attached and forward external termination without orphaning OpenCode. */
 async function attached(command: string[], cwd: string, environment: Environment) {
   const child = Bun.spawn(command, { cwd, env: environment, stdin: "inherit", stdout: "inherit", stderr: "inherit" })
   let interrupted: number | undefined
   let force: ReturnType<typeof setTimeout> | undefined
-  const stop = (signal: "SIGINT" | "SIGTERM", status: number) => {
+  const stop = (signal: "SIGINT" | "SIGTERM" | "SIGHUP", status: number) => {
     interrupted = status
     if (child.exitCode !== null) return
     child.kill(signal)
@@ -77,8 +172,10 @@ async function attached(command: string[], cwd: string, environment: Environment
   }
   const interrupt = () => stop("SIGINT", 130)
   const terminate = () => stop("SIGTERM", 143)
+  const hangup = () => stop("SIGHUP", 129)
   process.on("SIGINT", interrupt)
   process.on("SIGTERM", terminate)
+  process.on("SIGHUP", hangup)
   try {
     const status = await child.exited
     return interrupted ?? status
@@ -86,6 +183,7 @@ async function attached(command: string[], cwd: string, environment: Environment
     if (force) clearTimeout(force)
     process.off("SIGINT", interrupt)
     process.off("SIGTERM", terminate)
+    process.off("SIGHUP", hangup)
   }
 }
 
@@ -103,8 +201,18 @@ export async function dev(arguments_: string[], root = repositoryRoot, environme
   const { buildPlugin } = await import("./build")
   for (const id of selected) await buildPlugin(root, id)
   const preview = await prepareDev(root, selected, environment)
-  console.log(`\nOpcode preview: ${selected.join(", ")}\nPlugin databases: ${preview.data}\nUsing your normal OpenCode login/session database; global config files are unchanged.\nTry /context, /cost, /later, /feed, or /opcode-sessions. Exit OpenCode normally when done.\n`)
-  return attached([executable, "--standalone"], root, preview.environment)
+  const packages = selected.map(publicPackageName)
+  const published = await suspendPublished(globalConfigFiles(environment), packages, join(root, ".release/dev/config"))
+  for (const warning of published.warnings) console.warn(warning)
+  const suspended = published.files.length
+    ? `Took ${packages.join(", ")} out of ${published.files.join(", ")} until OpenCode exits; other OpenCode windows lose them meanwhile.`
+    : "Global config files are unchanged."
+  console.log(`\nOpcode preview: ${selected.join(", ")}\nPlugin databases: ${preview.data}\nUsing your normal OpenCode login/session database. ${suspended}\nTry /context, /cost, /later, /feed, or /opcode-sessions.\n`)
+  try { return await attached([executable, "--standalone"], root, preview.environment) }
+  finally {
+    for (const warning of await published.restore()) console.warn(warning)
+    if (published.files.length) console.log(`Restored ${published.files.join(", ")}.`)
+  }
 }
 
 if (import.meta.main) {

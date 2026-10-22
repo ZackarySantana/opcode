@@ -18,10 +18,22 @@ Try `/context`, `/cost`, `/later`, `/feed`, and `/opcode-sessions` (avoids the
 built-in `/sessions` command). Relaunch after editing code to rebuild.
 
 Preview plugin databases persist in `.release/dev/data`, separate from the
-original plugins' databases. The launcher does not edit global configuration; it
-temporarily replaces the four originals and uses the preview extensions instead
-of your CLI-only plugin list. Later and Feed are configured on the CLI side so
-their client-local database options reach the TUI.
+original plugins' databases. The launcher temporarily replaces the four
+originals and uses the preview extensions instead of your CLI-only plugin list.
+Later and Feed are configured on the CLI side so their client-local database
+options reach the TUI.
+
+OpenCode loads every configured plugin before applying removals, so a published
+`@lidtop/opencode-*` copy in your global `opencode.json(c)` or `cli.json` would
+collide with its preview. While OpenCode runs, the launcher takes the previewed
+plugins' entries out of those files, rewriting them as plain JSON, and restores
+each file exactly on exit, including Ctrl+C or closing the terminal. Other
+OpenCode windows, including the background service, lose those plugins until
+then. If a file changes during the preview (a setting OpenCode saves, or your
+edit), the change is kept and the plugins are added back to it; the comments it
+had before stay in its backup. Backups live in `.release/dev/config`, so if the
+launcher is killed outright, the next `mise run dev` from this checkout restores
+them. Only one preview at a time can hold your global config.
 
 **The preview uses a private server but your normal OpenCode login/session
 database.** It is not a sandbox: submitted prompts behave normally and may incur

@@ -4,8 +4,10 @@
 
 From the checkout, run `mise run dev` (or `mise run dev later` for one plugin).
 The launcher installs dependencies, builds, configures local entrypoints, and
-starts OpenCode without editing global config. It stores separate preview plugin
-databases under `.release/dev/data`, retaining them across runs.
+starts OpenCode. While it runs, published copies of the previewed plugins are
+taken out of your global config and restored on exit (see
+[development](development.md)). It stores separate preview plugin databases under
+`.release/dev/data`, retaining them across runs.
 
 This uses your normal OpenCode login/session database and other server settings;
 it is **not isolated**. Your global CLI-only plugin list is temporarily replaced
