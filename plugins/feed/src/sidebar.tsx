@@ -3,11 +3,24 @@
 import { Section, usePalette } from "@opcode/ui"
 import { usePlugin } from "@opencode/plugin/tui"
 import type { MouseEvent } from "@opentui/core"
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import type { FeedsController } from "./host"
-import { age, sidebarLayout, windowLabel, type TimelineEntry } from "./model"
+import { age, refreshStatus, sidebarLayout, windowLabel, type TimelineEntry } from "./model"
 import { openLink } from "./open"
 import { phaseStyle } from "./style"
+
+/** Ticks every second on its own, so the countdown moves without re-deriving the timeline. */
+function RefreshLine(props: { feeds: FeedsController }) {
+  const palette = usePalette()
+  const [now, setNow] = createSignal(Date.now())
+  const timer = setInterval(() => setNow(Date.now()), 1_000)
+  onCleanup(() => clearInterval(timer))
+  return (
+    <Show when={refreshStatus(props.feeds.refreshing(), props.feeds.nextRefresh(), now())}>
+      {(status) => <text wrapMode="none" fg={palette.muted}>{status()}</text>}
+    </Show>
+  )
+}
 
 /** Left click runs the action; hovered lets the line underline what the click opens. */
 function useClick(run: () => void) {
@@ -85,6 +98,7 @@ export function Sidebar(props: { feeds: FeedsController }) {
             <Show when={view().unreachable.length}>
               <text minWidth={0} wrapMode="word" fg={palette.error}>! {view().unreachable.map((failure) => failure.source).join(" · ")} unreachable</text>
             </Show>
+            <RefreshLine feeds={props.feeds} />
           </box>
         </Section>
       </box>

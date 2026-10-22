@@ -4,7 +4,7 @@ export type RefreshState<T> = { value?: T; loading: boolean; error?: string }
 /** Starts a one-shot timer and returns its cancel function. */
 export type SetTimer = (run: () => void, ms: number) => () => void
 
-const setTimer: SetTimer = (run, ms) => { const id = setTimeout(run, ms); return () => clearTimeout(id) }
+export const setTimer: SetTimer = (run, ms) => { const id = setTimeout(run, ms); return () => clearTimeout(id) }
 
 /**
  * One view's reads. `refresh` supersedes (aborts) the in-flight read; `schedule` debounces and coalesces

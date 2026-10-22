@@ -4,8 +4,9 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createRoot } from "solid-js"
+import type { SetTimer } from "@opcode/core/refresh"
 import { FeedsController, type Fetcher } from "../src/host"
-import { age, editRows, managerRows, matches, sidebarLayout, timeline, type EditRow, type FetchResult, type Surface, type SurfaceScope, type TimelineEntry } from "../src/model"
+import { age, editRows, managerRows, matches, refreshStatus, sidebarLayout, timeline, type EditRow, type FetchResult, type Surface, type SurfaceScope, type TimelineEntry } from "../src/model"
 import { launchers, openURL } from "../src/open"
 import { parseFeed } from "../src/parse"
 import { candidateURL, feedURL, presets } from "../src/presets"
@@ -255,19 +256,20 @@ test("settings persist across reopening the database", async () => {
   afterAll(() => rm(directory, { recursive: true, force: true }))
   const path = join(directory, "feed.sqlite")
   const first = new FeedsDatabase(path)
-  // A fresh install looks back 12 hours and hides resolved incidents.
-  expect(first.settings()).toEqual({ windowHours: 12, resolved: "none", sidebarReleases: false, sidebarItems: 5 })
+  // A fresh install looks back 12 hours, hides resolved incidents, and refreshes every 10 minutes.
+  expect(first.settings()).toEqual({ windowHours: 12, resolved: "none", sidebarReleases: false, sidebarItems: 5, refreshMinutes: 10 })
   await createRoot(async (dispose) => {
     const feeds = new FeedsController(first, async () => rss)
     feeds.updateSettings({ windowHours: 72 })
     feeds.updateSettings({ resolved: "sidebar" })
     feeds.updateSettings({ sidebarReleases: true })
     feeds.updateSettings({ sidebarItems: 10 })
+    feeds.updateSettings({ refreshMinutes: 30 })
     dispose()
   })
   first.close()
   const second = new FeedsDatabase(path)
-  expect(second.settings()).toEqual({ windowHours: 72, resolved: "sidebar", sidebarReleases: true, sidebarItems: 10 })
+  expect(second.settings()).toEqual({ windowHours: 72, resolved: "sidebar", sidebarReleases: true, sidebarItems: 10, refreshMinutes: 30 })
   second.close()
 })
 
@@ -284,9 +286,9 @@ test("0.1.x databases rename release subscriptions and gain the releases setting
   `)
   legacy.close()
   const migrated = new FeedsDatabase(path)
-  expect(migrated.settings()).toEqual({ windowHours: 6, resolved: "both", sidebarReleases: false, sidebarItems: 5 })
+  expect(migrated.settings()).toEqual({ windowHours: 6, resolved: "both", sidebarReleases: false, sidebarItems: 5, refreshMinutes: 10 })
   expect(migrated.list().map((subscription) => subscription.url)).toEqual(["https://bun.test/releases"])
-  migrated.saveSettings({ windowHours: 6, resolved: "both", sidebarReleases: true, sidebarItems: 5 })
+  migrated.saveSettings({ windowHours: 6, resolved: "both", sidebarReleases: true, sidebarItems: 5, refreshMinutes: 10 })
   migrated.close()
   const reopened = new FeedsDatabase(path)
   expect(reopened.settings().sidebarReleases).toBe(true)
@@ -312,7 +314,7 @@ test("0.2.0 and 0.3.0 databases keep releases in the sidebar when their saved ch
   const scopes: [SurfaceScope, boolean][] = [["both", true], ["sidebar", true], ["feed", false], ["none", false]]
   for (const [scope, sidebarReleases] of scopes) {
     const v2 = open(`v2-${scope}`, "updates TEXT NOT NULL DEFAULT 'feed'", `'${scope}'`).database
-    expect(v2.settings()).toEqual({ windowHours: 24, resolved: "none", sidebarReleases, sidebarItems: 5 })
+    expect(v2.settings()).toEqual({ windowHours: 24, resolved: "none", sidebarReleases, sidebarItems: 5, refreshMinutes: 10 })
     expect(v2.list()).toMatchObject([{ url: "https://bun.test/releases", kind: "release" }])
     v2.close()
     const v3 = open(`v3-${scope}`, "updates TEXT NOT NULL DEFAULT 'feed', releases TEXT NOT NULL DEFAULT 'feed'", `'${sidebarReleases ? "none" : "both"}', '${scope}'`).database
@@ -321,14 +323,14 @@ test("0.2.0 and 0.3.0 databases keep releases in the sidebar when their saved ch
   }
   // Saving later, with the old columns still present, works and keeps the new value.
   const { path, database } = open("saved", "updates TEXT NOT NULL DEFAULT 'feed', releases TEXT NOT NULL DEFAULT 'feed'", "'feed', 'both'")
-  database.saveSettings({ windowHours: 24, resolved: "none", sidebarReleases: false, sidebarItems: 5 })
+  database.saveSettings({ windowHours: 24, resolved: "none", sidebarReleases: false, sidebarItems: 5, refreshMinutes: 10 })
   database.close()
   const reopened = new FeedsDatabase(path)
   expect(reopened.settings().sidebarReleases).toBe(false)
   reopened.close()
 })
 
-test("0.3.0 databases gain the sidebar length at five, and an unknown stored length falls back to it", async () => {
+test("0.3.0 databases gain the sidebar length and refresh interval at their defaults, which unknown stored values fall back to", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opcode-feed-"))
   afterAll(() => rm(directory, { recursive: true, force: true }))
   const path = join(directory, "feed.sqlite")
@@ -340,14 +342,14 @@ test("0.3.0 databases gain the sidebar length at five, and an unknown stored len
   `)
   legacy.close()
   const migrated = new FeedsDatabase(path)
-  expect(migrated.settings()).toEqual({ windowHours: 24, resolved: "both", sidebarReleases: true, sidebarItems: 5 })
+  expect(migrated.settings()).toEqual({ windowHours: 24, resolved: "both", sidebarReleases: true, sidebarItems: 5, refreshMinutes: 10 })
   migrated.close()
-  // A length this version does not offer, such as one written by another version.
+  // Values this version does not offer, such as ones written by another version.
   const edited = new Database(path)
-  edited.exec("UPDATE settings SET sidebar_items = 7")
+  edited.exec("UPDATE settings SET sidebar_items = 7, refresh_minutes = 7")
   edited.close()
   const reopened = new FeedsDatabase(path)
-  expect(reopened.settings()).toEqual({ windowHours: 24, resolved: "both", sidebarReleases: true, sidebarItems: 5 })
+  expect(reopened.settings()).toEqual({ windowHours: 24, resolved: "both", sidebarReleases: true, sidebarItems: 5, refreshMinutes: 10 })
   reopened.close()
 })
 
@@ -362,6 +364,16 @@ test("ages are compact", () => {
   // Upcoming items count the other way, with the same format.
   expect(age(now, hours(-30))).toBe("1d 6h")
   expect(age(undefined, now)).toBe("")
+})
+
+test("the refresh line counts down to the second", () => {
+  const now = Date.parse("2026-10-21T12:00:00Z")
+  expect(refreshStatus(true, now + 5 * 60_000, now)).toBe("Refreshing…")
+  expect(refreshStatus(false, now + 4 * 60_000 + 5_500, now)).toBe("Next refresh in 4m 06s")
+  expect(refreshStatus(false, now + 60 * 60_000, now)).toBe("Next refresh in 60m 00s")
+  expect(refreshStatus(false, now + 30_000, now)).toBe("Next refresh in 30s")
+  expect(refreshStatus(false, now - 1_000, now)).toBe("Next refresh in 0s")
+  expect(refreshStatus(false, undefined, now)).toBeUndefined()
 })
 
 test("subscriptions persist, fetch on subscribe, and late results after unsubscribe are dropped", async () => {
@@ -395,12 +407,106 @@ test("a failed refresh keeps the previous items alongside the error", async () =
   let fail = false
   const fetcher: Fetcher = async () => { if (fail) throw new Error("HTTP 503"); return rss }
   await createRoot(async (dispose) => {
-    const feeds = new FeedsController(database, fetcher)
+    const feeds = new FeedsController(database, fetcher, { retryDelays: [] })
     feeds.subscribe("https://status.npmjs.org/history.rss", "status")
     await Bun.sleep(0)
     fail = true
     await feeds.refreshAll()
     expect(feeds.results().get("https://status.npmjs.org/history.rss")).toMatchObject({ status: "error", error: "HTTP 503", feed: { items: [{ title: "Elevated errors & latency" }, {}] } })
+    feeds.dispose()
+    dispose()
+  })
+  database.close()
+})
+
+/** Timers that run only when a test fires them. */
+function fakeTimers() {
+  const pending = new Set<{ run: () => void; ms: number }>()
+  const timer: SetTimer = (run, ms) => { const entry = { run, ms }; pending.add(entry); return () => { pending.delete(entry) } }
+  const fire = async (ms: number) => {
+    for (const entry of [...pending]) if (entry.ms === ms) { pending.delete(entry); entry.run() }
+    await Bun.sleep(0)
+  }
+  return { timer, fire }
+}
+
+const npm = "https://status.npmjs.org/history.rss"
+
+test("a failed fetch is retried within seconds before it shows as unreachable, then again on the refresh schedule", async () => {
+  const database = new FeedsDatabase(":memory:")
+  database.subscribe(npm, "status")
+  const timers = fakeTimers()
+  let calls = 0
+  const fetcher: Fetcher = async () => { if (++calls <= 3) throw new Error("HTTP 503"); return rss }
+  await createRoot(async (dispose) => {
+    const feeds = new FeedsController(database, fetcher, { timer: timers.timer })
+    feeds.start()
+    await Bun.sleep(0)
+    expect(feeds.results().get(npm)?.status).toBe("loading")
+    await timers.fire(2_000)
+    expect(feeds.results().get(npm)?.status).toBe("loading")
+    expect(feeds.timeline("sidebar").unreachable).toEqual([])
+    await timers.fire(5_000)
+    expect(feeds.results().get(npm)).toMatchObject({ status: "error", error: "HTTP 503" })
+    expect(calls).toBe(3)
+    await timers.fire(10 * 60_000)
+    expect(feeds.results().get(npm)?.status).toBe("ok")
+    feeds.dispose()
+    dispose()
+  })
+  database.close()
+})
+
+test("refreshes follow the interval setting; changing it, refreshing by hand, or waking late restarts the countdown", async () => {
+  const database = new FeedsDatabase(":memory:")
+  database.subscribe(npm, "status")
+  const timers = fakeTimers()
+  let calls = 0
+  const fetcher: Fetcher = async () => { calls++; return rss }
+  await createRoot(async (dispose) => {
+    const feeds = new FeedsController(database, fetcher, { timer: timers.timer })
+    const minutesLeft = () => Math.round((feeds.nextRefresh()! - Date.now()) / 60_000)
+    feeds.start()
+    await Bun.sleep(0)
+    expect(calls).toBe(1)
+    expect(minutesLeft()).toBe(10)
+    feeds.updateSettings({ refreshMinutes: 5 })
+    expect(minutesLeft()).toBe(5)
+    // The old schedule is gone.
+    await timers.fire(10 * 60_000)
+    expect(calls).toBe(1)
+    await timers.fire(5 * 60_000)
+    expect(calls).toBe(2)
+    // A refresh by hand replaces the pending automatic one rather than adding another.
+    await feeds.refreshAll()
+    await timers.fire(5 * 60_000)
+    expect(calls).toBe(4)
+    // Timers run late across sleep; a clock tick past the deadline refreshes.
+    feeds.tick(feeds.nextRefresh()! - 1)
+    await Bun.sleep(0)
+    expect(calls).toBe(4)
+    feeds.tick(feeds.nextRefresh()! + 1)
+    await Bun.sleep(0)
+    expect(calls).toBe(5)
+    feeds.dispose()
+    dispose()
+  })
+  database.close()
+})
+
+test("a newer fetch of a feed wins over an older one that settles later", async () => {
+  const database = new FeedsDatabase(":memory:")
+  const calls: { resolve(xml: string): void; reject(error: Error): void }[] = []
+  const fetcher: Fetcher = () => new Promise((resolve, reject) => calls.push({ resolve, reject }))
+  await createRoot(async (dispose) => {
+    const feeds = new FeedsController(database, fetcher, { retryDelays: [], timer: fakeTimers().timer })
+    feeds.subscribe(npm, "status")
+    void feeds.refreshAll()
+    calls[1]!.resolve(rss)
+    await Bun.sleep(0)
+    calls[0]!.reject(new Error("The operation timed out."))
+    await Bun.sleep(0)
+    expect(feeds.results().get(npm)?.status).toBe("ok")
     feeds.dispose()
     dispose()
   })

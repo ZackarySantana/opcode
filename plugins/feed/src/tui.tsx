@@ -7,16 +7,11 @@ import { databasePath, FeedsDatabase } from "./sqlite"
 import { FeedDialog } from "./dialog"
 import { Sidebar } from "./sidebar"
 
-const DEFAULT_INTERVAL_MINUTES = 10
-
 export default Plugin.define({
   id: "opcode-feed",
   setup(api) {
     const database = new FeedsDatabase(databasePath(api.options.database))
     const feeds = new FeedsController(database)
-    const minutes = typeof api.options.interval === "number" && api.options.interval > 0 ? api.options.interval : DEFAULT_INTERVAL_MINUTES
-    const timer = setInterval(() => void feeds.refreshAll(), minutes * 60_000)
-    const clock = setInterval(() => feeds.tick(), 60_000)
     const unregisterSidebar = api.ui.slot({ append: "sidebar.content", render: () => <Sidebar feeds={feeds} /> })
     let opened = false
     api.keymap.layer(() => ({ mode: "global", commands: [{
@@ -27,11 +22,19 @@ export default Plugin.define({
         opened = true
         api.ui.dialog.set({ size: "large", centered: true })
       },
+    }, {
+      id: "opcode-feed.refresh-all", title: "Refresh feeds", group: "Opcode", palette: true,
+      description: "Fetch every subscribed feed now", slash: { name: "feed-refresh" },
+      run() {
+        const count = feeds.subscriptions().length
+        api.ui.toast.show(count
+          ? { title: "Feed", message: `Refreshing ${count} ${count === 1 ? "feed" : "feeds"}.`, variant: "info" }
+          : { title: "Feed", message: "No feeds yet. Subscribe to one in /feed.", variant: "warning" })
+        void feeds.refreshAll()
+      },
     }] }))
-    void feeds.refreshAll()
+    feeds.start()
     return () => {
-      clearInterval(timer)
-      clearInterval(clock)
       if (opened) api.ui.dialog.clear()
       try { unregisterSidebar() } finally {
         feeds.dispose()

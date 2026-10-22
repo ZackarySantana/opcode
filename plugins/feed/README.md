@@ -31,7 +31,7 @@ Run `/feed` or select **Feeds** in the command palette. The dialog has five tabs
 - **Upcoming:** scheduled maintenance from status pages.
 - **Releases:** recent posts from release feeds.
 - **Subscribe:** choose presets, or paste any RSS or Atom URL.
-- **Settings:** the time window, where resolved incidents and releases appear, and how many items the sidebar lists.
+- **Settings:** the time window, where resolved incidents and releases appear, how many items the sidebar lists, and how often feeds refresh.
 
 | Key | Action |
 | --- | --- |
@@ -43,14 +43,14 @@ Run `/feed` or select **Feeds** in the command palette. The dialog has five tabs
 | `f` | Pick one feed of the tab's kind to show its latest 20 items (Status, Upcoming, Releases) |
 | `←` / `→`, `h` / `l` | Change the outlined setting (Settings) |
 | `d` | Remove a custom feed (Subscribe) |
-| `r` | Refresh every feed now |
+| `r` | Refresh every feed now (also `/feed-refresh`, or **Refresh feeds** in the command palette) |
 | `esc` | Leave the box, close the picker, clear the search, show all feeds, then close |
 
 Changing tabs clears the search and the chosen feed. While typing in the box, the arrow keys still move the outline and `enter` acts on it.
 
 On Status, in-progress incidents come first, colored by urgency: red while investigating or identified, yellow while monitoring or during maintenance. Status pages with nothing in progress are listed, grayed out, at the top. Everything else from the time window follows, newest first. Future-dated items, such as scheduled maintenance, appear under Upcoming instead.
 
-The sidebar combines them in short form: up to five items by default (see **Sidebar items** below), then the two soonest scheduled items, with a count of the rest and a pointer to `/feed`. By default it leaves out release feeds, keeping it for incidents; see **Sidebar releases** below. It is omitted when you have no subscriptions; the plugin never forces it open. Click an item or scheduled maintenance there to open its link, as `enter` does in `/feed`; click a "+N more" line to open the dialog.
+The sidebar combines them in short form: up to five items by default (see **Sidebar items** below), then the two soonest scheduled items, with a count of the rest and a pointer to `/feed`. By default it leaves out release feeds, keeping it for incidents; see **Sidebar releases** below. It ends with a countdown to the next refresh, or "Refreshing…" while feeds are being fetched. It is omitted when you have no subscriptions; the plugin never forces it open. Click an item or scheduled maintenance there to open its link, as `enter` does in `/feed`; click a "+N more" line to open the dialog.
 
 Links open in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-open` (Linux); on WSL it tries `wslview`, `xdg-open`, then PowerShell. Only `http` and `https` links are opened.
 
@@ -71,8 +71,11 @@ Presets include npm, GitHub, Google Workspace, Google Cloud, Claude, OpenAI, Clo
 | Show resolved | Both, Sidebar, /feed, None | None |
 | Sidebar releases | No, Yes | No |
 | Sidebar items | 3, 5, 10, 15, 20 | 5 |
+| Refresh every | 1m, 5m, 10m, 15m, 30m, 1h | 10m |
 
 The window sets how far back Status and Releases look and how far ahead Upcoming looks; in-progress incidents always show, for up to seven days. **Show resolved** chooses where resolved and completed incidents appear. Posts from release feeds always appear on the Releases tab; **Sidebar releases** adds them to the sidebar too. Status pages always show in the sidebar and `/feed`. Showing a single feed with `f` ignores the window, the three-item cap, and Show resolved. **Sidebar items** sets how many items the sidebar lists, in-progress incidents first, before pointing to `/feed`; the two soonest scheduled items show below them either way.
+
+**Refresh every** sets how often every feed is fetched, including unreachable ones; changing it restarts the countdown. `r`, `/feed-refresh`, and **Refresh feeds** fetch every feed now and also restart it. A failed fetch is retried twice within a few seconds before the feed shows as unreachable, so brief outages and network blips recover on their own. After your computer sleeps, an overdue refresh starts within a minute of waking.
 
 ## Options
 
@@ -82,13 +85,12 @@ Load the plugin in global `~/.config/opencode/cli.json` to pass options; server-
 {
   "$schema": "https://opencode.ai/v2/cli.json",
   "plugins": [
-    { "package": "@lidtop/opencode-feed", "options": { "database": "/absolute/path/feed.sqlite", "interval": 10 } }
+    { "package": "@lidtop/opencode-feed", "options": { "database": "/absolute/path/feed.sqlite" } }
   ]
 }
 ```
 
 - `database`: where subscriptions and settings are stored. Relative paths resolve from the client's `$XDG_STATE_HOME/opencode` (or `~/.local/state/opencode`), not the project directory. The default is `$XDG_STATE_HOME/opencode/opcode-feed/feed.sqlite` (or `~/.local/state/opencode/opcode-feed/feed.sqlite`).
-- `interval`: minutes between automatic refreshes. Default 10.
 
 ## Data and privacy
 

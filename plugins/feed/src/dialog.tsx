@@ -7,7 +7,7 @@ import type { ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createMemo, createSignal, For, Show, type Accessor } from "solid-js"
 import type { FeedsController } from "./host"
-import { FEED_HISTORY, kindOf, matches, matchesText, relative, scopeChoices, sidebarItemChoices, windowChoices, windowLabel, windowShort, type SurfaceScope, type Settings as FeedSettings, type TimelineEntry } from "./model"
+import { age, FEED_HISTORY, kindOf, matches, matchesText, refreshChoices, relative, scopeChoices, sidebarItemChoices, windowChoices, windowLabel, windowShort, type SurfaceScope, type Settings as FeedSettings, type TimelineEntry } from "./model"
 import { openLink } from "./open"
 import { TabFrame } from "./frame"
 import { FeedPicker } from "./picker"
@@ -36,7 +36,6 @@ export function FeedDialog(props: { feeds: FeedsController }) {
   const [picking, setPicking] = createSignal(false)
   const [width, setWidth] = createSignal(80)
   const bodyHeight = () => Math.max(6, Math.min(32, dimensions().height - 11))
-  const loading = () => [...props.feeds.results().values()].some((result) => result.status === "loading")
   let handlers: TabHandlers | undefined
   const reset = () => { setTyping(false); setQuery("") }
   const switchTab = (by: number) => { reset(); setPicking(false); setScope(undefined); setTab((value) => (value + by + tabs.length) % tabs.length) }
@@ -85,7 +84,7 @@ export function FeedDialog(props: { feeds: FeedsController }) {
           )}</For>
         </box>
         <box flexDirection="row">
-          <Show when={loading()}><text fg={palette.muted}>refreshing  </text></Show>
+          <Show when={props.feeds.refreshing()}><text fg={palette.muted}>refreshing  </text></Show>
           <KeyHints items={[{ key: "esc", label: escLabel(), command: "opcode-feed.close" }]} />
         </box>
       </box>
@@ -265,6 +264,13 @@ const settingRows = [
     choices: sidebarItemChoices.map((count) => ({ value: count as number, label: `${count}` })),
     current: (settings: FeedSettings) => settings.sidebarItems,
     update: (sidebarItems: number) => ({ sidebarItems }),
+  } satisfies SettingRow<number>,
+  {
+    id: "refresh", label: "Refresh every",
+    description: "How often every feed is fetched again, unreachable ones included. A failed fetch is first retried twice within seconds; r refreshes now.",
+    choices: refreshChoices.map((minutes) => ({ value: minutes, label: age(0, minutes * 60_000) })),
+    current: (settings: FeedSettings) => settings.refreshMinutes,
+    update: (refreshMinutes: number) => ({ refreshMinutes }),
   } satisfies SettingRow<number>,
 ] as SettingRow<unknown>[]
 

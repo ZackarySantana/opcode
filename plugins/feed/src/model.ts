@@ -20,10 +20,13 @@ export interface Settings {
   readonly sidebarReleases: boolean
   /** Timeline entries the sidebar lists before pointing to /feed. */
   readonly sidebarItems: number
+  /** Minutes between automatic refreshes, which also retry unreachable feeds. */
+  readonly refreshMinutes: number
 }
 
-export const defaultSettings: Settings = { windowHours: 12, resolved: "none", sidebarReleases: false, sidebarItems: 5 }
+export const defaultSettings: Settings = { windowHours: 12, resolved: "none", sidebarReleases: false, sidebarItems: 5, refreshMinutes: 10 }
 export const windowChoices = [6, 12, 24, 48, 72, 168] as const
+export const refreshChoices: readonly number[] = [1, 5, 10, 15, 30, 60]
 export const scopeChoices: readonly SurfaceScope[] = ["both", "sidebar", "feed", "none"]
 export const sidebarItemChoices = [3, 5, 10, 15, 20] as const
 
@@ -231,6 +234,15 @@ export function age(time: number | undefined, now = Date.now()): string {
 
 export function relative(time: number, now = Date.now()): string {
   return time > now ? `in ${age(now, time)}` : `${age(time, now)} ago`
+}
+
+/** The sidebar's refresh line, counting down to the second. */
+export function refreshStatus(refreshing: boolean, next: number | undefined, now = Date.now()): string | undefined {
+  if (refreshing) return "Refreshing…"
+  if (next === undefined) return undefined
+  const seconds = Math.max(0, Math.ceil((next - now) / 1000))
+  // Seconds keep two digits past a minute so the line doesn't shift as it counts.
+  return `Next refresh in ${seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`}`
 }
 
 export function windowShort(hours: number): string {
