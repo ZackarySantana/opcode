@@ -6,7 +6,7 @@ import type { Context } from "@opencode/plugin/tui/context"
 import { RGBA, TextAttributes, type CapturedFrame } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"
-import { Card, CenterEmpty, FilterChip, KeyHints, Page, StatCard, ThemeSurface } from "@opcode/ui"
+import { Card, CenterEmpty, FilterChip, KeyHints, Page, Section, StatCard, ThemeSurface } from "@opcode/ui"
 
 const colors = {
   background: RGBA.fromHex("#101112"),
@@ -14,8 +14,8 @@ const colors = {
   border: RGBA.fromHex("#617273"),
   text: RGBA.fromHex("#e0e1e2"),
   muted: RGBA.fromHex("#819293"),
-  primary: RGBA.fromHex("#8aafff"),
-  accent: RGBA.fromHex("#7ccac4"),
+  primary: RGBA.fromHex("#ffaf87"),
+  accent: RGBA.fromHex("#b39df3"),
   accentBorder: RGBA.fromHex("#3b6965"),
 }
 
@@ -81,14 +81,16 @@ test("page recreates raised stat cards, inline hints, chips, and an anchored foo
     expect(position(frame, "Provider-reported costs").y).toBe(28)
     expect(frame.split("\n")[label.y - 2]).toContain("┌")
     const spans = view.captureSpans()
-    expect(cell(spans, label.x, label.y).fg).toEqual(colors.accent)
+    expect(cell(spans, label.x, label.y).fg).toEqual(colors.muted)
     expect(cell(spans, value.x, value.y).fg).toEqual(colors.primary)
     expect(cell(spans, value.x, value.y).attributes & TextAttributes.BOLD).toBeTruthy()
     expect(cell(spans, label.x, label.y).bg).toEqual(colors.raised)
-    expect(cell(spans, 2, label.y).fg).toEqual(colors.accentBorder)
-    expect(cell(spans, title.x, title.y).fg).toEqual(colors.accent)
+    expect(cell(spans, 2, label.y).fg).toEqual(colors.border)
+    expect(cell(spans, title.x, title.y).fg).toEqual(colors.text)
+    const section = position(frame, "BY MODEL")
+    expect(cell(spans, section.x, section.y).fg).toEqual(colors.accent)
     expect(cell(spans, title.x + "Cost ledger ".length, title.y).fg).toEqual(colors.muted)
-    expect(cell(spans, hints.x, hints.y).fg).toEqual(colors.primary)
+    expect(cell(spans, hints.x, hints.y).fg).toEqual(colors.text)
     expect(cell(spans, hints.x + 4, hints.y).fg).toEqual(colors.muted)
     const nextPrimary = RGBA.fromHex("#ffbc77")
     setPrimary(nextPrimary)
@@ -198,7 +200,7 @@ test("long chips stay single-line and small stat cards retain zero values", asyn
     expect(lines[chip.y - 1]![2]).toBe("┌")
     expect(lines[chip.y + 1]![2]).toBe("└")
     const spans = view.captureSpans()
-    expect(cell(spans, chip.x, chip.y).fg).toEqual(colors.accent)
+    expect(cell(spans, chip.x, chip.y).fg).toEqual(colors.muted)
     expect(cell(spans, chip.x + 7, chip.y).fg).toEqual(colors.text)
     for (const line of lines) expect(line.slice(32).trim()).toBe("")
   } finally { await view.dispose() }
@@ -210,6 +212,7 @@ test("mounted shared components follow full theme and mode changes, including di
     ...dark,
     hue: { accent: { 300: RGBA.fromHex("#285e59"), 600: RGBA.fromHex("#94bdb9") }, interactive: { 300: RGBA.fromHex("#2654a0") } },
     background: { base: RGBA.fromHex("#ffffff"), raised: { base: RGBA.fromHex("#eeeeee") } },
+    border: { base: RGBA.fromHex("#aaaaaa") },
     text: { ...dark.text, base: RGBA.fromHex("#161616"), muted: RGBA.fromHex("#555555") },
   } as Context["theme"]
   const dialogDark = { ...dark, background: { ...dark.background, raised: { ...dark.background.raised, base: RGBA.fromHex("#353535") } }, text: { ...dark.text, muted: RGBA.fromHex("#b3c3c3") } }
@@ -218,15 +221,16 @@ test("mounted shared components follow full theme and mode changes, including di
   const host = { get theme() { return theme() } } as unknown as Context
   const view = await testRender(() => (
     <PluginContextProvider value={host}>
-      <box flexDirection="column">
+      <Page title="Overview">
         <StatCard label="Page" value="12" detail="page detail" />
         <ThemeSurface name="dialog">
           <StatCard label="Dialog" value="34" detail="dialog detail" />
           <KeyHints items={[{ key: "r", label: "refresh" }]} />
         </ThemeSurface>
-      </box>
+        <Section title="Sidebar"><text>sidebar entry</text></Section>
+      </Page>
     </PluginContextProvider>
-  ), { width: 50, height: 24 })
+  ), { width: 50, height: 32 })
   try {
     for (const [base, dialog] of [[dark, dialogDark], [light, dialogLight]] as const) {
       setTheme({ ...base, surface: () => dialog })
@@ -234,15 +238,19 @@ test("mounted shared components follow full theme and mode changes, including di
       const frame = view.captureCharFrame()
       const captured = view.captureSpans()
       const at = (text: string) => { const p = position(frame, text); return cell(captured, p.x, p.y) }
-      expect(at("PAGE").fg).toEqual(base.hue.accent[300])
+      expect(at("Overview").fg).toEqual(base.text.base)
+      expect(at("Sidebar").fg).toEqual(base.text.base)
+      expect(at("PAGE").fg).toEqual(base.text.muted)
+      const label = position(frame, "PAGE")
+      expect(cell(captured, label.x - 2, label.y).fg).toEqual(base.border.base)
       expect(at("12").fg).toEqual(base.hue.interactive[300])
       expect(at("12").bg).toEqual(base.background.raised.base)
-      expect(at("DIALOG").fg).toEqual(dialog.hue.accent[300])
+      expect(at("DIALOG").fg).toEqual(dialog.text.muted)
       expect(at("34").fg).toEqual(dialog.hue.interactive[300])
       expect(at("34").bg).toEqual(dialog.background.raised.base)
       expect(at("page detail").fg).toEqual(base.text.muted)
       expect(at("dialog detail").fg).toEqual(dialog.text.muted)
-      expect(at("r refresh").fg).toEqual(dialog.hue.interactive[300])
+      expect(at("r refresh").fg).toEqual(dialog.text.base)
     }
   } finally { await view.dispose() }
 })

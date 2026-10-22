@@ -181,7 +181,8 @@ test("wide dashboard restores raised stat cards, filter chips, three cost-bar pa
     const spans = scene.captureSpans().lines.flatMap((line) => line.spans)
     const accent = harness.api.theme.hue.accent[300]
     const value = harness.api.theme.hue.interactive[300]
-    expect(spans.find((span) => span.text.includes("TOTAL COST"))?.fg).toEqual(accent)
+    expect(spans.find((span) => span.text.includes("Cost ledger"))?.fg).toEqual(harness.api.theme.text.base)
+    expect(spans.find((span) => span.text.includes("TOTAL COST"))?.fg).toEqual(harness.api.theme.text.muted)
     expect(spans.find((span) => span.text.includes("BY MODEL"))?.fg).toEqual(accent)
     expect(spans.filter((span) => span.text.includes("$2.00")).every((span) => span.fg.equals(value))).toBe(true)
     expect(spans.some((span) => span.text.includes("####") && span.fg.equals(accent))).toBe(true)

@@ -17,7 +17,7 @@ export function Section(props: SectionProps) {
   const palette = usePalette()
   return (
     <box flexDirection="column" minWidth={0} gap={1}>
-      <text fg={palette.accent}><b>{props.title}</b></text>
+      <text fg={palette.text}><b>{props.title}</b></text>
       <box flexDirection="column" minWidth={0}>{props.children}</box>
     </box>
   )

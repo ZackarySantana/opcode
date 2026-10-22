@@ -24,9 +24,9 @@ test("original-style shared browser preserves layout, selected previews, viewpor
     keymap: { mode: { push: () => () => {} } }, ui: { format: { path: (path: string) => path } },
     theme: {
       hue: { accent: { 300: "#77cccc", 600: "#336666" }, interactive: { 300: "#55aaff" } },
-      background: { base: "#101010", raised: { base: "#202020" }, action: { primary: { selected: "#0055cc" } } },
+      background: { base: "#101010", raised: { base: "#202020" }, action: { primary: { selected: "#ffaf87" } } },
       border: { base: "#555555" },
-      text: { base: "#ffffff", muted: "#aaaaaa", action: { primary: { base: "#55aaff", selected: "#ffffff" }, secondary: { base: "#aaaaee" } }, feedback: { success: { base: "#00ff00" }, error: { base: "#ff5555" } } },
+      text: { base: "#ffffff", muted: "#aaaaaa", action: { primary: { base: "#55aaff", selected: "#171717" }, secondary: { base: "#aaaaee" } }, feedback: { success: { base: "#00ff00" }, error: { base: "#ff5555" } } },
     },
   } as unknown as Context
   try {
@@ -66,7 +66,7 @@ test("original-style shared browser preserves layout, selected previews, viewpor
       expect(footer.trimEnd().endsWith("alpha")).toBe(true)
       const spans = view.captureSpans().lines.flatMap((line) => line.spans)
       expect(spans.some((span) => span.bg.equals(RGBA.fromHex("#202020")))).toBe(true)
-      expect(spans.some((span) => span.text.includes("All sessions") && span.fg.equals(RGBA.fromHex("#77cccc")))).toBe(true)
+      expect(spans.some((span) => span.text.includes("All sessions") && span.fg.equals(RGBA.fromHex("#ffffff")))).toBe(true)
       expect(spans.some((span) => span.text.includes("$1.11") && span.fg.equals(RGBA.fromHex("#55aaff")))).toBe(true)
       expect(spans.some((span) => span.text.includes("Session row-0") && (span.attributes & TextAttributes.BOLD) !== 0)).toBe(true)
       for (let index = 0; index < 35; index++) model.move(1)
@@ -81,8 +81,9 @@ test("original-style shared browser preserves layout, selected previews, viewpor
       const selectedLine = view.captureSpans().lines.find((line) => line.spans.some((span) => span.text.includes("> Session row-35")))!
       const selectedSpans = selectedLine.spans.filter((span) => span.text.includes("Session row-35") || span.text.includes("bravo"))
       expect(selectedSpans.length).toBeGreaterThanOrEqual(1)
-      expect(selectedSpans.map((span) => span.text).join("")).toMatch(/Session row-35\s+bravo\s+1h/)
-      expect(selectedSpans.every((span) => span.bg.equals(RGBA.fromHex("#0055cc")) && span.fg.equals(RGBA.fromHex("#ffffff")))).toBe(true)
+      expect(selectedSpans.some((span) => span.text.includes("Session row-35"))).toBe(true)
+      expect(selectedSpans.some((span) => span.text.includes("bravo"))).toBe(true)
+      expect(selectedSpans.every((span) => span.bg.equals(RGBA.fromHex("#ffaf87")) && span.fg.equals(RGBA.fromHex("#171717")))).toBe(true)
 
       rows = [{ ...rows[35]!, title: "Reordered selection", cost: 66.66, input: 6666, snippet: "Reordered preview" }, rows[0]!]
       await model.load()

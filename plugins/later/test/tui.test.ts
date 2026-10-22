@@ -34,9 +34,9 @@ function harness() {
     renderer: { isDestroyed: false, once: () => {}, off: () => {}, requestRender: () => {} },
     theme: {
       hue: { accent: { 300: RGBA.fromHex("#77cccc"), 600: RGBA.fromHex("#336666") }, interactive: { 300: RGBA.fromHex("#77aaff") } },
-      background: { base: RGBA.fromHex("#000000"), raised: { base: RGBA.fromHex("#111111") }, action: { primary: { selected: RGBA.fromHex("#0055cc") } } },
+      background: { base: RGBA.fromHex("#000000"), raised: { base: RGBA.fromHex("#111111") }, action: { primary: { selected: RGBA.fromHex("#ffaf87") } } },
       border: { base: color },
-      text: { base: color, muted: RGBA.fromHex("#778899"), action: { primary: { base: color, selected: RGBA.fromHex("#ffffff") } }, feedback: { error: { base: color }, warning: { base: color }, success: { base: RGBA.fromHex("#77cc88") } } },
+      text: { base: color, muted: RGBA.fromHex("#778899"), action: { primary: { base: color, selected: RGBA.fromHex("#171717") } }, feedback: { error: { base: color }, warning: { base: color }, success: { base: RGBA.fromHex("#77cc88") } } },
     },
     ui: {
       router: {
@@ -266,6 +266,7 @@ test("manager restores the original compact hierarchy, padded raised list, and s
     expect(footer.indexOf("history shown")).toBeGreaterThan(100)
     expect(view.captureCharFrame()).not.toContain("Client-local list shared")
     const spans = view.captureSpans().lines.flatMap((line) => line.spans)
+    expect(spans.find((span) => span.text.includes("Later"))?.fg.equals(h.api.theme.text.base)).toBe(true)
     expect(spans.find((span) => span.text.includes("First active item"))?.bg.equals(h.api.theme.background.raised.base)).toBe(true)
     expect(spans.find((span) => span.text.includes("Second active item"))?.bg.equals(h.api.theme.background.action.primary.selected)).toBe(true)
     expect(spans.find((span) => span.text.includes("Second active item"))?.fg.equals(h.api.theme.text.action.primary.selected)).toBe(true)

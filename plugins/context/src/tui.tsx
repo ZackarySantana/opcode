@@ -79,7 +79,7 @@ export function ContextDialog(props: { sessionID?: string }) {
     <box width="100%" maxWidth="100%" overflow="hidden" flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}
       backgroundColor={colors().background.base} onSizeChange={function () { setWidth(this.width) }}>
         <box flexDirection="row" justifyContent="space-between" gap={1} paddingBottom={1}>
-          <text wrapMode="none" fg={palette.accent}><b>Current context</b><span style={{ fg: colors().text.muted }}> {truncate(props.sessionID ?? "no active session", Math.max(0, width() - 31 - (state().loading ? 12 : 0)))}</span></text>
+          <text wrapMode="none" fg={palette.text}><b>Current context</b><span style={{ fg: colors().text.muted }}> {truncate(props.sessionID ?? "no active session", Math.max(0, width() - 31 - (state().loading ? 12 : 0)))}</span></text>
           <box flexDirection="row">
             <Show when={state().loading}><text fg={colors().text.muted}>refreshing  </text></Show>
             <KeyHints items={[{ key: "esc", label: "close", command: "opcode-context.close" }]} />

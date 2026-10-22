@@ -55,8 +55,8 @@ async function openDialog(options: {
   let stopped = false, cleared = false
   const theme = {
     hue: { accent: { 300: "#77cccc", 600: "#336666" }, interactive: { 300: "cyan" } },
-    background: { base: "#171717", raised: { base: "#262626" }, action: { primary: { selected: "#0055cc" } } }, border: { base: "#666666" },
-    text: { base: "white", muted: "gray", action: { primary: { base: "white", selected: "white" } },
+    background: { base: "#171717", raised: { base: "#262626" }, action: { primary: { selected: "#ffaf87" } } }, border: { base: "#666666" },
+    text: { base: "white", muted: "#808080", action: { primary: { base: "white", selected: "#171717" } },
       feedback: { success: { base: "green" }, warning: { base: "yellow" }, error: { base: "red" } } },
   }
   const context = {
@@ -266,9 +266,9 @@ test("bordered Overview cards stack narrowly and restore the original two-by-two
     expect(spans.some((span) => span.bg.equals(RGBA.fromHex("#171717")))).toBe(true)
     expect(spans.some((span) => span.text.includes("Overview") && span.fg.equals(RGBA.fromHex("#00ffff")))).toBe(true)
     expect(spans.some((span) => span.text.includes("Content") && !span.fg.equals(RGBA.fromHex("#00ffff")))).toBe(true)
-    expect(spans.some((span) => span.text.includes("RECORDED INPUT") && span.fg.equals(RGBA.fromHex("#77cccc")))).toBe(true)
+    expect(spans.some((span) => span.text.includes("RECORDED INPUT") && span.fg.equals(RGBA.fromHex("#808080")))).toBe(true)
     expect(spans.some((span) => span.text.includes("RECORDED INPUT") && span.bg.equals(RGBA.fromHex("#262626")))).toBe(true)
-    expect(spans.some((span) => span.text.includes("Current context") && span.fg.equals(RGBA.fromHex("#77cccc")))).toBe(true)
+    expect(spans.some((span) => span.text.includes("Current context") && span.fg.equals(RGBA.fromHex("#ffffff")))).toBe(true)
     for (let index = 0; index < 60; index++) await dialog.run("down")
     const bottom = await dialog.view.waitForFrame((value) => value.includes("Latest checkpoint:") && value.includes("Excludes hidden instructions"))
     expect(bottom).toContain("Tools / compactions:")
@@ -277,6 +277,11 @@ test("bordered Overview cards stack narrowly and restore the original two-by-two
     expect(bottom).toContain("h/l tabs")
     expect(bottom).toContain("r refresh")
     expect(bottom).toContain("e export")
+    await dialog.run("next")
+    await dialog.view.waitForFrame((value) => value.includes("> Tool: tool-00"))
+    const selected = dialog.view.captureSpans().lines.flatMap((line) => line.spans).find((span) => span.text.includes("> Tool: tool-00"))
+    expect(selected?.fg.equals(RGBA.fromHex("#171717"))).toBe(true)
+    expect(selected?.bg.equals(RGBA.fromHex("#ffaf87"))).toBe(true)
   } finally { await dialog.dispose() }
 })
 

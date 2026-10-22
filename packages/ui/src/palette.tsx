@@ -13,10 +13,10 @@ export function ThemeSurface(props: { name: "dialog"; children: JSX.Element }) {
   return <SurfaceContext.Provider value={() => context.theme.surface(props.name)}>{props.children}</SurfaceContext.Provider>
 }
 
-/** Hue steps follow the host's contrast direction in both light and dark mode.
- * Read lazily so changing themes also updates already-mounted views.
- * Action text can deliberately be neutral, so use the theme's hue aliases for
- * decorative accents and metrics, not its button-label colors.
+/** Neutral chrome, accent section headings, and contrasting interactive metrics.
+ * Hue steps follow the host's contrast direction in both light and dark mode.
+ * Keep the host's selection foreground/fill paired instead of using an accent
+ * over its selection fill. Lazy reads follow live theme and surface changes.
  */
 export function usePalette() {
   const context = usePlugin()
@@ -26,7 +26,7 @@ export function usePalette() {
     get muted() { return theme().text.muted },
     get accent() { return theme().hue.accent[300] },
     get value() { return theme().hue.interactive[300] },
-    get border() { return theme().hue.accent[600] },
+    get border() { return theme().border.base },
     get track() { return theme().border.base },
     get background() { return theme().background.base },
     get panel() { return theme().background.raised.base },

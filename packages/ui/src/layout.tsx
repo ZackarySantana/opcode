@@ -57,7 +57,7 @@ export function Page(props: PageProps) {
     <box width="100%" height="100%" minWidth={0} minHeight={0} flexDirection="column"
       paddingX={2} paddingY={1} gap={1} backgroundColor={palette.background}>
       <box flexDirection="row" flexWrap="wrap" justifyContent="space-between" alignItems="center" gap={1} flexShrink={0} minWidth={0}>
-        <text fg={palette.accent} minWidth={0} flexShrink={1}>
+        <text fg={palette.text} minWidth={0} flexShrink={1}>
           <b>{props.title}</b>
           <Show when={props.subtitle}><span style={{ fg: palette.muted }}> {props.subtitle}</span></Show>
         </text>
@@ -98,7 +98,7 @@ export function StatCard(props: StatCardProps) {
   const palette = usePalette()
   return (
     <Card grow compact={props.compact}>
-      <text fg={palette.accent}>{props.label.toUpperCase()}</text>
+      <text fg={palette.muted}>{props.label.toUpperCase()}</text>
       <text fg={palette.value}><b>{String(props.value)}</b></text>
       <Show when={props.detail}><text fg={palette.muted}>{props.detail}</text></Show>
     </Card>
@@ -109,7 +109,7 @@ export function FilterChip(props: FilterChipProps) {
   const palette = usePalette()
   return (
     <box border borderColor={palette.border} paddingX={1} height={3} minWidth={0} maxWidth="100%" overflow="hidden">
-      <text wrapMode="none" minWidth={0} fg={palette.accent}>
+      <text wrapMode="none" minWidth={0} fg={palette.muted}>
         {props.label}: <span style={{ fg: palette.text }}>{String(props.value)}</span>
       </text>
     </box>
@@ -129,7 +129,7 @@ export function KeyHints(props: KeyHintsProps) {
           if (item.command) context.keymap.dispatch(item.command)
           else item.onTrigger?.()
         } : undefined}>
-          <text fg={palette.muted} wrapMode="word"><span style={{ fg: palette.value }}>{item.key}</span> {item.label}</text>
+          <text fg={palette.muted} wrapMode="word"><span style={{ fg: palette.text }}>{item.key}</span> {item.label}</text>
         </box>
       )}</For>
     </box>

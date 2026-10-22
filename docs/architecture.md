@@ -24,12 +24,15 @@ OpenCode remains responsible for actual rendering, sizing, and native dialogs.
 Terminal-cell measurement and grapheme-safe truncation are shared here too, so
 wide labels behave consistently across Context and Sessions.
 
-The shared palette reads the active V2 theme, not fixed RGB colors: accent hue
-300 for headings, labels, and chart fills; accent 600 for subtle borders;
-interactive 300 for metrics and key hints. Hue steps follow the theme's light/dark
-contrast direction. Body text, muted details, paired selection foreground/fill,
-and feedback statuses retain their semantic tokens. Empty chart tracks stay
-neutral, and cost activity does not imply success or warning. `ThemeSurface`
+The shared palette reads the active V2 theme, not fixed RGB colors. Page/dialog
+titles, sidebar titles, and shortcut keys use normal `text.base` (not literal
+white). Labels and descriptions use `text.muted`; borders use `border.base`.
+Accent hue 300 is reserved for section headings and chart fills; interactive hue
+300 gives metrics a contrasting tone. Hue steps follow the theme's light/dark
+contrast direction. Selection uses the paired action foreground/fill, never an
+accent-colored label over a selected background. Feedback statuses retain their
+semantic tokens. Empty chart tracks stay neutral, and cost activity does not
+imply success or warning. `ThemeSurface`
 keeps Context's shared cards and hints on the resolved dialog surface. Palette
 reads stay reactive, including when an open view changes theme or mode. A theme
 with neutral accent/interactive aliases intentionally remains monochrome.
