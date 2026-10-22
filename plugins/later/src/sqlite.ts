@@ -113,9 +113,11 @@ export class LaterDatabase {
       const index = active.findIndex((entry) => entry.id === item.id)
       const neighbor = index < 0 ? undefined : active[index + offset]
       if (!neighbor) return false
-      const update = this.db.query("UPDATE items SET position = ?, updated_at = ? WHERE id = ?")
-      update.run(neighbor.position, now, item.id)
-      update.run(item.position, now, neighbor.id)
+      active[index + offset] = active[index]!
+      active[index] = neighbor
+      this.db.query("UPDATE items SET updated_at = ? WHERE id IN (?, ?)").run(now, item.id, neighbor.id)
+      // Rewrite every position: legacy lists may contain duplicates that a swap would not reorder.
+      this.renumber(active)
       return true
     })
   }
@@ -129,8 +131,12 @@ export class LaterDatabase {
   }
 
   private compact(): void {
+    this.renumber(this.active())
+  }
+
+  private renumber(active: readonly LaterItem[]): void {
     const update = this.db.query("UPDATE items SET position = ? WHERE id = ?")
-    for (const [index, item] of this.active().entries()) update.run(index + 1, item.id)
+    for (const [index, item] of active.entries()) update.run(index + 1, item.id)
   }
 
   private write(operation: () => boolean): boolean {

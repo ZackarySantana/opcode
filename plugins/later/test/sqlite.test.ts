@@ -133,6 +133,22 @@ test("renumbering after another connection removes an unrelated item does not ma
   expect(second.get(edited)?.message).toBe("newer")
 })
 
+test("reordering a legacy list with duplicate positions moves the item and renumbers the list", () => {
+  const { path, first } = disk()
+  const raw = new Database(path)
+  try {
+    raw.exec(`
+      INSERT INTO items VALUES ('a', 'first', 1, 1, 1, NULL);
+      INSERT INTO items VALUES ('b', 'second', 1, 2, 2, NULL);
+      INSERT INTO items VALUES ('c', 'third', 1, 3, 3, NULL);
+    `)
+  } finally { raw.close() }
+  expect(first.move(first.get("c")!, -1, 10)).toBe(true)
+  expect(first.snapshot().active.map((item) => [item.id, item.position])).toEqual([["a", 1], ["c", 2], ["b", 3]])
+  expect(first.move(first.get("a")!, 1, 11)).toBe(true)
+  expect(first.snapshot().active.map((item) => item.id)).toEqual(["c", "a", "b"])
+})
+
 test("a failed revision write rolls back the item mutation", () => {
   const { path, first } = disk()
   const raw = new Database(path)
