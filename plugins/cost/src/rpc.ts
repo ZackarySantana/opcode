@@ -6,6 +6,8 @@ const number = { type: "number", minimum: 0, maximum: MAX_TOKENS } as const
 const time = { type: "number", minimum: 0, maximum: MAX_TIME } as const
 const cost = { type: "number", minimum: 0, maximum: MAX_COST } as const
 const empty = { type: "object", additionalProperties: false } as const
+// Undeclared handler errors reach clients only as a generic rpc.internal failure.
+const errors = { failed: empty }
 const usage = {
   type: "object", additionalProperties: false,
   properties: {
@@ -58,6 +60,7 @@ export const CostRpc = Rpc.define({
         properties: { range: { type: "string", enum: DATE_RANGES }, projectID: id, model: { type: "string", maxLength: MAX_MODEL_FILTER_LENGTH } },
       },
       output: dashboard,
+      errors,
     },
     status: {
       input: empty,
@@ -66,6 +69,7 @@ export const CostRpc = Rpc.define({
         properties: { projectID: id, directory: { type: "string" }, lastImport: { type: ["number", "null"] } },
         required: ["projectID", "directory", "lastImport"],
       },
+      errors,
     },
     importBatch: {
       input: {
@@ -73,8 +77,9 @@ export const CostRpc = Rpc.define({
         properties: { sessionID: id, records: { type: "array", minItems: 1, maxItems: IMPORT_BATCH_SIZE, items: usage } },
       },
       output: empty,
+      errors,
     },
-    completeImport: { input: empty, output: empty },
+    completeImport: { input: empty, output: empty, errors },
   },
   events: {},
 })

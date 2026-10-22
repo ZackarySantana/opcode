@@ -8,8 +8,10 @@ import { CostLedger } from "../src/ledger.js"
 import { usageFromMessage } from "../src/messages.js"
 import { event, location, message, session, tokens } from "./fixtures.js"
 
-type Handlers = Record<string, (input: unknown, context: { signal: AbortSignal }) => Promise<unknown>>
-const call = { signal: new AbortController().signal }
+type Call = { signal: AbortSignal; error: (type: string, message: string, data: unknown) => unknown }
+type Handlers = Record<string, (input: unknown, context: Call) => Promise<unknown>>
+// Mirrors the host's declared-error factory; undeclared throws would reach clients as a generic failure.
+const call: Call = { signal: new AbortController().signal, error: (type, message) => Object.assign(new Error(message), { type }) }
 
 function waitForAbort(signal: AbortSignal) {
   if (signal.aborted) return Promise.resolve()
@@ -38,7 +40,7 @@ test("server RPC owns storage, derives identities, allows same-project worktrees
     await handlers.importBatch!(batch, call)
     await handlers.importBatch!(batch, call)
     expect(await handlers.dashboard!({ range: "all" }, call)).toMatchObject({ total: { cost: 0.5, messages: 1 }, projectOptions: [{ id: session.projectID, label: "another-worktree" }] })
-    await expect(handlers.importBatch!({ ...batch, sessionID: "foreign" }, call)).rejects.toThrow("another project")
+    await expect(handlers.importBatch!({ ...batch, sessionID: "foreign" }, call)).rejects.toMatchObject({ type: "failed", message: "Cannot import a session from another project" })
     await expect(handlers.importBatch!({ ...batch, records: Array(101).fill(batch.records[0]) }, call)).rejects.toThrow("Invalid import batch")
     await expect(handlers.dashboard!({ range: "year" }, call)).rejects.toThrow("Invalid date range")
     await handlers.completeImport!({}, call)
@@ -79,6 +81,34 @@ test("server lifetime cancels a pending RPC read before writing, then closes the
     expect(ledger.dashboard({ range: "all" }).total.messages).toBe(0)
     ledger.close()
   } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test("a slow host read does not block other RPC calls, and one import authorizes a session once", async () => {
+  let handlers!: Handlers
+  let gets = 0
+  const slow = Promise.withResolvers<void>()
+  const cleanup = await serverPlugin.setup({
+    options: { database: ":memory:" }, location,
+    rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value } },
+    event: { subscribe: ({ signal }: { signal: AbortSignal }) => (async function* (): AsyncIterable<OpenCodeEvent> { await waitForAbort(signal) })() },
+    session: { get: async ({ sessionID }: { sessionID: string }) => {
+      gets++
+      if (sessionID === "slow") await slow.promise
+      return { ...session, id: sessionID }
+    } },
+  } as never)
+  if (!cleanup) throw new Error("Missing cleanup")
+  try {
+    const usage = usageFromMessage(message)
+    const blocked = handlers.importBatch!({ sessionID: "slow", records: [{ ...usage, messageID: "slow" }] }, call)
+    expect(await handlers.dashboard!({ range: "all" }, call)).toMatchObject({ total: { messages: 0 } })
+    await handlers.importBatch!({ sessionID: session.id, records: [usage] }, call)
+    await handlers.importBatch!({ sessionID: session.id, records: [{ ...usage, messageID: "second" }] }, call)
+    expect(gets).toBe(2)
+    slow.resolve()
+    await blocked
+    expect(await handlers.dashboard!({ range: "all" }, call)).toMatchObject({ total: { messages: 3 } })
+  } finally { slow.resolve(); await cleanup() }
 })
 
 test("server live collection reaches the same RPC dashboard as imported records", async () => {

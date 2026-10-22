@@ -1,51 +1,71 @@
-import { createSerialQueue, errorMessage } from "@opcode/core"
+import { errorMessage } from "@opcode/core"
 import { consumeLive } from "@opcode/core/live"
+import type { SessionInfo } from "@opencode/client"
 import { Plugin } from "@opencode/plugin"
 import { parseFilter, parseImportBatch } from "./domain.js"
 import { CostLedger, databasePath } from "./ledger.js"
 import { createLiveCollector } from "./live.js"
 import { CostRpc } from "./rpc.js"
 
+/** An import sends a session's batches consecutively; reuse its authorization briefly rather than per batch. */
+const SESSION_REUSE_MILLISECONDS = 30_000
+
 export default Plugin.define({
   id: "opcode-cost",
   async setup(ctx) {
     const ledger = new CostLedger(databasePath(ctx.options.database))
     const controller = new AbortController()
-    const queue = createSerialQueue()
-    const run = <T>(signal: AbortSignal, work: (signal: AbortSignal) => Promise<T>): Promise<T> => queue(async () => {
+    // Host reads run concurrently. Ledger calls are synchronous and follow an abort check, so close()
+    // only has to abort, then wait for in-flight work to settle before closing the database.
+    const pending = new Set<Promise<unknown>>()
+    const run = <T>(signal: AbortSignal, work: (signal: AbortSignal) => Promise<T>): Promise<T> => {
       const combined = AbortSignal.any([signal, controller.signal])
-      combined.throwIfAborted()
-      return work(combined)
-    })
+      const task = (async () => {
+        combined.throwIfAborted()
+        return await work(combined)
+      })()
+      pending.add(task)
+      void task.then(() => pending.delete(task), () => pending.delete(task))
+      return task
+    }
+    let authorized: { session: SessionInfo; at: number } | undefined
+    const authorize = async (sessionID: string, signal: AbortSignal) => {
+      if (authorized?.session.id === sessionID && Date.now() - authorized.at < SESSION_REUSE_MILLISECONDS) return authorized.session
+      const session = await ctx.session.get({ sessionID }, { signal })
+      authorized = { session, at: Date.now() }
+      return session
+    }
     const live = createLiveCollector(ctx, ledger)
     try {
       await ctx.rpc.register(CostRpc, {
-        dashboard: (input, call) => run(call.signal, async () => ledger.dashboard(parseFilter(input))),
-        status: (_input, call) => run(call.signal, async () => ({
+        dashboard: (input, call) => guarded(call, () => run(call.signal, async () => ledger.dashboard(parseFilter(input)))),
+        status: (_input, call) => guarded(call, () => run(call.signal, async () => ({
           projectID: ctx.location.project.id, directory: ctx.location.directory,
           lastImport: ledger.lastImport(ctx.location.project.id),
-        })),
-        importBatch: (input, call) => run(call.signal, async (signal) => {
+        }))),
+        importBatch: (input, call) => guarded(call, () => run(call.signal, async (signal) => {
           const batch = parseImportBatch(input)
           // Identity and directory come from the connected server, never from an importing terminal.
-          const session = await ctx.session.get({ sessionID: batch.sessionID }, { signal })
+          const session = await authorize(batch.sessionID, signal)
           signal.throwIfAborted()
           if (session.projectID !== ctx.location.project.id) throw new Error("Cannot import a session from another project")
           ledger.importBatch(batch.records.map((record) => ({
             ...record, sessionID: session.id, projectID: session.projectID, directory: session.location.directory,
           })))
           return {}
-        }),
-        completeImport: (_input, call) => run(call.signal, async () => {
+        })),
+        completeImport: (_input, call) => guarded(call, () => run(call.signal, async () => {
+          authorized = undefined
           ledger.markImported(ctx.location.project.id, ctx.location.directory)
           return {}
-        }),
+        })),
       })
     } catch (error) {
       ledger.close()
       throw error
     }
     // Public subscriptions are live-only. Reconnect, but never pretend this replays missed usage.
+    // consumeLive handles one event at a time, so live writes keep event order.
     const events = consumeLive({
       signal: controller.signal,
       subscribe: (signal) => {
@@ -57,7 +77,16 @@ export default Plugin.define({
     })
     return async () => {
       controller.abort()
-      try { await events } finally { await queue(async () => { live.clear(); ledger.close() }) }
+      try { await events } finally {
+        await Promise.allSettled(pending)
+        live.clear()
+        ledger.close()
+      }
     }
   },
 })
+
+/** Declared errors keep handler messages, such as a cross-project import, visible to the TUI. */
+async function guarded<T>(call: { error(type: "failed", message: string, data: Record<string, never>): unknown }, action: () => Promise<T>): Promise<T> {
+  try { return await action() } catch (error) { throw call.error("failed", errorMessage(error), {}) }
+}
