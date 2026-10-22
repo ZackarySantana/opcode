@@ -1,10 +1,10 @@
 import { Rpc } from "@opencode/plugin/rpc"
-import { DATE_RANGES, IMPORT_BATCH_SIZE } from "./domain.js"
+import { DATE_RANGES, IMPORT_BATCH_SIZE, MAX_COST, MAX_ID_LENGTH, MAX_MODEL_FILTER_LENGTH, MAX_TIME, MAX_TOKENS } from "./domain.js"
 
-const id = { type: "string", minLength: 1, maxLength: 512 } as const
-const number = { type: "number", minimum: 0, maximum: 1e15 } as const
-const time = { type: "number", minimum: 0, maximum: 8.64e15 } as const
-const cost = { type: "number", minimum: 0, maximum: 1e12 } as const
+const id = { type: "string", minLength: 1, maxLength: MAX_ID_LENGTH } as const
+const number = { type: "number", minimum: 0, maximum: MAX_TOKENS } as const
+const time = { type: "number", minimum: 0, maximum: MAX_TIME } as const
+const cost = { type: "number", minimum: 0, maximum: MAX_COST } as const
 const empty = { type: "object", additionalProperties: false } as const
 const usage = {
   type: "object", additionalProperties: false,
@@ -55,7 +55,7 @@ export const CostRpc = Rpc.define({
     dashboard: {
       input: {
         type: "object", additionalProperties: false, required: ["range"],
-        properties: { range: { type: "string", enum: DATE_RANGES }, projectID: id, model: { type: "string", maxLength: 1025 } },
+        properties: { range: { type: "string", enum: DATE_RANGES }, projectID: id, model: { type: "string", maxLength: MAX_MODEL_FILTER_LENGTH } },
       },
       output: dashboard,
     },
