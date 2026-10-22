@@ -57,7 +57,7 @@ test("oversized messages are left out and counted, and later messages and sessio
 
 test("deleted, changed, and already-imported sessions are skipped without stopping the pass", async () => {
   const listed: string[] = []
-  const finished: Array<{ token: string; complete: boolean }> = []
+  const finished: Array<{ token: string; complete?: boolean }> = []
   const client: HistorySource = {
     session: { list: async () => ({ data: ["gone", "busy", "same", "late", "ok"].map((id) => session(id)), cursor: {} }) },
     message: { list: async ({ sessionID }) => { listed.push(sessionID); return { data: [user(`${sessionID}-message`)], cursor: {} } } },
@@ -66,7 +66,7 @@ test("deleted, changed, and already-imported sessions are skipped without stoppi
     begin: async ({ sessionID }) => {
       if (sessionID === "gone") throw { type: "missing", message: "deleted" }
       if (sessionID === "busy") throw { type: "stale", message: "changed" }
-      return sessionID === "same" ? { current: true } : { current: false, token: sessionID }
+      return { current: sessionID === "same", token: sessionID }
     },
     import: async ({ token, messages }) => {
       if (token === "late") throw { type: "stale", message: "changed during import" }
@@ -76,7 +76,7 @@ test("deleted, changed, and already-imported sessions are skipped without stoppi
   })
   expect(await importHistory(client, remote, new AbortController().signal)).toEqual({ imported: 1, unchanged: 1, skipped: 3, oversized: 0 })
   expect(listed).toEqual(["late", "ok"])
-  expect(finished).toEqual([{ token: "late", complete: false }, { token: "ok", complete: true }])
+  expect(finished).toEqual([{ token: "same", complete: false }, { token: "late", complete: false }, { token: "ok", complete: true }])
 })
 
 test("other failures stop the pass, and a failed release cannot mask them", async () => {
@@ -86,4 +86,16 @@ test("other failures stop the pass, and a failed release cannot mask them", asyn
     finish: async () => { throw new Error("connection closed") },
   })
   await expect(importHistory(client, remote, new AbortController().signal)).rejects.toMatchObject({ message: "disk full" })
+})
+
+test("a server that predates history revisions still imports and its rejected finish does not change the outcome", async () => {
+  const client: HistorySource = {
+    session: { list: async () => ({ data: [session("s1")], cursor: {} }) },
+    message: { list: async ({ sessionID }) => ({ data: [user(`${sessionID}-message`, "text")], cursor: {} }) },
+  }
+  const remote = remoteStub({
+    begin: async ({ sessionID }) => ({ token: sessionID }),
+    finish: async (input) => { if ("complete" in input) throw new Error("additional property complete") },
+  })
+  expect(await importHistory(client, remote, new AbortController().signal)).toEqual({ imported: 1, unchanged: 0, skipped: 0, oversized: 0 })
 })

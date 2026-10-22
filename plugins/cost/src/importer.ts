@@ -19,8 +19,9 @@ export async function importProject(
     for (const session of page) {
       if (session.projectID !== status.projectID) throw new Error("Session list returned another project")
       // Only these message types carry usage; the server filters, the client still checks.
+      // Like `order`, the filter is a first-page parameter: later cursors carry it.
       for (const type of USAGE_TYPES) {
-        const messages = paginate((cursor) => client.message.list({ sessionID: session.id, type, cursor, limit: IMPORT_BATCH_SIZE }, { signal }), signal)
+        const messages = paginate((cursor) => client.message.list({ sessionID: session.id, limit: IMPORT_BATCH_SIZE, ...(cursor ? { cursor } : { type }) }, { signal }), signal)
         for await (const messagePage of messages) {
           const records = messagePage.filter(isUsageMessage).map(usageFromMessage)
           // Bound writes even if a server ignores the requested page size.

@@ -20,8 +20,9 @@ export async function importHistory(client: HistorySource, remote: SessionsRemot
       let complete = false
       try {
         const started = await remote.begin({ sessionID: session.id, updatedAt: session.time.updated }, signal)
-        if (started.current || !started.token) { result.unchanged++; continue }
         token = started.token
+        // `current` is absent from servers that predate history revisions; those always import.
+        if (started.current === true || !token) { result.unchanged++; continue }
         const messagePages = paginate((cursor) => client.message.list({ sessionID: session.id, limit: 100, ...(cursor ? { cursor } : { order: "asc" }) }, { signal }), signal)
         for await (const messages of messagePages) {
           let batch: MessageRecord[] = []
@@ -49,9 +50,9 @@ export async function importHistory(client: HistorySource, remote: SessionsRemot
         result.skipped++
       } finally {
         // On cancellation tokens expire server-side; never start uncancellable cleanup I/O.
-        // A failed release must not mask the session's own outcome.
+        // A failed release (or an older server rejecting `complete`) must not mask the session's own outcome.
         if (token && !signal.aborted) {
-          try { await remote.finish({ token, complete }, signal) } catch { if (complete) { result.imported--; result.skipped++ } }
+          try { await remote.finish({ token, complete }, signal) } catch {}
         }
       }
     }

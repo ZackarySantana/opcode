@@ -42,8 +42,6 @@ export class SessionIndex {
           session_id TEXT NOT NULL, source_id TEXT NOT NULL, index_id TEXT NOT NULL UNIQUE, PRIMARY KEY(session_id,source_id)
         );
         CREATE TABLE IF NOT EXISTS opcode_sessions_sync (id TEXT PRIMARY KEY, context_revision REAL, history_revision REAL);
-        -- Session revisions already reject older snapshots; per-message revisions were redundant.
-        DROP TABLE IF EXISTS opcode_sessions_message_revision;
       `)
       // Additive data migration only, including older text-only indexes. No V1 runtime API.
       const columns = new Set(db.query<{ name: string }, []>("PRAGMA table_info(messages)").all().map((item) => item.name))

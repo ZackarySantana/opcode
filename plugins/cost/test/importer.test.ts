@@ -29,8 +29,10 @@ test("imports paginated history, other worktrees, compactions, and rescans despi
       calls.push(input)
       return input.cursor ? { data: [other], cursor: {} } : { data: [session], cursor: { next: "sessions-next" } }
     } },
-    message: { list: async (input: { sessionID: string; type: string; cursor?: string }) => {
+    message: { list: async (input: { sessionID: string; type?: string; cursor?: string }) => {
       calls.push(input)
+      // Like the host, later pages are owned by the cursor; first-page filters can't be combined with it.
+      if (input.cursor && input.type) throw new Error("cursor cannot be combined with filters")
       if (input.type === "compaction") return { data: [
         { id: `${input.sessionID}-summary`, type: "compaction", status: "completed", model: message.model,
           time: { created: message.time.created }, cost: 0.25, tokens: message.tokens },
@@ -48,8 +50,8 @@ test("imports paginated history, other worktrees, compactions, and rescans despi
     await importProject(client, service, new AbortController().signal)
     expect(lists).toBe(4)
     expect(calls).toContainEqual({ project: context.projectID, cursor: "sessions-next", limit: 100 })
-    expect(calls).toContainEqual({ sessionID: "other", type: "assistant", cursor: "messages-next", limit: 100 })
-    expect(calls).toContainEqual({ sessionID: "other", type: "compaction", limit: 100, cursor: undefined })
+    expect(calls).toContainEqual({ sessionID: "other", cursor: "messages-next", limit: 100 })
+    expect(calls).toContainEqual({ sessionID: "other", type: "compaction", limit: 100 })
     expect(ledger.dashboard({ range: "all" }).total).toMatchObject({ cost: 2.5, messages: 6 })
   } finally { ledger.close() }
 })

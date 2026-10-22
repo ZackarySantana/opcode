@@ -49,7 +49,7 @@ export const SessionsRpc = Rpc.define({
       input: object({ token: id, messages: { type: "array", minItems: 1, maxItems: MAX_BATCH_MESSAGES, items: object(messageProperties, Object.keys(messageProperties).filter((key) => !["providerID", "modelID"].includes(key))) } }, ["token", "messages"]),
       output: object({ accepted: number }, ["accepted"]),
     },
-    finish: { input: object({ token: id, complete: { type: "boolean" } }, ["token", "complete"]), output: object({}, []), errors },
+    finish: { input: object({ token: id, complete: { type: "boolean" } }, ["token"]), output: object({}, []), errors },
   },
 })
 
@@ -57,10 +57,10 @@ export const SessionsRpc = Rpc.define({
 export interface SessionsRemote {
   search(input: SearchInput, signal?: AbortSignal): Promise<SearchOutput>
   refresh(signal?: AbortSignal): Promise<RefreshOutput>
-  begin(input: { sessionID: string; updatedAt: number }, signal?: AbortSignal): Promise<{ current: boolean; token?: string }>
+  begin(input: { sessionID: string; updatedAt: number }, signal?: AbortSignal): Promise<{ current?: boolean; token?: string }>
   import(input: { token: string; messages: MessageRecord[] }, signal?: AbortSignal): Promise<{ accepted: number }>
   /** `complete` records the token's revision as imported; otherwise the token is only released. */
-  finish(input: { token: string; complete: boolean }, signal?: AbortSignal): Promise<void>
+  finish(input: { token: string; complete?: boolean }, signal?: AbortSignal): Promise<void>
 }
 
 /** Typed RPC failures arrive as plain `{ type, message }` objects. */
@@ -75,7 +75,7 @@ export function sessionsRemote(client: OpenCodeClient, directory: string): Sessi
   return {
     search: async (input, signal) => await rpc.search(input, options(signal)) as SearchOutput,
     refresh: async (signal) => await rpc.refresh({}, options(signal)) as RefreshOutput,
-    begin: async (input, signal) => await rpc.begin(input, options(signal)) as { current: boolean; token?: string },
+    begin: async (input, signal) => await rpc.begin(input, options(signal)) as { current?: boolean; token?: string },
     import: async (input, signal) => await rpc.import(input, options(signal)) as { accepted: number },
     finish: async (input, signal) => { await rpc.finish(input, options(signal)) },
   }

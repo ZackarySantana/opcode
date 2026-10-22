@@ -91,7 +91,7 @@ export default Plugin.define({
         refresh: async (_input, call) => guarded(call, () => service.refresh(call.signal)),
         begin: async (input, call) => guarded(call, () => service.begin(input as { sessionID: string; updatedAt: number }, call.signal)),
         import: async (input, call) => guarded(call, () => service.import(input as { token: string; messages: MessageRecord[] }, call.signal)),
-        finish: async (input, call) => guarded(call, async () => { await service.finish(input as { token: string; complete: boolean }); return {} }),
+        finish: async (input, call) => guarded(call, async () => { await service.finish(input as { token: string; complete?: boolean }); return {} }),
       })
     } catch (error) { controller.abort(); lease.release(); throw error }
     const initial = (async () => {

@@ -67,7 +67,7 @@ ${XDG_STATE_HOME || ~/.local/state}/opencode/opencode-sessions-all/sessions.sqli
 
 Relative paths resolve from the server's OpenCode state directory. The CLI ignores this filesystem option and uses RPC. `:memory:` is useful for tests, not durable history.
 
-Existing `sessions`, `messages`, and `backfill` tables/data are retained. Older text-only indexes receive additive metric columns. Additional `opcode_sessions_*` tables provide sync revision, tombstone, and fork-message identity metadata. The redundant per-message revision table from earlier releases is dropped. There is no index deletion or destructive schema conversion. Back up SQLite safely before migration; **remove `opencode-sessions-all` from configuration** rather than running both writers against this file. The old completion-marker table is retained for compatibility, but not used to skip refreshes. Missing source sessions are reconciled away; an index is a cache, not a transcript backup.
+Existing `sessions`, `messages`, and `backfill` tables/data are retained. Older text-only indexes receive additive metric columns. Additional `opcode_sessions_*` tables provide sync revision, tombstone, and fork-message identity metadata. The per-message revision table from earlier releases is no longer used but left in place, so older processes sharing the file keep working. There is no index deletion or destructive schema conversion. Back up SQLite safely before migration; **remove `opencode-sessions-all` from configuration** rather than running both writers against this file. The old completion-marker table is retained for compatibility, but not used to skip refreshes. Missing source sessions are reconciled away; an index is a cache, not a transcript backup.
 
 ## Privacy and access
 

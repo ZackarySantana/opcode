@@ -131,16 +131,21 @@ export class SessionsService {
 
   begin(input: { sessionID: string; updatedAt: number }, signal?: AbortSignal) {
     return this.operation(signal, async (active): Promise<{ current: boolean; token?: string }> => {
-      if (await this.commit(active, () => this.lease.index.historyCurrent(input.sessionID, input.updatedAt))) return { current: true }
-      const session = await this.host(input.sessionID, active, () => this.source.session.get({ sessionID: input.sessionID }, { signal: active }))
-      return this.commit(active, () => {
+      const issue = (sessionID: string, updatedAt: number) => {
         for (const [token, value] of this.tokens) if (value.expires < Date.now()) this.tokens.delete(token)
         if (this.tokens.size >= 128) throw new Error("Too many pending history imports; retry later.")
+        const token = crypto.randomUUID()
+        this.tokens.set(token, { sessionID, updatedAt, expires: Date.now() + 120_000 })
+        return token
+      }
+      // Current sessions still get a token so older TUIs (which always upload) keep working; uploads are revision-checked.
+      const current = await this.commit(active, () => this.lease.index.historyCurrent(input.sessionID, input.updatedAt) ? issue(input.sessionID, input.updatedAt) : undefined)
+      if (current) return { current: true, token: current }
+      const session = await this.host(input.sessionID, active, () => this.source.session.get({ sessionID: input.sessionID }, { signal: active }))
+      return this.commit(active, () => {
         if (this.lease.index.deleted(session.id)) throw new MissingSessionError("Session was deleted before history import.")
         if (session.time.updated !== input.updatedAt) throw new StaleSessionError("Session changed before history import; it will be imported when idle.")
-        const token = crypto.randomUUID()
-        this.tokens.set(token, { sessionID: session.id, updatedAt: session.time.updated, expires: Date.now() + 120_000 })
-        return { current: false, token }
+        return { current: false, token: issue(session.id, session.time.updated) }
       })
     })
   }
@@ -166,10 +171,10 @@ export class SessionsService {
   }
 
   /** Every upload was revision-checked, so a completed token's revision is fully imported. */
-  finish(input: { token: string; complete: boolean }) {
+  finish(input: { token: string; complete?: boolean }) {
     const token = this.tokens.get(input.token)
     this.tokens.delete(input.token)
-    if (!input.complete || !token || token.expires < Date.now()) return Promise.resolve()
+    if (input.complete !== true || !token || token.expires < Date.now()) return Promise.resolve()
     return this.operation(undefined, (active) => this.commit(active, () => this.lease.index.markHistory(token.sessionID, token.updatedAt)))
   }
 
