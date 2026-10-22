@@ -26,7 +26,7 @@ function Entry(props: { entry: TimelineEntry; now: number }) {
 export function Sidebar(props: { feeds: FeedsController }) {
   const palette = usePalette()
   const view = createMemo(() => props.feeds.timeline("sidebar"))
-  const layout = createMemo(() => sidebarLayout(view()))
+  const layout = createMemo(() => sidebarLayout(view(), props.feeds.settings().sidebarItems))
   // The last overflow line carries the pointer to /feed.
   const pointer = () => layout().hiddenUpcoming ? "upcoming" : layout().hiddenEntries ? "entries" : undefined
   const More = (more: { count: number; noun?: string; last: boolean }) => (

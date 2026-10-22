@@ -8,7 +8,7 @@ import type { ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createMemo, createSignal, For, Show, type Accessor } from "solid-js"
 import type { FeedsController } from "./host"
-import { FEED_HISTORY, kindOf, matches, matchesText, relative, scopeChoices, windowChoices, windowLabel, windowShort, type SurfaceScope, type Settings as FeedSettings, type TimelineEntry } from "./model"
+import { FEED_HISTORY, kindOf, matches, matchesText, relative, scopeChoices, sidebarItemChoices, windowChoices, windowLabel, windowShort, type SurfaceScope, type Settings as FeedSettings, type TimelineEntry } from "./model"
 import { openURL } from "./open"
 import { TabFrame } from "./frame"
 import { FeedPicker } from "./picker"
@@ -267,6 +267,13 @@ const settingRows = [
     current: (settings: FeedSettings) => settings.sidebarReleases,
     update: (sidebarReleases: boolean) => ({ sidebarReleases }),
   } satisfies SettingRow<boolean>,
+  {
+    id: "sidebar", label: "Sidebar items",
+    description: "How many items the sidebar lists, in-progress first, before pointing to /feed. Up to two scheduled items follow them.",
+    choices: sidebarItemChoices.map((count) => ({ value: count as number, label: `${count}` })),
+    current: (settings: FeedSettings) => settings.sidebarItems,
+    update: (sidebarItems: number) => ({ sidebarItems }),
+  } satisfies SettingRow<number>,
 ] as SettingRow<unknown>[]
 
 /** Every choice stays visible; ←/→ move between them, stopping at either end. */

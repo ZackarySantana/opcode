@@ -227,15 +227,17 @@ test("search requires every word somewhere in the product, status, title, or tex
   expect(matches(incident, "npm outage")).toBe(false)
 })
 
-test("the sidebar keeps five items and two scheduled items, counting the rest", () => {
+test("the sidebar keeps the configured number of items and two scheduled items, counting the rest", () => {
   const many = (prefix: string, count: number) => Array.from({ length: count }, (_, index) => entry(`${prefix}${index}`))
-  const layout = sidebarLayout({ current: many("now", 2), recent: many("recent", 5), upcoming: many("soon", 4), operational: [], unreachable: [], pending: 0 })
+  const view = { current: many("now", 2), recent: many("recent", 5), upcoming: many("soon", 4), operational: [], unreachable: [], pending: 0 }
+  const layout = sidebarLayout(view, 5)
   expect(layout.entries.map((item) => item.title)).toEqual(["now0", "now1", "recent0", "recent1", "recent2"])
   expect(layout.hiddenEntries).toBe(2)
   expect(layout.upcoming.map((item) => item.title)).toEqual(["soon0", "soon1"])
   expect(layout.hiddenUpcoming).toBe(2)
-  expect(sidebarLayout({ current: [], recent: many("recent", 1), upcoming: [], operational: [], unreachable: [], pending: 0 }))
-    .toMatchObject({ hiddenEntries: 0, hiddenUpcoming: 0 })
+  // In-progress items take the budget first; scheduled items do not count against it.
+  expect(sidebarLayout(view, 3)).toMatchObject({ entries: [{ title: "now0" }, { title: "now1" }, { title: "recent0" }], hiddenEntries: 4, hiddenUpcoming: 2 })
+  expect(sidebarLayout(view, 10)).toMatchObject({ hiddenEntries: 0, hiddenUpcoming: 2 })
 })
 
 test("links open with the platform's launcher, and only http(s) links open at all", () => {
@@ -254,17 +256,18 @@ test("settings persist across reopening the database", async () => {
   const path = join(directory, "feed.sqlite")
   const first = new FeedsDatabase(path)
   // A fresh install looks back 12 hours and hides resolved incidents.
-  expect(first.settings()).toEqual({ windowHours: 12, resolved: "none", sidebarReleases: false })
+  expect(first.settings()).toEqual({ windowHours: 12, resolved: "none", sidebarReleases: false, sidebarItems: 5 })
   await createRoot(async (dispose) => {
     const feeds = new FeedsController(first, async () => rss)
     feeds.updateSettings({ windowHours: 72 })
     feeds.updateSettings({ resolved: "sidebar" })
     feeds.updateSettings({ sidebarReleases: true })
+    feeds.updateSettings({ sidebarItems: 10 })
     dispose()
   })
   first.close()
   const second = new FeedsDatabase(path)
-  expect(second.settings()).toEqual({ windowHours: 72, resolved: "sidebar", sidebarReleases: true })
+  expect(second.settings()).toEqual({ windowHours: 72, resolved: "sidebar", sidebarReleases: true, sidebarItems: 10 })
   second.close()
 })
 
@@ -281,9 +284,9 @@ test("0.1.x databases rename release subscriptions and gain the releases setting
   `)
   legacy.close()
   const migrated = new FeedsDatabase(path)
-  expect(migrated.settings()).toEqual({ windowHours: 6, resolved: "both", sidebarReleases: false })
+  expect(migrated.settings()).toEqual({ windowHours: 6, resolved: "both", sidebarReleases: false, sidebarItems: 5 })
   expect(migrated.list().map((subscription) => subscription.url)).toEqual(["https://bun.test/releases"])
-  migrated.saveSettings({ windowHours: 6, resolved: "both", sidebarReleases: true })
+  migrated.saveSettings({ windowHours: 6, resolved: "both", sidebarReleases: true, sidebarItems: 5 })
   migrated.close()
   const reopened = new FeedsDatabase(path)
   expect(reopened.settings().sidebarReleases).toBe(true)
@@ -309,7 +312,7 @@ test("0.2.0 and 0.3.0 databases keep releases in the sidebar when their saved ch
   const scopes: [SurfaceScope, boolean][] = [["both", true], ["sidebar", true], ["feed", false], ["none", false]]
   for (const [scope, sidebarReleases] of scopes) {
     const v2 = open(`v2-${scope}`, "updates TEXT NOT NULL DEFAULT 'feed'", `'${scope}'`).database
-    expect(v2.settings()).toEqual({ windowHours: 24, resolved: "none", sidebarReleases })
+    expect(v2.settings()).toEqual({ windowHours: 24, resolved: "none", sidebarReleases, sidebarItems: 5 })
     expect(v2.list()).toMatchObject([{ url: "https://bun.test/releases", kind: "release" }])
     v2.close()
     const v3 = open(`v3-${scope}`, "updates TEXT NOT NULL DEFAULT 'feed', releases TEXT NOT NULL DEFAULT 'feed'", `'${sidebarReleases ? "none" : "both"}', '${scope}'`).database
@@ -318,10 +321,33 @@ test("0.2.0 and 0.3.0 databases keep releases in the sidebar when their saved ch
   }
   // Saving later, with the old columns still present, works and keeps the new value.
   const { path, database } = open("saved", "updates TEXT NOT NULL DEFAULT 'feed', releases TEXT NOT NULL DEFAULT 'feed'", "'feed', 'both'")
-  database.saveSettings({ windowHours: 24, resolved: "none", sidebarReleases: false })
+  database.saveSettings({ windowHours: 24, resolved: "none", sidebarReleases: false, sidebarItems: 5 })
   database.close()
   const reopened = new FeedsDatabase(path)
   expect(reopened.settings().sidebarReleases).toBe(false)
+  reopened.close()
+})
+
+test("0.3.0 databases gain the sidebar length at five, and an unknown stored length falls back to it", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "opcode-feed-"))
+  afterAll(() => rm(directory, { recursive: true, force: true }))
+  const path = join(directory, "feed.sqlite")
+  const legacy = new Database(path)
+  legacy.exec(`
+    CREATE TABLE subscriptions (url TEXT PRIMARY KEY, title TEXT, kind TEXT NOT NULL, created_at INTEGER NOT NULL);
+    CREATE TABLE settings (id INTEGER PRIMARY KEY CHECK (id = 1), window_hours INTEGER NOT NULL, resolved TEXT NOT NULL, releases TEXT NOT NULL DEFAULT 'feed');
+    INSERT INTO settings (id, window_hours, resolved, releases) VALUES (1, 24, 'both', 'sidebar');
+  `)
+  legacy.close()
+  const migrated = new FeedsDatabase(path)
+  expect(migrated.settings()).toEqual({ windowHours: 24, resolved: "both", sidebarReleases: true, sidebarItems: 5 })
+  migrated.close()
+  // A length this version does not offer, such as one written by another version.
+  const edited = new Database(path)
+  edited.exec("UPDATE settings SET sidebar_items = 7")
+  edited.close()
+  const reopened = new FeedsDatabase(path)
+  expect(reopened.settings()).toEqual({ windowHours: 24, resolved: "both", sidebarReleases: true, sidebarItems: 5 })
   reopened.close()
 })
 

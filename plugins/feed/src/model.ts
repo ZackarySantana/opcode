@@ -18,11 +18,14 @@ export interface Settings {
   readonly resolved: SurfaceScope
   /** Posts from release feeds always show in /feed; by default the sidebar is kept for incidents. */
   readonly sidebarReleases: boolean
+  /** Timeline entries the sidebar lists before pointing to /feed. */
+  readonly sidebarItems: number
 }
 
-export const defaultSettings: Settings = { windowHours: 12, resolved: "none", sidebarReleases: false }
+export const defaultSettings: Settings = { windowHours: 12, resolved: "none", sidebarReleases: false, sidebarItems: 5 }
 export const windowChoices = [6, 12, 24, 48, 72, 168] as const
 export const scopeChoices: readonly SurfaceScope[] = ["both", "sidebar", "feed", "none"]
+export const sidebarItemChoices = [3, 5, 10, 15, 20] as const
 
 const showsOn = (scope: SurfaceScope, surface: Surface) => scope === "both" || scope === surface
 /** In-progress items stay visible past the window, but not forever if a provider never closes one. */
@@ -133,7 +136,7 @@ export interface TimelineOptions {
 }
 
 /** One timeline across every subscribed feed, or one feed's history. */
-export function timeline(subscriptions: readonly Subscription[], presets: readonly Preset[], results: ReadonlyMap<string, FetchResult>, settings: Settings, surface: Surface,
+export function timeline(subscriptions: readonly Subscription[], presets: readonly Preset[], results: ReadonlyMap<string, FetchResult>, settings: Pick<Settings, "windowHours" | "resolved" | "sidebarReleases">, surface: Surface,
   { now = Date.now(), releasesPerFeed = RELEASES_PER_FEED, feed }: TimelineOptions = {}): Timeline {
   const scoped = feed !== undefined
   const resolved = scoped || showsOn(settings.resolved, surface)
@@ -191,14 +194,14 @@ export interface SidebarLayout {
   readonly hiddenUpcoming: number
 }
 
-/** The sidebar's budget: a few timeline entries, then the soonest scheduled work. */
-export function sidebarLayout(view: Timeline, limits = { entries: 5, upcoming: 2 }): SidebarLayout {
+/** The sidebar's budget: up to `limit` timeline entries, then the two soonest scheduled items. */
+export function sidebarLayout(view: Timeline, limit: number): SidebarLayout {
   const entries = [...view.current, ...view.recent]
   return {
-    entries: entries.slice(0, limits.entries),
-    hiddenEntries: Math.max(0, entries.length - limits.entries),
-    upcoming: view.upcoming.slice(0, limits.upcoming),
-    hiddenUpcoming: Math.max(0, view.upcoming.length - limits.upcoming),
+    entries: entries.slice(0, limit),
+    hiddenEntries: Math.max(0, entries.length - limit),
+    upcoming: view.upcoming.slice(0, 2),
+    hiddenUpcoming: Math.max(0, view.upcoming.length - 2),
   }
 }
 
