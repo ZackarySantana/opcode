@@ -1,21 +1,25 @@
 import solidPlugin from "@opentui/solid/bun-plugin"
-import { cp, mkdir, rm, writeFile } from "node:fs/promises"
+import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { join, relative } from "node:path"
 import ts from "typescript"
-import { inside, manifestAt, packageName, pluginIDs, privateWorkspaces, publicPackageName, relativeModule, repositoryRoot, stagedManifest, workspaceSource } from "./packaging"
+import { inside, packageName, pluginIDs, privateWorkspaces, publicManifest, relativeModule, repositoryRoot, stagedManifest, workspaceSource } from "./packaging"
 
+/** Stages into `.release/opcode-<id>` by default, or into a new empty directory elsewhere. */
 export async function buildPlugin(root: string, id: typeof pluginIDs[number], destination = join(root, ".release", `opcode-${id}`)) {
   const directory = join(root, "plugins", id)
-  const manifest = await manifestAt(directory)
-  if (manifest.name !== publicPackageName(id) || manifest.private) throw new Error(`Invalid public plugin manifest: ${directory}`)
+  const manifest = await publicManifest(root, id)
   const workspaceMap = await privateWorkspaces(root)
   const entries = ["index.ts", "tui.tsx", ...(existsSync(join(directory, "src/rpc.ts")) ? ["rpc.ts"] : [])]
   const entrypoints = entries.map((entry) => join(directory, "src", entry))
-  // Only remove this plugin's generated stage, never a caller-supplied source tree.
-  if (!inside(join(root, ".release"), destination) || destination === join(root, ".release")) throw new Error("Build destination must be inside .release")
-  await rm(destination, { recursive: true, force: true })
+  // Only remove generated stages under .release, never a caller-supplied or source tree.
+  const releaseRoot = join(root, ".release")
+  if (inside(releaseRoot, destination) && destination !== releaseRoot) await rm(destination, { recursive: true, force: true })
+  else if (inside(root, destination) || existsSync(destination) && (await readdir(destination)).length) {
+    throw new Error("Build destination must be inside .release or a new empty directory")
+  }
   await mkdir(join(destination, "dist"), { recursive: true })
+  const imports = new Set<string>()
   const bundle = await Bun.build({
     entrypoints,
     root: join(directory, "src"),
@@ -32,6 +36,7 @@ export async function buildPlugin(root: string, id: typeof pluginIDs[number], de
           const workspace = workspaceMap.get(packageName(args.path))
           if (!workspace) {
             if (args.path.startsWith("@opcode/")) throw new Error(`Unknown private import: ${args.path}`)
+            imports.add(packageName(args.path))
             return { path: args.path, external: true }
           }
           const path = workspaceSource(workspace.directory, workspace.manifest, args.path)
@@ -51,7 +56,7 @@ export async function buildPlugin(root: string, id: typeof pluginIDs[number], de
       default: `./dist/${name}.js`,
     }]
   }))
-  await writeFile(join(destination, "package.json"), `${JSON.stringify(await stagedManifest(root, manifest, exports), null, 2)}\n`)
+  await writeFile(join(destination, "package.json"), `${JSON.stringify(await stagedManifest(root, manifest, exports, imports), null, 2)}\n`)
   await cp(join(root, "LICENSE"), join(destination, "LICENSE"))
   for (const file of ["README.md", "CHANGELOG.md"]) {
     if (existsSync(join(directory, file))) await cp(join(directory, file), join(destination, file))

@@ -24,6 +24,28 @@ export async function manifestAt(directory: string): Promise<Manifest> {
   return JSON.parse(await readFile(join(directory, "package.json"), "utf8"))
 }
 
+/** A workspace plugin manifest, rejected unless it is the expected public package. */
+export async function publicManifest(root: string, id: typeof pluginIDs[number]): Promise<Manifest> {
+  const directory = join(root, "plugins", id)
+  const manifest = await manifestAt(directory)
+  if (manifest.name !== publicPackageName(id) || manifest.private) throw new Error(`Expected public package ${publicPackageName(id)} in ${directory}`)
+  return manifest
+}
+
+/** Run a command and return its stdout; failures include both streams. */
+export async function run(args: string[], cwd: string, options: { echo?: boolean } = {}): Promise<string> {
+  const child = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "pipe" })
+  const [stdout, stderr, status] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
+  if (status) throw new Error(`${args.join(" ")} failed: ${stderr}\n${stdout}`)
+  if (options.echo && stderr) console.error(stderr.trim())
+  return stdout
+}
+
+/** Host-owned singleton runtimes: plugins must declare these as peers, never ship their own. */
+export function hostSingletons(root: Manifest): string[] {
+  return Object.keys(root.workspaces?.catalogs?.host ?? {})
+}
+
 export function packageName(specifier: string): string {
   return specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0]!
 }
@@ -96,19 +118,26 @@ export function runtimeDependencies(rootManifest: Manifest, plugin: Manifest, wo
   collect(plugin)
   // The host owns these singleton runtimes. A consumer's explicit peer range wins
   // over an implementation dependency inherited from a bundled UI workspace.
-  for (const name of ["@opentui/core", "@opentui/solid", "solid-js"]) {
+  for (const name of hostSingletons(rootManifest)) {
     if (dependencies.peerDependencies?.[name]) {
       delete dependencies.dependencies?.[name]
       delete dependencies.optionalDependencies?.[name]
+    } else if (dependencies.dependencies?.[name] || dependencies.optionalDependencies?.[name]) {
+      throw new Error(`${plugin.name} must declare host singleton ${name} in peerDependencies`)
     }
   }
   return dependencies
 }
 
-export async function stagedManifest(root: string, plugin: Manifest, exports: Record<string, unknown>): Promise<Manifest> {
+/** `imports` are the external packages the built bundle actually imports. */
+export async function stagedManifest(root: string, plugin: Manifest, exports: Record<string, unknown>, imports: Iterable<string> = []): Promise<Manifest> {
   const rootManifest = await manifestAt(root)
   const workspaces = await privateWorkspaces(root)
   const dependencies = runtimeDependencies(rootManifest, plugin, new Map([...workspaces].map(([name, workspace]) => [name, workspace.manifest])))
+  const imported = new Set(imports)
+  for (const name of hostSingletons(rootManifest)) {
+    if (imported.has(name) && !dependencies.peerDependencies?.[name]) throw new Error(`${plugin.name} imports host singleton ${name} without declaring it in peerDependencies`)
+  }
   const metadata = ["description", "license", "author", "contributors", "repository", "homepage", "bugs", "keywords", "engines", "funding", "peerDependenciesMeta"]
   return {
     name: plugin.name,
