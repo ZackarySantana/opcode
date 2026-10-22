@@ -2,6 +2,7 @@
   "name": "@lidtop/opencode-feed",
   "version": "0.3.0",
   "description": "Follow RSS and Atom feeds in the OpenCode sidebar",
+  "keywords": ["opencode", "opencode-plugin"],
   "type": "module",
   "license": "MIT",
   "author": "ZackarySantana",

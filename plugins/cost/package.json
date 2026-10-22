@@ -2,6 +2,7 @@
   "name": "@lidtop/opencode-cost",
   "version": "0.2.3",
   "description": "Persistent OpenCode cost and token usage dashboard",
+  "keywords": ["opencode", "opencode-plugin"],
   "type": "module",
   "license": "MIT",
   "author": "ZackarySantana",

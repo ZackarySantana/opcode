@@ -2,6 +2,7 @@
   "name": "@lidtop/opencode-sessions",
   "version": "0.2.2",
   "description": "Browse OpenCode sessions across projects",
+  "keywords": ["opencode", "opencode-plugin"],
   "type": "module",
   "license": "MIT",
   "author": "ZackarySantana",
