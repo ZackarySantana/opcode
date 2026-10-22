@@ -115,6 +115,24 @@ test("stale edits, deletions, and completions cannot overwrite another connectio
   expect(first.revision()).toBe(2)
 })
 
+test("renumbering after another connection removes an unrelated item does not make other items stale", () => {
+  const { first, second } = disk()
+  const above = first.add("above", 1)
+  const edited = first.add("edit me", 2)
+  const deleted = first.add("delete me", 3)
+  const staleEdit = first.get(edited)!
+  const staleDelete = first.get(deleted)!
+  second.complete(second.get(above)!, 4)
+  expect(first.edit(staleEdit, "edited", 5)).toBe(true)
+  expect(first.delete(staleDelete)).toBe(true)
+  expect(second.snapshot().active.map((item) => [item.message, item.position])).toEqual([["edited", 1]])
+  const concurrent = first.get(edited)!
+  second.edit(second.get(edited)!, "newer", 6)
+  expect(first.edit(concurrent, "lost update", 7)).toBe(false)
+  expect(first.complete(concurrent, 7)).toBe(false)
+  expect(second.get(edited)?.message).toBe("newer")
+})
+
 test("a failed revision write rolls back the item mutation", () => {
   const { path, first } = disk()
   const raw = new Database(path)

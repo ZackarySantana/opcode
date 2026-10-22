@@ -19,10 +19,10 @@ export function messageText(text: string): string {
   return message
 }
 
+/** Positions are renumbered when other items leave the list, so they never indicate a stale item. */
 export function sameItem(left: LaterItem | undefined, right: LaterItem): boolean {
   return left !== undefined && left.id === right.id && left.message === right.message &&
-    left.position === right.position && left.createdAt === right.createdAt &&
-    left.updatedAt === right.updatedAt && left.completedAt === right.completedAt
+    left.createdAt === right.createdAt && left.updatedAt === right.updatedAt && left.completedAt === right.completedAt
 }
 
 export function visibleItems(snapshot: LaterSnapshot, history: boolean): readonly LaterItem[] {

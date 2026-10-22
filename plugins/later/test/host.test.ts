@@ -187,6 +187,35 @@ test.each(["edit", "delete", "complete"])("an external %s during mounting cancel
   if (action === "edit") expect(h.database.get(id)).toMatchObject({ message: "new text", completedAt: undefined })
 })
 
+test("another client completing an unrelated item does not make the selected item stale", async () => {
+  const h = harness()
+  const above = h.database.add("above", 1)
+  const target = h.database.add("complete me", 2)
+  await h.host.run("open")
+  await h.host.run("down")
+  h.external.complete(h.external.get(above)!, 3)
+  await h.host.run("complete")
+  expect(h.database.get(target)?.completedAt).toBeDefined()
+  expect(h.toasts.at(-1)?.variant).toBe("success")
+})
+
+test("another client completing an unrelated item does not cancel a pending paste", async () => {
+  const h = harness()
+  const above = h.database.add("above", 1)
+  const target = h.database.add("paste me", 2)
+  await h.host.run("open")
+  await h.host.run("down")
+  const frame = Promise.withResolvers<void>()
+  h.frame(frame.promise)
+  const pending = h.host.run("paste")
+  h.external.complete(h.external.get(above)!, 3)
+  frame.resolve()
+  await pending
+  expect(h.pastes).toEqual(["paste me"])
+  expect(h.database.get(target)?.completedAt).toBeDefined()
+  expect(h.toasts.at(-1)?.variant).toBe("success")
+})
+
 test("repeated paste while mounting delivers once", async () => {
   const h = harness()
   h.database.add("once")
