@@ -84,7 +84,7 @@ export function buildSnapshot(input: SnapshotInput) {
     retained,
     utilization,
     utilizationProvenance: utilization === undefined ? "unavailable" as const : "estimated" as const,
-    cacheEfficiency: usage.input + usage.cacheRead > 0 ? usage.cacheRead / (usage.input + usage.cacheRead) : undefined,
+    cacheEfficiency: usage.input + usage.cacheRead + usage.cacheWrite > 0 ? usage.cacheRead / (usage.input + usage.cacheRead + usage.cacheWrite) : undefined,
     environment: unique(input.environment ?? [], (item) => `${item.category}:${item.name}`)
       .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name)),
     warnings,

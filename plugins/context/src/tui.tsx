@@ -8,8 +8,8 @@ import type { ScrollBoxRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { writeSnapshot } from "./export"
-import { loadSnapshot } from "./load"
-import { createSnapshotRefresh, type RefreshState } from "./refresh"
+import { createSnapshotLoader } from "./load"
+import { createSnapshotRefresh, refreshesSnapshot, type RefreshState } from "./refresh"
 import type { Snapshot } from "./snapshot"
 import { listWindow, percent } from "./view"
 
@@ -33,7 +33,7 @@ export function ContextDialog(props: { sessionID?: string }) {
   const [selection, setSelection] = createSignal(0)
   const [state, setState] = createSignal<RefreshState>({ loading: true })
   let overview: ScrollBoxRenderable | undefined
-  const refresh = createSnapshotRefresh((signal) => loadSnapshot(context, props.sessionID, signal), setState)
+  const refresh = createSnapshotRefresh(createSnapshotLoader(context, props.sessionID), setState)
   const bodyHeight = () => Math.max(4, Math.min(28, dimensions().height - 10
     - Number(Boolean(state().error)) - Number(Boolean(state().snapshot?.warnings.length))))
   const snapshot = () => state().snapshot
@@ -65,11 +65,11 @@ export function ContextDialog(props: { sessionID?: string }) {
       { id: "opcode-context.previous", bind: "left,h", run: () => switchTab(-1) },
       { id: "opcode-context.down", bind: "down,j", run: () => move(1) },
       { id: "opcode-context.up", bind: "up,k", run: () => move(-1) },
-      { id: "opcode-context.refresh", bind: "r", run: refresh.refresh },
+      { id: "opcode-context.refresh", bind: "r", run: () => refresh.refresh() },
       { id: "opcode-context.export", bind: "e", run: exportCurrent },
   ])
   const stop = context.data.listen(({ details }) => {
-    if ("sessionID" in details.data && details.data.sessionID === props.sessionID) refresh.schedule()
+    if (refreshesSnapshot(details, props.sessionID)) refresh.schedule()
   })
   onMount(() => void refresh.refresh())
   onCleanup(() => { refresh.dispose(); stop() })

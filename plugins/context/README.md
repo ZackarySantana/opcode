@@ -31,7 +31,7 @@ No plugin options are currently supported. There is no normal-use persistence or
 
 Use `h`/`l` or left/right to switch tabs, `j`/`k` or up/down to select rows (or scroll Overview), `r` to refresh, `e` to export, and Escape to close. Overview also supports normal scrollbox scrolling. Open the modal again to inspect another session. It also appears as **Context** in the command palette.
 
-Session events trigger coalesced refreshes while open. Degraded sources are visibly marked; details appear in Overview and exports. History totals can use explicitly labeled cached data. **If retained context is unavailable, retained size/utilization remain unavailable—full history is never relabeled as retained context.**
+Completed session events (not streaming deltas) trigger coalesced refreshes of session data while open; environment and catalog data reload on open and `r`. Degraded sources are visibly marked; details appear in Overview and exports. History totals can use explicitly labeled cached data. **If retained context is unavailable, retained size/utilization remain unavailable—full history is never relabeled as retained context.**
 
 ## Accounting
 
@@ -39,7 +39,7 @@ Session events trigger coalesced refreshes while open. Degraded sources are visi
 - **Measured:** UTF-16 string lengths and UTF-8 byte counts of observable retained content.
 - **Estimated:** `ceil(characters / 4)` per contributor, summed. Context utilization divides this by the selected model's context limit; values can exceed 100%.
 
-Attachment payloads, opaque provider checkpoints, tool inputs/schemas, and hidden provider/system layers are not measured. The final request is not observable through this report. Environment entries do not contribute to the retained estimate. Cache read efficiency is `read / (fresh input + read)`.
+Attachment payloads, opaque provider checkpoints, tool inputs/schemas, and hidden provider/system layers are not measured. The final request is not observable through this report. Environment entries do not contribute to the retained estimate. Cache read efficiency is `read / (fresh input + cache read + cache write)`, the share of recorded input served from cache.
 
 ## Private metadata export
 
@@ -51,7 +51,7 @@ $XDG_STATE_HOME/opencode/opcode-context/exports/
 
 The default state home is `~/.local/state`. Newly created directories use `0700`; files use `0600`, exclusive creation, and unique filenames. Existing directory permissions are not changed.
 
-Snapshots contain counts, identifiers, contributor labels, environment metadata, and limitations—not conversation text, reasoning text, tool outputs, or attachment data. Every string is passed through best-effort credential redaction, including common token prefixes, Bearer credentials, quoted assignments, and URL credentials. Metadata can still contain sensitive names/paths or unrecognized secrets: **review before sharing**. Nothing is uploaded.
+Snapshots contain counts, identifiers, contributor labels, environment metadata, and limitations—not conversation text, reasoning text, tool outputs, or attachment data. Every string is passed through best-effort credential redaction, including common token prefixes, Bearer credentials, secret assignments (also prefixed names such as `OPENAI_API_KEY=`), URL credentials for any scheme, and `key`/signature query parameters. Metadata can still contain sensitive names/paths or unrecognized secrets: **review before sharing**. Nothing is uploaded.
 
 ## Development
 

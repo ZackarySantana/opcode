@@ -45,14 +45,15 @@ async function openDialog(options: {
     content: tools.map((tool, index) => ({ type: "tool", id: tool.id, name: tool.id, time: { created: 1 },
       state: { status: "completed", input: {}, content: [{ type: "text", text: "x".repeat((60 - index) * 4) }] } })),
   } satisfies SessionMessageInfo)
-  host.client.rpc = () => ({ tools: async () => tools })
+  let toolReads = 0
+  host.client.rpc = () => ({ tools: async () => { toolReads++; return tools } })
   let reads = 0
   host.client.session.context = async () => { reads++; if (options.failContext) throw new Error("offline"); return options.retained ? options.retained() : history }
   let failRead = false
   host.data.location.model.list = () => { if (failRead) throw new Error("Unexpected catalog failure"); return [] }
   const toasts: { variant: string; title?: string; message: string }[] = []
   let render: (() => JSX.Element) | undefined, onClose: (() => void) | undefined
-  let listener: ((event: { details: { data: { sessionID: string } } }) => void) | undefined
+  let listener: ((event: { details: { type: string; data: { sessionID: string } } }) => void) | undefined
   let stopped = false, cleared = false
   const theme = mockTheme({
     text: "#ffffff", muted: "#808080", value: "#00ffff", border: "#666666", background: "#171717", panel: "#262626",
@@ -119,7 +120,7 @@ async function openDialog(options: {
     await flushCommands()
   }
   return {
-    view, run, click, history, tools, toasts, setModalWidth, layerRuns, scopes, reads: () => reads,
+    view, run, click, history, tools, toasts, setModalWidth, layerRuns, scopes, reads: () => reads, toolReads: () => toolReads,
     mode: () => currentMode,
     reachable: () => reachable().map((command) => command.id),
     async press(key: string) {
@@ -128,7 +129,7 @@ async function openDialog(options: {
       await flushCommands()
     },
     failReads: (fail: boolean) => { failRead = fail },
-    emit: (sessionID: string) => listener?.({ details: { data: { sessionID } } }),
+    emit: (sessionID: string, type = "session.step.ended") => listener?.({ details: { type, data: { sessionID } } }),
     closed: () => cleared, cleaned: () => stopped && scopes.entered.length === 0 && scopes.left === 0,
     async dispose() { view.renderer.keyInput.off("keypress", handleKey); await view.dispose(); await cleanup?.() },
   }
@@ -296,8 +297,12 @@ test("refreshes preserve native dialog mode and component-owned keyboard registr
     expect(dialog.reads()).toBe(2)
     dialog.emit("other"); await Bun.sleep(160)
     expect(dialog.reads()).toBe(2)
+    dialog.emit("s", "session.text.delta"); dialog.emit("s", "session.step.streamed"); await Bun.sleep(160)
+    expect(dialog.reads()).toBe(2)
+    const toolReads = dialog.toolReads()
     dialog.emit("s"); dialog.emit("s"); await Bun.sleep(160)
     expect(dialog.reads()).toBe(3)
+    expect(dialog.toolReads()).toBe(toolReads)
     expect(dialog.layerRuns).toEqual(registrations)
     expect(dialog.scopes.entered).toEqual([])
     await dialog.run("close")
