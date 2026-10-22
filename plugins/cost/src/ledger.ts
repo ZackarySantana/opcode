@@ -28,11 +28,13 @@ const insert = `INSERT INTO usage (
   cost, input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens, recorded_at
 ) VALUES ($messageID, $sessionID, $projectID, $directory, $providerID, $modelID, $createdAt, $completedAt,
   $cost, $input, $output, $reasoning, $cacheRead, $cacheWrite, $recordedAt)`
-const update = `session_id=excluded.session_id, project_id=excluded.project_id, directory=excluded.directory,
+const identity = `session_id=excluded.session_id, project_id=excluded.project_id, directory=excluded.directory,
   provider_id=excluded.provider_id, model_id=excluded.model_id, created_at=excluded.created_at,
-  completed_at=excluded.completed_at, cost=excluded.cost, input_tokens=excluded.input_tokens,
-  output_tokens=excluded.output_tokens, reasoning_tokens=excluded.reasoning_tokens,
-  cache_read_tokens=excluded.cache_read_tokens, cache_write_tokens=excluded.cache_write_tokens, recorded_at=excluded.recorded_at`
+  completed_at=excluded.completed_at, recorded_at=excluded.recorded_at`
+const usage = `cost=excluded.cost, input_tokens=excluded.input_tokens, output_tokens=excluded.output_tokens,
+  reasoning_tokens=excluded.reasoning_tokens, cache_read_tokens=excluded.cache_read_tokens, cache_write_tokens=excluded.cache_write_tokens`
+const historical = `WHERE NOT EXISTS (SELECT 1 FROM opcode_cost_live WHERE message_id = excluded.message_id)
+  AND excluded.completed_at IS NOT NULL AND (usage.completed_at IS NULL OR usage.completed_at < excluded.completed_at)`
 
 export class CostLedger {
   private readonly db: Database
@@ -43,11 +45,12 @@ export class CostLedger {
 
   close() { this.db.close(false) }
 
-  recordLive(record: UsageRecord, version: number) {
+  /** Without `usage`, a new row starts from the record but an existing row keeps its recorded usage. */
+  recordLive(record: UsageRecord, version: number, options: { usage?: boolean } = {}) {
     this.db.transaction(() => {
       const prior = this.db.query<{ version: number }, [string]>("SELECT version FROM opcode_cost_live WHERE message_id = ?").get(record.messageID)
       if (prior && prior.version > version) return
-      this.write(record, false)
+      this.write(record, options.usage === false ? identity : `${identity}, ${usage}`)
       this.db.query("INSERT INTO opcode_cost_live VALUES (?, ?) ON CONFLICT(message_id) DO UPDATE SET version=excluded.version").run(record.messageID, version)
     }).immediate()
   }
@@ -61,7 +64,7 @@ export class CostLedger {
           "SELECT session_id AS sessionID FROM usage WHERE message_id = ?",
         ).get(record.messageID)
         if (existing && existing.sessionID !== record.sessionID) continue
-        this.write(record, true)
+        this.write(record, `${identity}, ${usage} ${historical}`)
         // Update mutable attribution even when freshness/live precedence rejects historical usage values.
         this.db.query("UPDATE usage SET project_id = ?, directory = ? WHERE message_id = ? AND session_id = ?")
           .run(record.projectID, record.directory, record.messageID, record.sessionID)
@@ -69,10 +72,8 @@ export class CostLedger {
     }).immediate()
   }
 
-  private write(record: UsageRecord, history: boolean) {
-    const condition = history ? `WHERE NOT EXISTS (SELECT 1 FROM opcode_cost_live WHERE message_id = excluded.message_id)
-      AND excluded.completed_at IS NOT NULL AND (usage.completed_at IS NULL OR usage.completed_at < excluded.completed_at)` : ""
-    this.db.query(`${insert} ON CONFLICT(message_id) DO UPDATE SET ${update} ${condition}`).run({
+  private write(record: UsageRecord, update: string) {
+    this.db.query(`${insert} ON CONFLICT(message_id) DO UPDATE SET ${update}`).run({
       ...record, completedAt: record.completedAt ?? null, recordedAt: Date.now(),
     })
   }

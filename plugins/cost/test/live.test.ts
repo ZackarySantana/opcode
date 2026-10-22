@@ -45,6 +45,37 @@ test("failed steps retain reported usage and normalize missing usage", async () 
   } finally { collector.clear(); ledger.close() }
 })
 
+test("a retried step that fails without usage keeps earlier usage, and history import stays consistent", async () => {
+  const ledger = new CostLedger(":memory:")
+  const collector = createLiveCollector({ location, session: { get: async () => session, context: async () => [message] } }, ledger)
+  const signal = new AbortController().signal
+  try {
+    await collector.handle(event("session.step.started", started), signal)
+    await collector.handle(event("session.step.failed", { ...ended, cost: 0.3, error: { message: "overloaded" } }), signal)
+    await collector.handle(event("session.step.started", started, { created: record.completedAt! + 1 }), signal)
+    await collector.handle(event("session.step.failed", { sessionID: session.id, assistantMessageID: message.id, error: { message: "offline" } },
+      { created: record.completedAt! + 2 }), signal)
+    expect(ledger.dashboard({ range: "all" }).total).toMatchObject({ cost: 0.3, messages: 1, tokens: 15 })
+    // The host keeps the earlier usage on its message, which history then re-reports.
+    ledger.importBatch([{ ...record, cost: 0.3, completedAt: record.completedAt! + 2 }])
+    expect(ledger.dashboard({ range: "all" }).total).toMatchObject({ cost: 0.3, messages: 1, tokens: 15 })
+  } finally { collector.clear(); ledger.close() }
+})
+
+test("steps ended for another location release their pending start", async () => {
+  const ledger = new CostLedger(":memory:")
+  let contextCalls = 0
+  const collector = createLiveCollector({ location, session: { get: async () => session, context: async () => { contextCalls++; return [message] } } }, ledger)
+  const signal = new AbortController().signal
+  try {
+    await collector.handle(event("session.step.started", started), signal)
+    await collector.handle(event("session.step.ended", ended, { directory: "/elsewhere" }), signal)
+    await collector.handle(event("session.step.ended", ended), signal)
+    // Without a retained start, the collector has to read the message from context.
+    expect(contextCalls).toBe(1)
+  } finally { collector.clear(); ledger.close() }
+})
+
 test("activation mid-step uses context and does not erase its usage on a usage-less failure", async () => {
   const ledger = new CostLedger(":memory:")
   const collector = createLiveCollector({ location, session: { get: async () => session, context: async () => [message] } }, ledger)

@@ -73,6 +73,14 @@ test("later historical completions and equal-version live corrections work; live
   expect(reopened.dashboard({ range: "all" }).total.cost).toBe(13)
 })
 
+test("live completion without usage keeps recorded usage but starts a new row from its record", () => {
+  const ledger = open()
+  ledger.recordLive({ ...record, cost: 0.3 }, 10)
+  ledger.recordLive({ ...record, cost: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, completedAt: record.completedAt! + 1 }, 11, { usage: false })
+  ledger.recordLive({ ...record, messageID: "new", cost: 0 }, 11, { usage: false })
+  expect(ledger.dashboard({ range: "all" }).total).toMatchObject({ cost: 0.3, messages: 2, tokens: 30 })
+})
+
 test("history can complete partial history but cannot regress completed records", () => {
   const ledger = open()
   ledger.importBatch([{ ...record, completedAt: undefined, cost: 0 }])
