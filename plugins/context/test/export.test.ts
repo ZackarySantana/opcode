@@ -20,6 +20,24 @@ test("redacts common tokens, quoted credentials, bearer tokens, and URL secrets"
   expect(redact("https://user:private@example.com/?token=private&view=summary")).toBe("https://[REDACTED]@example.com/?[REDACTED]&view=summary")
 })
 
+test("redacts prefixed environment secrets, non-HTTP URL credentials, and provider key formats", () => {
+  for (const value of ["OPENAI_API_KEY=private", "AWS_SECRET_ACCESS_KEY=private", "GITHUB_TOKEN=private", "client_secret=private",
+    "export DB_PASSWORD='private value'", "postgres://user:private@db.internal:5432/app", "mongodb+srv://user:private@cluster.example.net/db",
+    "redis://:private@cache:6379", "gsk_privateprivateprivate", "hf_privateprivateprivate", "AIzaSyprivateprivateprivateprivateprivate0",
+    "https://maps.example.com/api?key=private&q=x", "https://example.com/file?q=x&key=private"]) {
+    expect(redact(value)).not.toContain("private")
+  }
+  expect(redact("Authorization: Bearer abc.def")).toBe("[REDACTED]")
+  expect(redact('{"Authorization":"Bearer abc.def"} ok')).toBe('{"[REDACTED]} ok')
+  expect(redact("OPENAI_API_KEY=abc123 next")).toBe("[REDACTED] next")
+  expect(redact("postgres://user:pass@db/app")).toBe("postgres://[REDACTED]@db/app")
+  expect(redact("https://example.com/file?q=x&key=abc#top")).toBe("https://example.com/file?q=x&[REDACTED]#top")
+  for (const benign of ["max_tokens: 4096 output", "Token budget and password policy docs", "keyboard shortcuts", "monkey=banana",
+    "git@github.com:owner/repo.git", "file:///home/user/notes.md", "Basic", "AIza", "hf_hub", "mcp: docs connected"]) {
+    expect(redact(benign)).toBe(benign)
+  }
+})
+
 test("export is metadata only and sanitizes all string fields", () => {
   const messages: SessionMessageInfo[] = [
     { id: "ghp_abcdefghijklmnopqrst", type: "user", text: "BODY_USER_ONLY", time: { created: 1 }, files: [

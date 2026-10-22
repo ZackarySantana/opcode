@@ -51,7 +51,7 @@ $XDG_STATE_HOME/opencode/opcode-context/exports/
 
 The default state home is `~/.local/state`. Newly created directories use `0700`; files use `0600`, exclusive creation, and unique filenames. Existing directory permissions are not changed.
 
-Snapshots contain counts, identifiers, contributor labels, environment metadata, and limitations—not conversation text, reasoning text, tool outputs, or attachment data. Every string is passed through best-effort credential redaction, including common token prefixes, Bearer credentials, quoted assignments, and URL credentials. Metadata can still contain sensitive names/paths or unrecognized secrets: **review before sharing**. Nothing is uploaded.
+Snapshots contain counts, identifiers, contributor labels, environment metadata, and limitations—not conversation text, reasoning text, tool outputs, or attachment data. Every string is passed through best-effort credential redaction, including common token prefixes, Bearer credentials, secret assignments (also prefixed names such as `OPENAI_API_KEY=`), URL credentials for any scheme, and `key`/signature query parameters. Metadata can still contain sensitive names/paths or unrecognized secrets: **review before sharing**. Nothing is uploaded.
 
 ## Development
 
