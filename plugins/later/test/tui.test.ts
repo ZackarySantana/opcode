@@ -86,7 +86,7 @@ test("V2 TUI setup registers /later, sidebar contribution, keyboard workflow, an
     const bind = manager?.commands?.find((command) => command.id === `opcode-later.${action}`)?.bind
     expect(typeof bind === "string" ? bind.split(",").sort() : bind).toEqual([...expected].sort())
   }
-  expect(h.slots[0]?.append).toBe("sidebar.content")
+  expect(h.slots[0]?.after).toBe("sidebar.content")
   await h.run("open")
   h.stop()
   h.stop()

@@ -12,7 +12,8 @@ export default Plugin.define({
   setup(api) {
     const database = new FeedsDatabase(databasePath(api.options.database))
     const feeds = new FeedsController(database)
-    const unregisterSidebar = api.ui.slot({ append: "sidebar.content", render: () => <Sidebar feeds={feeds} /> })
+    // After the slot: below its appended sections, such as Pull requests. Later and Feed keep their config order.
+    const unregisterSidebar = api.ui.slot({ after: "sidebar.content", render: () => <Sidebar feeds={feeds} /> })
     let opened = false
     api.keymap.layer(() => ({ mode: "global", commands: [{
       id: "opcode-feed.open", title: "Feeds", group: "Opcode", palette: true,

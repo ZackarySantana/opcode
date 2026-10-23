@@ -31,7 +31,8 @@ export default Plugin.define({
       controller = host
       const view = () => { version(); return host.model.view() }
       unregisterRoute = api.ui.router.register({ name: MANAGER_ROUTE, render: () => <Manager view={view} screen={host.screen} /> })
-      unregisterSidebar = api.ui.slot({ append: "sidebar.content", render: () => <Sidebar view={view} /> })
+      // After the slot: below its appended sections, such as Pull requests. Later and Feed keep their config order.
+      unregisterSidebar = api.ui.slot({ after: "sidebar.content", render: () => <Sidebar view={view} /> })
       api.keymap.layer(() => ({
         mode: "global",
         commands: [{ ...host.command("open", "Later"), description: "Manage the client-local Later list", group: "Plugin", palette: true, slash: { name: "later" } }],
