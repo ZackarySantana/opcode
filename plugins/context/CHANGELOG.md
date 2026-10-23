@@ -1,5 +1,11 @@
 # @lidtop/opencode-context
 
+## 0.3.2
+
+### Patch Changes
+
+- 439c23e: Tag the package with the `opencode` and `opencode-plugin` npm keywords so plugin directories such as OpenDock can list it.
+
 ## 0.3.1
 
 ### Patch Changes

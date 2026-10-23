@@ -1,5 +1,12 @@
 # @lidtop/opencode-later
 
+## 0.2.3
+
+### Patch Changes
+
+- 439c23e: Tag the package with the `opencode` and `opencode-plugin` npm keywords so plugin directories such as OpenDock can list it.
+- 61dcef7: Later and Feed now place their sidebar sections below the ones OpenCode and other plugins add, so GH PR Status's Pull requests comes first. Between themselves, Later and Feed keep the order they're configured in.
+
 ## 0.2.2
 
 ### Patch Changes
