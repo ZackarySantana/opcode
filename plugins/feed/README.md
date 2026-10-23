@@ -61,7 +61,7 @@ Each subscription is a **status page** or a **release feed**:
 - **Status pages** report incidents and maintenance. Statuspage, incident.io, and Google dashboard formats are recognized; other status feeds are judged by their wording ("resolved", "operating normally"). A status page with nothing in progress, including an empty feed, counts as operational.
 - **Release feeds** are releases, blogs, and news, shown on the Releases tab. They are never read as incidents, and each contributes at most its three newest items so a busy feed cannot crowd out the others.
 
-Presets include npm, GitHub, Google Workspace, Google Cloud, Claude, OpenAI, Cloudflare, Fireworks, AWS, Azure, Fly.io, and Slack status pages, plus Claude Code, OpenCode, Bun, and Node.js releases, OpenRouter models, the GitHub changelog, the TypeScript, Go, and Deno blogs, OpenAI news, and Hacker News (300+ points). To add any other RSS or Atom feed, paste its URL in the Subscribe tab's box and choose **Add as status page** or **Add as release feed**.
+Presets include npm, GitHub, Docker, CircleCI, Google Workspace, Google Cloud, Claude, OpenAI, Cursor, DeepSeek, Cloudflare, Fireworks, AWS, Azure, Fly.io, Vercel, Supabase, Sentry, and Slack status pages, plus Claude Code, OpenCode, Antigravity CLI, Bun, Node.js, and VS Code releases, OpenRouter models, the Claude Platform release notes, the Codex and GitHub changelogs, the TypeScript, Go, Deno, and React blogs, the AWS News Blog, OpenAI news, and Hacker News (300+ points). To add any other RSS or Atom feed, paste its URL in the Subscribe tab's box and choose **Add as status page** or **Add as release feed**.
 
 ## Settings
 

@@ -204,7 +204,7 @@ test("release feeds always appear in /feed and in the sidebar only when asked; s
 test("the editor's box filters feeds under kind headings and offers to add a new URL as either kind", () => {
   const rows = managerRows([], presets, new Map())
   const label = (row: EditRow) => row.kind === "heading" || row.kind === "feed" ? row.title : `add ${row.feedKind}`
-  expect(editRows(rows, "google", candidateURL("google")).map(label)).toEqual(["STATUS PAGES", "Google Workspace", "Google Cloud"])
+  expect(editRows(rows, "google", candidateURL("google")).map(label)).toEqual(["STATUS PAGES", "Google Workspace", "Google Cloud", "RELEASES", "Antigravity CLI releases"])
   expect(editRows(rows, "openai", candidateURL("openai")).map(label)).toEqual(["STATUS PAGES", "OpenAI", "RELEASES", "OpenAI news"])
   expect(editRows(rows, "bun.sh/rss.xml", candidateURL("bun.sh/rss.xml")).slice(0, 2)).toEqual([
     { kind: "add", url: "https://bun.sh/rss.xml", feedKind: "status" },
