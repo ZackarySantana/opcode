@@ -1,5 +1,11 @@
 # @lidtop/opencode-cost
 
+## 0.2.4
+
+### Patch Changes
+
+- 439c23e: Tag the package with the `opencode` and `opencode-plugin` npm keywords so plugin directories such as OpenDock can list it.
+
 ## 0.2.3
 
 ### Patch Changes

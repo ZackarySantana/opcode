@@ -1,5 +1,21 @@
 # @lidtop/opencode-feed
 
+## 0.4.0
+
+### Minor Changes
+
+- b7ac06c: Add presets for the Vercel, Docker, Supabase, Cursor, DeepSeek, Sentry, and CircleCI status pages, plus Claude Platform release notes, the Codex changelog, Antigravity CLI and VS Code releases, the React blog, and the AWS News Blog.
+- 1368825: Unreachable feeds now recover on their own: a failed fetch is retried twice within a few seconds before the feed shows as unreachable, and unreachable feeds are fetched again on every refresh. A slow request can no longer overwrite a newer result, which could leave a recovered feed marked unreachable, and an overdue refresh starts within a minute of your computer waking from sleep. Choose how often feeds refresh with **Refresh every** in the `/feed` Settings tab (1m to 1h, default 10m); it replaces the `interval` plugin option, which is no longer read. Refresh every feed from anywhere with `/feed-refresh` or **Refresh feeds** in the command palette, and watch the next refresh count down at the bottom of the sidebar's Feeds section.
+- 611258a: **Show releases** is now **Sidebar releases**, a No/Yes choice: the Releases tab always shows release posts, and Yes adds them to the sidebar too. Your saved choice carries over: Both and Sidebar become Yes, and /feed and None become No.
+- 1ec8d96: Click an item or scheduled maintenance in the sidebar's **Feeds** section to open its link in your browser, as `enter` does in `/feed`; linked items underline on hover. Clicking a "+N more" line opens `/feed`.
+- 6c22b99: Add a **Sidebar items** setting to `/feed` Settings: choose how many items the sidebar's Feeds section lists (3, 5, 10, 15, or 20) before pointing to `/feed`. It starts at 5, the previous fixed length, so existing setups look the same.
+
+### Patch Changes
+
+- 86148b3: Click an item in `/feed` to open its link, as `enter` does. In the feed picker, `esc` now clears its search before closing it.
+- 439c23e: Tag the package with the `opencode` and `opencode-plugin` npm keywords so plugin directories such as OpenDock can list it.
+- 61dcef7: Later and Feed now place their sidebar sections below the ones OpenCode and other plugins add, so GH PR Status's Pull requests comes first. Between themselves, Later and Feed keep the order they're configured in.
+
 ## 0.3.0
 
 ### Minor Changes

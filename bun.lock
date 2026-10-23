@@ -45,7 +45,7 @@
     },
     "plugins/context": {
       "name": "@lidtop/opencode-context",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/ui": "workspace:*",
@@ -60,7 +60,7 @@
     },
     "plugins/cost": {
       "name": "@lidtop/opencode-cost",
-      "version": "0.2.3",
+      "version": "0.2.4",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/ui": "workspace:*",
@@ -75,7 +75,7 @@
     },
     "plugins/feed": {
       "name": "@lidtop/opencode-feed",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/tabs": "workspace:*",
@@ -105,7 +105,7 @@
     },
     "plugins/later": {
       "name": "@lidtop/opencode-later",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/ui": "workspace:*",
@@ -120,7 +120,7 @@
     },
     "plugins/sessions": {
       "name": "@lidtop/opencode-sessions",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/ui": "workspace:*",
