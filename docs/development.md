@@ -32,12 +32,28 @@ OpenCode windows, including the background service, lose those plugins until
 then. If a file changes during the preview (a setting OpenCode saves, or your
 edit), the change is kept and the plugins are added back to it; the comments it
 had before stay in its backup. Backups live in `.release/dev/config`, so if the
-launcher is killed outright, the next `mise run dev` from this checkout restores
-them. Only one preview at a time can hold your global config.
+launcher is killed outright, the next `mise run dev` (or `mise run prod`) from
+this checkout restores them. Only one preview or install at a time can hold your
+global config.
 
 **The preview uses a private server but your normal OpenCode login/session
 database.** It is not a sandbox: submitted prompts behave normally and may incur
 model costs. For isolated checks, see [verification](verification.md).
+
+## Published plugins
+
+To use the published packages outside a preview, install them globally:
+
+```sh
+mise run prod
+```
+
+It runs `opencode plugin add` for each `@lidtop/opencode-*` package that is in
+neither your global `opencode.json(c)` nor `cli.json`. A plugin already there,
+pinned to a version or with options, is left as it is: `opencode plugin add`
+checks only exact `opencode.json(c)` entries, so it would add a second copy.
+Name plugins to install only those, as with `mise run prod feed`. It refuses
+while a preview holds your global config.
 
 ## Checks
 

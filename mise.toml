@@ -6,6 +6,10 @@ node = "24.22.0"
 description = "Build and try Opcode in OpenCode without manual configuration"
 run = "bun scripts/dev.ts"
 
+[tasks.prod]
+description = "Install the published Opcode plugins in your global OpenCode config"
+run = "bun scripts/prod.ts"
+
 [tasks.check]
 run = "bun run check"
 

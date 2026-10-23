@@ -72,7 +72,7 @@ export function globalConfigFiles(environment: Environment): string[] {
 }
 
 /** The package an entry installs, without its version: "@scope/name@1.0.0" is "@scope/name". */
-function packageOf(entry: unknown): string {
+export function packageOf(entry: unknown): string {
   const spec = typeof entry === "string" ? entry : (entry as { package?: unknown } | null)?.package
   return typeof spec === "string" ? spec.replace(/(?!^)@.*$/, "") : ""
 }
@@ -114,27 +114,35 @@ async function resume(path: string, directory: string): Promise<string | undefin
 const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
 
 /**
+ * Holds global config for this process, refusing while another live preview or install has it, then puts back what
+ * a killed preview left suspended, so nothing is written over it. `release` gives the config up.
+ */
+export async function claimGlobalConfig(files: readonly string[], directory: string) {
+  await mkdir(directory, { recursive: true, mode: 0o700 })
+  const lock = join(directory, "pid")
+  const owner = Number(await read(lock))
+  if (owner && owner !== process.pid && alive(owner)) throw new Error(`Another Opcode preview or install (PID ${owner}) has your global config. Exit it first.`)
+  await save(lock, String(process.pid))
+  const warnings: string[] = []
+  for (const path of files) { const warning = await resume(path, directory); if (warning) warnings.push(warning) }
+  return { warnings, release: () => rm(lock, { force: true }) }
+}
+
+/**
  * OpenCode imports every plugin entry before applying `-id` removals, so a published copy of a previewed plugin in
  * global config collides with the local one and fails to load. Take those entries out for the preview, and put them
  * back with `restore`. Backups in `directory` let the next preview restore what a killed one left behind.
  */
 export async function suspendPublished(files: readonly string[], packages: readonly string[], directory: string) {
-  await mkdir(directory, { recursive: true, mode: 0o700 })
-  const lock = join(directory, "pid")
-  const owner = Number(await read(lock))
-  if (owner && owner !== process.pid && alive(owner)) throw new Error(`Another Opcode preview (PID ${owner}) has your global config. Exit it first.`)
-  await save(lock, String(process.pid))
-  const warnings: string[] = []
+  const { warnings, release } = await claimGlobalConfig(files, directory)
   const restore = async () => {
     for (const path of files) {
       try { const warning = await resume(path, directory); if (warning) warnings.push(warning) }
       catch (error) { warnings.push(`Could not restore ${path}: ${error instanceof Error ? error.message : error}. Its original is in ${backupOf(path, directory).original}.`) }
     }
-    await rm(lock, { force: true })
+    await release()
     return warnings.splice(0)
   }
-  // Recover first, so nothing is written over a file a killed preview left suspended.
-  for (const path of files) warnings.push(...await resume(path, directory).then((warning) => warning ? [warning] : []))
   const suspended: string[] = []
   try {
     for (const path of files) {

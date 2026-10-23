@@ -27,6 +27,7 @@
   },
   "scripts": {
     "dev": "bun scripts/dev.ts",
+    "prod": "bun scripts/prod.ts",
     "build": "bun scripts/build.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
