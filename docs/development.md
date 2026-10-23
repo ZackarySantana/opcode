@@ -42,16 +42,18 @@ model costs. For isolated checks, see [verification](verification.md).
 
 ## Published plugins
 
-To use the published packages outside a preview, install them globally:
+To use the published packages outside a preview, install or update them
+globally:
 
 ```sh
 mise run prod
 ```
 
-It runs `opencode plugin add` for each `@lidtop/opencode-*` package that is in
-neither your global `opencode.json(c)` nor `cli.json`. A plugin already there,
-pinned to a version or with options, is left as it is: `opencode plugin add`
-checks only exact `opencode.json(c)` entries, so it would add a second copy.
+It runs `opencode plugin update`, which updates every outdated plugin, then
+`opencode plugin add` for each `@lidtop/opencode-*` package that is in neither
+your global `opencode.json(c)` nor `cli.json`. A plugin already there, pinned to
+a version or with options, isn't added again: `opencode plugin add` checks only
+exact `opencode.json(c)` entries, so it would add a second copy.
 Name plugins to install only those, as with `mise run prod feed`. It refuses
 while a preview holds your global config.
 

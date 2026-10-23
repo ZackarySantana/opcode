@@ -3,13 +3,13 @@ import { claimGlobalConfig, globalConfigFiles, packageOf, selectPlugins } from "
 import { publicPackageName, repositoryRoot } from "./packaging"
 
 type Environment = Record<string, string | undefined>
-type Install = (name: string) => Promise<number>
+type OpenCode = (args: string[]) => Promise<number>
 
-/** `opencode plugin add`, the install command every plugin's README gives. */
-function opencodeInstall(environment: Environment): Install {
+/** The `opencode` CLI, for the plugin commands every plugin's README gives. */
+function openCode(environment: Environment): OpenCode {
   const executable = Bun.which("opencode", { PATH: environment.PATH })
   if (!executable) throw new Error("Install OpenCode V2 first, then run mise run prod again.")
-  return (name) => Bun.spawn([executable, "plugin", "add", name], { env: environment, stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited
+  return (args) => Bun.spawn([executable, ...args], { env: environment, stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited
 }
 
 /**
@@ -29,8 +29,8 @@ async function configuredPackages(files: readonly string[]): Promise<Set<string>
   return configured
 }
 
-/** Installs the published plugins missing from global config, leaving configured ones as they are. */
-export async function prod(arguments_: string[], root = repositoryRoot, environment: Environment = process.env, install = opencodeInstall(environment)) {
+/** Updates every outdated plugin, then installs the published plugins missing from global config. */
+export async function prod(arguments_: string[], root = repositoryRoot, environment: Environment = process.env, opencode = openCode(environment)) {
   const packages = selectPlugins(arguments_).map(publicPackageName)
   const files = globalConfigFiles(environment)
   // Holding global config keeps a preview from taking entries out mid-install.
@@ -38,14 +38,14 @@ export async function prod(arguments_: string[], root = repositoryRoot, environm
   try {
     for (const warning of claim.warnings) console.warn(warning)
     const configured = await configuredPackages(files)
-    const missing = packages.filter((name) => !configured.has(name))
-    for (const name of missing) {
-      const status = await install(name)
+    // Before any `plugin add`, whose config edit makes OpenCode reload its plugins.
+    const updated = await opencode(["plugin", "update"])
+    if (updated !== 0) return updated
+    for (const name of packages.filter((name) => !configured.has(name))) {
+      const status = await opencode(["plugin", "add", name])
       if (status !== 0) return status
     }
-    const kept = packages.filter((name) => configured.has(name))
-    if (kept.length) console.log(`Already in your global config, left as is: ${kept.join(", ")}.`)
-    if (missing.length) console.log("Restart OpenCode if the new plugins don't appear.")
+    console.log("Restart OpenCode if new or updated plugins don't appear.")
     return 0
   } finally { await claim.release() }
 }

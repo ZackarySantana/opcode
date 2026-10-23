@@ -22,51 +22,52 @@ async function fixture() {
   }
   await Bun.write(files.server, original.server)
   await Bun.write(files.cli, original.cli)
-  const installed: string[] = []
-  const install = async (name: string) => { installed.push(name); return 0 }
-  return { root, environment: { XDG_CONFIG_HOME: root }, files, original, installed, install, lock: join(root, ".release/dev/config/pid") }
+  const calls: string[] = []
+  const opencode = async (args: string[]) => { calls.push(args.join(" ")); return 0 }
+  return { root, environment: { XDG_CONFIG_HOME: root }, files, original, calls, opencode, lock: join(root, ".release/dev/config/pid") }
 }
 
-const missing = ["@lidtop/opencode-later", "@lidtop/opencode-sessions", "@lidtop/opencode-gh-pr-status"]
+// Configured plugins are updated in place; only Later, Sessions, and GH PR Status are added.
+const expected = ["plugin update", "plugin add @lidtop/opencode-later", "plugin add @lidtop/opencode-sessions", "plugin add @lidtop/opencode-gh-pr-status"]
 
-test("prod installs only the plugins global config lacks, whatever version, options, or file the others use", async () => {
-  const { root, environment, files, original, installed, install, lock } = await fixture()
-  expect(await prod([], root, environment, install)).toBe(0)
-  expect(installed).toEqual(missing)
+test("prod updates plugins, then installs only those global config lacks, whatever version, options, or file the others use", async () => {
+  const { root, environment, files, original, calls, opencode, lock } = await fixture()
+  expect(await prod([], root, environment, opencode)).toBe(0)
+  expect(calls).toEqual(expected)
   expect(await Bun.file(files.server).text()).toBe(original.server)
   expect(await Bun.file(files.cli).text()).toBe(original.cli)
   expect(await Bun.file(lock).exists()).toBe(false)
-  installed.length = 0
-  expect(await prod(["feed", "later"], root, environment, install)).toBe(0)
-  expect(installed).toEqual(["@lidtop/opencode-later"])
+  calls.length = 0
+  expect(await prod(["feed", "later"], root, environment, opencode)).toBe(0)
+  expect(calls).toEqual(["plugin update", "plugin add @lidtop/opencode-later"])
 })
 
 test("prod puts back what a killed preview took out instead of installing second copies", async () => {
-  const { root, environment, files, original, installed, install } = await fixture()
+  const { root, environment, files, original, calls, opencode } = await fixture()
   await suspendPublished(globalConfigFiles(environment), ["@lidtop/opencode-cost", "@lidtop/opencode-feed"], join(root, ".release/dev/config"))
   expect(await Bun.file(files.cli).json()).toEqual({ plugins: [] })
-  expect(await prod([], root, environment, install)).toBe(0)
+  expect(await prod([], root, environment, opencode)).toBe(0)
   expect(await Bun.file(files.server).text()).toBe(original.server)
   expect(await Bun.file(files.cli).text()).toBe(original.cli)
-  expect(installed).toEqual(missing)
+  expect(calls).toEqual(expected)
 })
 
 test("prod refuses while a running preview holds global config", async () => {
-  const { root, environment, installed, install, lock } = await fixture()
+  const { root, environment, calls, opencode, lock } = await fixture()
   const preview = Bun.spawn([process.execPath, "-e", "await Bun.sleep(30_000)"])
   try {
     await mkdir(join(root, ".release/dev/config"), { recursive: true })
     await Bun.write(lock, String(preview.pid))
-    await expect(prod([], root, environment, install)).rejects.toThrow(`PID ${preview.pid}`)
-    expect(installed).toEqual([])
+    await expect(prod([], root, environment, opencode)).rejects.toThrow(`PID ${preview.pid}`)
+    expect(calls).toEqual([])
     expect(await Bun.file(lock).text()).toBe(String(preview.pid))
   } finally { preview.kill() }
 })
 
-test("a failed install stops prod with its status and gives global config back", async () => {
+test("a failed command stops prod with its status and gives global config back", async () => {
   const { root, environment, lock } = await fixture()
-  const attempted: string[] = []
-  expect(await prod([], root, environment, async (name) => { attempted.push(name); return 1 })).toBe(1)
-  expect(attempted).toEqual(missing.slice(0, 1))
+  const calls: string[] = []
+  expect(await prod([], root, environment, async (args) => { calls.push(args.join(" ")); return args[1] === "add" ? 1 : 0 })).toBe(1)
+  expect(calls).toEqual(expected.slice(0, 2))
   expect(await Bun.file(lock).exists()).toBe(false)
 })

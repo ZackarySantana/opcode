@@ -7,7 +7,7 @@ description = "Build and try Opcode in OpenCode without manual configuration"
 run = "bun scripts/dev.ts"
 
 [tasks.prod]
-description = "Install the published Opcode plugins in your global OpenCode config"
+description = "Install or update the published Opcode plugins in your global OpenCode config"
 run = "bun scripts/prod.ts"
 
 [tasks.check]
