@@ -90,7 +90,7 @@
     },
     "plugins/gh-pr-status": {
       "name": "@lidtop/opencode-gh-pr-status",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/tabs": "workspace:*",
