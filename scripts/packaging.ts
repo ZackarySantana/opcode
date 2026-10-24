@@ -2,7 +2,7 @@ import { existsSync } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 
-export const pluginIDs = ["context", "cost", "later", "sessions", "feed", "gh-pr-status", "snippets"] as const
+export const pluginIDs = ["context", "cost", "later", "sessions", "feed", "gh-pr-status", "snippets", "media"] as const
 export function publicPackageName(id: typeof pluginIDs[number]) {
   return `@lidtop/opencode-${id}`
 }
@@ -22,6 +22,11 @@ export type Manifest = {
 
 export async function manifestAt(directory: string): Promise<Manifest> {
   return JSON.parse(await readFile(join(directory, "package.json"), "utf8"))
+}
+
+/** A plugin's source entrypoints: always the server's, plus the terminal side and RPC contract when it has them. */
+export function pluginEntries(directory: string): string[] {
+  return ["index.ts", "tui.tsx", "rpc.ts"].filter((entry) => entry === "index.ts" || existsSync(join(directory, "src", entry)))
 }
 
 /** A workspace plugin manifest, rejected unless it is the expected public package. */

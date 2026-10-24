@@ -120,6 +120,14 @@
         "solid-js": "catalog:host",
       },
     },
+    "plugins/media": {
+      "name": "@lidtop/opencode-media",
+      "version": "0.0.0",
+      "dependencies": {
+        "@opcode/core": "workspace:*",
+        "@opencode/plugin": "catalog:",
+      },
+    },
     "plugins/sessions": {
       "name": "@lidtop/opencode-sessions",
       "version": "0.2.3",
@@ -350,6 +358,8 @@
     "@lidtop/opencode-gh-pr-status": ["@lidtop/opencode-gh-pr-status@workspace:plugins/gh-pr-status"],
 
     "@lidtop/opencode-later": ["@lidtop/opencode-later@workspace:plugins/later"],
+
+    "@lidtop/opencode-media": ["@lidtop/opencode-media@workspace:plugins/media"],
 
     "@lidtop/opencode-sessions": ["@lidtop/opencode-sessions@workspace:plugins/sessions"],
 

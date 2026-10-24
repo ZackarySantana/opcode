@@ -2,7 +2,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
 import { pathToFileURL } from "node:url"
-import { pluginIDs, publicPackageName, repositoryRoot } from "./packaging"
+import { pluginEntries, pluginIDs, publicPackageName, repositoryRoot } from "./packaging"
 
 type PluginID = typeof pluginIDs[number]
 // Client-local plugins load through the CLI config so their options reach the terminal process: a server-loaded
@@ -43,12 +43,16 @@ export async function prepareDev(root: string, selected: PluginID[], environment
   for (const id of selected) {
     const source = join(root, ".release", `opcode-${id}`, "dist")
     const wrapper = join(directory, "plugins", id)
-    for (const entry of ["index", "tui"]) {
+    // Server-only plugins have no terminal side to load.
+    const sides = pluginEntries(join(root, "plugins", id)).filter((entry) => entry !== "rpc.ts").map((entry) => entry.replace(/\.tsx?$/, ""))
+    for (const entry of sides) {
       if (!await Bun.file(join(source, `${entry}.js`)).exists()) throw new Error(`Missing build for opcode-${id}. Run mise run build first.`)
     }
+    // Start clean, so a side the plugin no longer has isn't loaded from an old wrapper.
+    await rm(wrapper, { recursive: true, force: true })
     await mkdir(wrapper, { recursive: true, mode: 0o700 })
     // Local V2 directories discover root entrypoints, rather than npm exports.
-    for (const entry of ["index", "tui"]) {
+    for (const entry of sides) {
       await Bun.write(join(wrapper, `${entry}.js`), `export { default } from ${JSON.stringify(pathToFileURL(join(source, `${entry}.js`)).href)}\n`)
     }
     entries.push({ id, entry: { package: wrapper, options: { database: join(data, `${id}.sqlite`) } } })

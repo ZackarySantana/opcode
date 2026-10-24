@@ -27,8 +27,8 @@ async function fixture() {
   return { root, environment: { XDG_CONFIG_HOME: root }, files, original, calls, opencode, lock: join(root, ".release/dev/config/pid") }
 }
 
-// Configured plugins are updated in place; only Later, Sessions, GH PR Status, and Snippets are added.
-const expected = ["plugin update", "plugin add @lidtop/opencode-later", "plugin add @lidtop/opencode-sessions", "plugin add @lidtop/opencode-gh-pr-status", "plugin add @lidtop/opencode-snippets"]
+// Configured plugins are updated in place; only Later, Sessions, GH PR Status, Snippets, and Media are added.
+const expected = ["plugin update", "plugin add @lidtop/opencode-later", "plugin add @lidtop/opencode-sessions", "plugin add @lidtop/opencode-gh-pr-status", "plugin add @lidtop/opencode-snippets", "plugin add @lidtop/opencode-media"]
 
 test("prod updates plugins, then installs only those global config lacks, whatever version, options, or file the others use", async () => {
   const { root, environment, files, original, calls, opencode, lock } = await fixture()
