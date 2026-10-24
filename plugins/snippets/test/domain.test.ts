@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { effectiveSnippets, formatSnippet, parseSnippet, type Snippet } from "../src/domain"
+import { effectiveSnippets, formatSnippet, parseSnippet, takenAliases, type Snippet } from "../src/domain"
 
 const snippet = (name: string, scope: Snippet["scope"], aliases: string[] = []): Snippet => ({ name, scope, aliases, body: `${scope} ${name}`, path: `/${scope}/${name}.md` })
 
@@ -21,4 +21,18 @@ test("frontmatter round-trips, including bodies that look like frontmatter, and 
   expect(parseSnippet("plain body\n")).toEqual({ aliases: [], body: "plain body" })
   expect(parseSnippet("---\ndescription: Plain: text\naliases:\n  - one\n  - Bad Name\nother: x\n---\nbody")).toEqual({ description: "Plain: text", aliases: ["one"], body: "body" })
   expect(parseSnippet("---\naliases: one, 'two'\n---\nbody")).toEqual({ aliases: ["one", "two"], body: "body" })
+})
+
+test("frontmatter survives a byte order mark and unindented alias lists", () => {
+  expect(parseSnippet("\uFEFF---\ndescription: Review\naliases: [rv]\n---\nbody")).toEqual({ description: "Review", aliases: ["rv"], body: "body" })
+  expect(parseSnippet("---\naliases:\n- one\n- two\nother:\n- ignored\n---\nbody")).toEqual({ aliases: ["one", "two"], body: "body" })
+})
+
+test("aliases another snippet would keep are reported, but a project alias may override a global one", () => {
+  const snippets = [snippet("taken", "global"), snippet("other", "global", ["rv"]), snippet("first", "project", ["fx"]), snippet("fresh", "project", ["old"])]
+  const owners = (proposed: Snippet) => takenAliases(snippets, proposed).map(([alias, owner]) => [alias, owner.path])
+  expect(owners(snippet("fresh", "project", ["taken", "rv", "fx", "new"]))).toEqual([["taken", "/global/taken.md"], ["fx", "/project/first.md"]])
+  // The snippet's own earlier aliases don't count against it, and project snippets don't shadow a global write.
+  expect(owners(snippet("fresh", "project", ["old"]))).toEqual([])
+  expect(owners(snippet("wide", "global", ["fx", "first", "rv"]))).toEqual([["rv", "/global/other.md"]])
 })

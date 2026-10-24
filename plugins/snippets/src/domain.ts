@@ -33,13 +33,15 @@ function unquote(value: string): string {
 
 /** Reads `description` and `aliases` (inline list, comma list, or `- item` lines); other keys are ignored. */
 export function parseSnippet(text: string): SnippetFields {
+  // Some editors save a byte order mark, which would hide the frontmatter.
+  if (text.startsWith("\uFEFF")) text = text.slice(1)
   const match = FRONTMATTER.exec(text)
   if (!match) return { aliases: [], body: text.trim() }
   let description: string | undefined
   const aliases: string[] = []
   let key: string | undefined
   for (const line of (match[1] ?? "").split(/\r?\n/)) {
-    const item = /^\s+-\s*(.*)$/.exec(line)
+    const item = /^\s*-\s*(.*)$/.exec(line)
     if (item) { if (key === "aliases") aliases.push(unquote(item[1]!.trim())); continue }
     const field = /^([A-Za-z][\w-]*)\s*:\s*(.*)$/.exec(line)
     if (!field) continue
@@ -75,16 +77,35 @@ export function validateSnippet(name: string, fields: SnippetFields): SnippetFie
   return { description: fields.description?.replace(/\s+/g, " ").trim() || undefined, aliases, body }
 }
 
-/** Every name and alias a user can type, mapped to its snippet. Project names override global ones, and names beat aliases. */
-export function effectiveSnippets(snippets: readonly Snippet[]): Map<string, Snippet> {
-  const ordered = [...snippets.filter((snippet) => snippet.scope === "project"), ...snippets.filter((snippet) => snippet.scope === "global")]
-  const keys = new Map<string, Snippet>()
+type Keyed = Pick<Snippet, "name" | "scope" | "aliases">
+
+/**
+ * Every name and alias a user can type, mapped to its snippet. Project names override global ones, names beat aliases,
+ * and an alias claimed twice goes to the project snippet, then to the first by name.
+ */
+export function effectiveSnippets<T extends Keyed>(snippets: readonly T[]): Map<string, T> {
+  const rank = (snippet: T) => snippet.scope === "project" ? 0 : 1
+  const ordered = [...snippets].sort((a, b) => rank(a) - rank(b) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+  const keys = new Map<string, T>()
   for (const snippet of ordered) if (!keys.has(snippet.name)) keys.set(snippet.name, snippet)
   for (const snippet of ordered) {
     if (keys.get(snippet.name) !== snippet) continue
     for (const alias of snippet.aliases) if (!keys.has(alias)) keys.set(alias, snippet)
   }
   return keys
+}
+
+/**
+ * Aliases of `snippet` that would insert another snippet once it replaces its namesake, each with that other snippet.
+ * A global snippet is checked against global ones only: a project's own snippets may override it there.
+ */
+export function takenAliases<T extends Keyed>(snippets: readonly T[], snippet: Keyed): [alias: string, owner: T][] {
+  const others = snippets.filter((other) => (other.scope !== snippet.scope || other.name !== snippet.name) && (snippet.scope === "project" || other.scope === "global"))
+  const keys = effectiveSnippets<T | Keyed>([...others, snippet])
+  return snippet.aliases.flatMap((alias) => {
+    const owner = keys.get(alias)
+    return owner && owner !== snippet ? [[alias, owner as T] as [string, T]] : []
+  })
 }
 
 /** The skill name that marks a registration as ours; anything else at the same ID is a collision. */

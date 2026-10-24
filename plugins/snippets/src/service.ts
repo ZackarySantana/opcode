@@ -71,10 +71,10 @@ export class SnippetService {
     })
   }
 
-  /** The snippet a name or alias currently means. */
-  async get(name: string): Promise<Snippet | undefined> {
+  /** Every snippet file, freshly read. */
+  async list(): Promise<Snippet[]> {
     await this.refresh()
-    return effectiveSnippets(this.snippets).get(name)
+    return this.snippets
   }
 
   async write(scope: Scope, name: string, fields: SnippetFields): Promise<string> {

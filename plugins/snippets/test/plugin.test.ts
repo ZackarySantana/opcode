@@ -122,3 +122,20 @@ test("writes and deletes wait for approval under the session's ask rules, and a 
   expect(asked).toContain(f.approvals[2].action)
   expect(await readdir(join(f.root, "project/.opencode/snippets"))).toEqual(["fresh.md"])
 })
+
+test("deletes of missing snippets and writes with aliases that insert other snippets fail without asking", async () => {
+  const f = await fixture({
+    "config/opencode/snippets/taken.md": "TAKEN",
+    "config/opencode/snippets/other.md": "---\naliases: [shared]\n---\nOTHER",
+    "project/.opencode/snippets/review.md": "---\naliases: [rv]\n---\nREVIEW",
+  })
+  await expect(f.call("snippet_delete", { name: "rv", scope: "project" })).rejects.toThrow("rv is an alias of @review. Delete review (project) instead.")
+  await expect(f.call("snippet_delete", { name: "review", scope: "global" })).rejects.toThrow("No global snippet named review; there is a project one.")
+  await expect(f.call("snippet_write", { name: "triage", body: "TRIAGE", scope: "project", aliases: ["taken", "rv", "tr"] }))
+    .rejects.toThrow("These aliases would not insert @triage: taken inserts @taken (global), rv inserts @review (project). Drop or rename them.")
+  expect(f.approvals).toEqual([])
+  // A project alias wins over a global snippet's alias.
+  await f.call("snippet_write", { name: "fresh", body: "FRESH", scope: "project", aliases: ["shared"] })
+  expect(f.approvals).toHaveLength(1)
+  expect(f.skills().find((skill) => skill.id === "shared")?.content).toBe("FRESH")
+})
