@@ -95,4 +95,11 @@ const settingRows = [
     current: (settings) => settings.sidebarItems,
     update: (sidebarItems) => ({ sidebarItems }),
   } satisfies SettingRow<Settings, number>,
+  {
+    id: "tools", label: "Agent tools",
+    description: "Lets the agent list, add, edit, and delete items. Off: new sessions don't get the tools, and older ones are refused.",
+    choices: [{ value: true, label: "on" }, { value: false, label: "off" }],
+    current: (settings) => settings.agentTools,
+    update: (agentTools) => ({ agentTools }),
+  } satisfies SettingRow<Settings, boolean>,
 ] as SettingRow<Settings>[]

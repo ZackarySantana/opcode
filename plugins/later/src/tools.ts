@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 import type { ToolContext } from "@opencode/plugin/promise/tool"
+import { messageText } from "./domain"
 import type { LaterDatabase } from "./sqlite"
 
 const object = (properties: Record<string, unknown>, required: string[]) => ({ type: "object", properties, required, additionalProperties: false })
@@ -7,7 +8,7 @@ const id = { type: "string", description: "The item's id, from later_list." }
 
 /**
  * The user's Later list, for the agent. They share the terminal's database, which shows changes within a poll.
- * Only deleting asks the user: a completed item can be restored from history.
+ * Only deleting asks the user: an edit reports the previous text, and a completed item can be restored.
  */
 export function laterTools(database: LaterDatabase, assert: Plugin.Context["permission"]["assert"]) {
   const item = (input: unknown) => {
@@ -17,7 +18,7 @@ export function laterTools(database: LaterDatabase, assert: Plugin.Context["perm
     return found
   }
   const changed = "The item changed while this ran; call later_list and try again."
-  return [
+  const tools = [
     {
       name: "later_list",
       description: "List the user's Later items: prompts they saved to come back to, in their order. Use these tools only when the user asks about their Later list.",
@@ -37,14 +38,33 @@ export function laterTools(database: LaterDatabase, assert: Plugin.Context["perm
       execute: async (input: unknown) => ({ content: `Added ${database.add((input as { message: string }).message)}.` }),
     },
     {
-      name: "later_complete",
-      description: "Mark an active Later item complete, moving it to the user's history.",
-      input: object({ id }, ["id"]),
+      name: "later_edit",
+      description: "Edit a Later item: replace its text, complete it (moving it to the user's history), or restore a completed one to the end of the list.",
+      input: object({
+        id,
+        message: { type: "string", description: "The item's new text." },
+        completed: { type: "boolean", description: "true completes an active item; false restores a completed one." },
+      }, ["id"]),
       options: { codemode: false },
       execute: async (input: unknown) => {
-        const found = item(input)
-        if (found.completedAt !== undefined) return { content: "Already completed." }
-        return { content: database.complete(found) ? "Completed." : changed }
+        const { message, completed } = input as { message?: string; completed?: boolean }
+        if (message === undefined && completed === undefined) throw new Error("Pass message, completed, or both.")
+        let found = item(input)
+        const results: string[] = []
+        if (message !== undefined) {
+          const now = Date.now()
+          if (!database.edit(found, message, now)) return { content: changed }
+          // The transcript keeps the old text, so an unwanted edit can be undone.
+          results.push(`Edited. Previous text: ${JSON.stringify(found.message)}.`)
+          // What this edit wrote, not a re-read: a change by someone else since then still stops the next step.
+          found = { ...found, message: messageText(message), updatedAt: now }
+        }
+        if (completed !== undefined) {
+          if (completed === (found.completedAt !== undefined)) results.push(completed ? "Already completed." : "Already active.")
+          else if (!(completed ? database.complete(found) : database.restore(found))) results.push(changed)
+          else results.push(completed ? "Completed." : "Restored.")
+        }
+        return { content: results.join(" ") }
       },
     },
     {
@@ -65,4 +85,10 @@ export function laterTools(database: LaterDatabase, assert: Plugin.Context["perm
       },
     },
   ]
+  // Sessions from before the user turned the tools off still list them, so every call reads the setting.
+  return tools.map((tool) => ({
+    ...tool,
+    execute: async (input: unknown, context: ToolContext) =>
+      database.toolsDisabledAt() === undefined ? tool.execute(input, context) : { content: "The user turned off Later tools. They won't be available in new sessions." },
+  }))
 }

@@ -65,12 +65,14 @@ When the server side is loaded (an `opencode.json(c)` entry), the agent can mana
 | --- | --- |
 | `later_list` | Lists active items with their IDs, and completed ones on request |
 | `later_add` | Adds an item to the end of the list |
-| `later_complete` | Moves an active item to history |
+| `later_edit` | Replaces an item's text, moves an active item to history, or restores a completed one to the end of the list |
 | `later_delete` | Deletes an item permanently, **after you approve it** in OpenCode's permission prompt, which shows the item's text |
 
-Adding and completing don't ask: a completed item can be restored from History. Deleting asks unless your permission rules already allow or deny `later_delete`. If the item changes while you decide, it is not deleted. Changes show up in an open `/later` dialog and the sidebar within a poll.
+Adding and editing don't ask: an edit's result in the transcript includes the previous text, and a completed item can be restored. Deleting asks unless your permission rules already allow or deny `later_delete`. If the item changes while you decide, it is not deleted. Changes show up in an open `/later` dialog and the sidebar within a poll.
 
-The tools edit the list on **the server's machine**. With a local server that is the terminal's own list. With a remote server they edit a separate list on that machine, not the one in your sidebar; load Later from `cli.json` alone there if that would be confusing.
+To stop the agent using them, set **Agent tools** to off in `/later` **Settings**. Sessions created after that don't get the tools. Older sessions keep them listed, so their requests stay the same and keep hitting the provider's prompt cache, but every call is refused. Turning the tools back on asks first: it adds them to every open session's request, so each one's next message misses the prompt cache once. The setting is shared through the database and applies from the next request, without a restart.
+
+The tools edit the list on **the server's machine**. With a local server that is the terminal's own list. With a remote server they edit a separate list on that machine, not the one in your sidebar, and follow that list's **Agent tools** setting, not yours; load Later from `cli.json` alone there if that would be confusing.
 
 ## Options
 
@@ -100,7 +102,7 @@ The terminal view loaded from an `opencode.json(c)` entry receives no options (O
 
 ## Data and privacy
 
-The database stores the item text you enter, IDs, positions, timestamps, and a revision counter. It collects no session or project metadata, but item text can contain anything you type. It also keeps the sidebar item count. It is not encrypted: protect its directory, file, WAL sidecars, and backups. Close all clients and OpenCode servers before moving or replacing it, and keep the WAL sidecars when backing up an open database. Later does not use OpenCode's own database or any server RPC; the agent's tools open the same file directly.
+The database stores the item text you enter, IDs, positions, timestamps, and a revision counter. It collects no session or project metadata, but item text can contain anything you type. It also keeps the sidebar item count and, while agent tools are off, when they were turned off. It is not encrypted: protect its directory, file, WAL sidecars, and backups. Close all clients and OpenCode servers before moving or replacing it, and keep the WAL sidecars when backing up an open database. Later does not use OpenCode's own database or any server RPC; the agent's tools open the same file directly.
 
 ## Replacing opencode-later
 

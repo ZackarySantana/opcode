@@ -34,7 +34,8 @@ export class LaterDatabase {
       INSERT OR IGNORE INTO metadata (id, revision) VALUES (1, 0);
       CREATE TABLE IF NOT EXISTS settings (
         id INTEGER PRIMARY KEY CHECK (id = 1),
-        sidebar_items INTEGER NOT NULL
+        sidebar_items INTEGER NOT NULL,
+        tools_disabled_at INTEGER
       );
     `))
   }
@@ -127,13 +128,26 @@ export class LaterDatabase {
   }
 
   settings(): Settings {
-    const row = this.db.query<{ sidebarItems: number }, []>("SELECT sidebar_items AS sidebarItems FROM settings WHERE id = 1").get()
-    return row && sidebarItemChoices.includes(row.sidebarItems) ? { sidebarItems: row.sidebarItems } : defaultSettings
+    const row = this.db.query<{ sidebarItems: number; disabledAt: number | null }, []>(
+      "SELECT sidebar_items AS sidebarItems, tools_disabled_at AS disabledAt FROM settings WHERE id = 1").get()
+    if (!row) return defaultSettings
+    return {
+      sidebarItems: sidebarItemChoices.includes(row.sidebarItems) ? row.sidebarItems : defaultSettings.sidebarItems,
+      agentTools: row.disabledAt === null,
+    }
   }
 
-  saveSettings(settings: Settings): void {
-    this.db.query("INSERT INTO settings (id, sidebar_items) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET sidebar_items = excluded.sidebar_items")
-      .run(settings.sidebarItems)
+  /** When the user turned the agent's tools off, or undefined while they are on. */
+  toolsDisabledAt(): number | undefined {
+    return this.db.query<{ at: number | null }, []>("SELECT tools_disabled_at AS at FROM settings WHERE id = 1").get()?.at ?? undefined
+  }
+
+  /** Turning the tools off again keeps the first time: moving it later would add them to sessions created since. */
+  saveSettings(settings: Settings, now = Date.now()): void {
+    this.db.query(`INSERT INTO settings (id, sidebar_items, tools_disabled_at) VALUES (1, ?, ?) ON CONFLICT (id) DO UPDATE SET
+      sidebar_items = excluded.sidebar_items,
+      tools_disabled_at = CASE WHEN excluded.tools_disabled_at IS NOT NULL THEN COALESCE(tools_disabled_at, excluded.tools_disabled_at) END`)
+      .run(settings.sidebarItems, settings.agentTools ? null : now)
   }
 
   private active(): LaterItem[] {

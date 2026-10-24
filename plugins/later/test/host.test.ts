@@ -112,6 +112,28 @@ test("add, edit, and delete prompts replace the dialog, which reopens with their
   expect(h.database.snapshot().active).toEqual([])
 })
 
+test("agent tools turn back on only after the user confirms, even from a stale view, and turn off at once", async () => {
+  const h = harness()
+  h.host.open()
+  // Another terminal turned them off; changing the sidebar count here leaves them off.
+  h.external.saveSettings({ sidebarItems: 5, agentTools: false })
+  await h.host.updateSettings({ sidebarItems: 10 })
+  expect(h.external.settings()).toEqual({ sidebarItems: 10, agentTools: false })
+
+  let pending = h.host.updateSettings({ agentTools: true })
+  expect(h.dialog()).toBe("native")
+  h.answer(false)
+  await pending
+  expect(h.external.settings().agentTools).toBe(false)
+  pending = h.host.updateSettings({ agentTools: true })
+  h.answer(true)
+  await pending
+  expect(h.external.settings().agentTools).toBe(true)
+
+  await h.host.updateSettings({ agentTools: false })
+  expect(h.external.settings().agentTools).toBe(false)
+})
+
 test("a dialog that replaces a prompt stays open, and the prompt's answer is dropped", async () => {
   const h = harness()
   h.host.open()

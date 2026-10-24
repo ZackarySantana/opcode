@@ -217,9 +217,10 @@ test("keeps the legacy state path and resolves custom paths relative to state, n
 
 test("sidebar item count defaults to five, persists a choice, and ignores values outside the choices", () => {
   const { first, second } = disk()
-  expect(first.settings()).toEqual({ sidebarItems: 5 })
-  first.saveSettings({ sidebarItems: 10 })
-  expect(second.settings()).toEqual({ sidebarItems: 10 })
-  first.saveSettings({ sidebarItems: 7 })
-  expect(second.settings()).toEqual({ sidebarItems: 5 })
+  expect(first.settings().sidebarItems).toBe(5)
+  first.saveSettings({ sidebarItems: 10, agentTools: true })
+  expect(second.settings().sidebarItems).toBe(10)
+  first.saveSettings({ sidebarItems: 7, agentTools: true })
+  expect(second.settings().sidebarItems).toBe(5)
 })
+
