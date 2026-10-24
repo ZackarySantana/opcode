@@ -179,3 +179,25 @@ test("real OpenTUI paste from the dialog preserves prompt text and never submits
     expect(h.external.snapshot().completed).toHaveLength(1)
   } finally { await view.dispose() }
 })
+
+test("an item's text starts beside its number, wraps under itself, and stays clear of the age", async () => {
+  const h = harness()
+  h.external.add("/cost the cost column should show tokens too, alongside dollars, for every model in the list")
+  h.dispatch("opcode-later.open")
+  const view = await h.render(() => h.dialog()?.render(), { width: 60, height: 20 })
+  const card = (frame: string) => {
+    const lines = frame.split("\n")
+    return lines.slice(lines.findIndex((line) => line.includes("1. /cost")))
+  }
+  const beside = /1\. \/cost\b.*\S +added \S+ ago/
+  try {
+    const [first, second] = card(await view.waitForFrame((frame) => frame.includes("added")))
+    expect(first).toMatch(beside)
+    // Continuation lines hang under the text, not the number.
+    const text = first!.indexOf("/cost")
+    expect(second!.slice(text - 3, text + 1)).toMatch(/^ {3}\S$/)
+    view.resize(34, 20)
+    const [narrow] = card(await view.waitForFrame((frame) => frame.includes("1. /cost") && !frame.includes("cost column")))
+    expect(narrow).toMatch(beside)
+  } finally { await view.dispose() }
+})

@@ -56,9 +56,9 @@ function Items(props: { later: LaterController; completed: boolean }) {
     { id: `${PREFIX}.move.up`, bind: "shift+k", enabled: active, run: withCurrent((item) => later.move(item, -1)) },
   ])
   const card = (item: LaterItem): Item => props.completed
-    ? { key: item.id, mark: { glyph: "✓", color: palette.success, title: palette.muted, strong: false }, head: "",
+    ? { key: item.id, mark: { glyph: "✓", color: palette.success, title: palette.muted, strong: false },
       time: `completed ${relative(item.completedAt!)}`, title: item.message }
-    : { key: item.id, mark: { glyph: `${all().indexOf(item) + 1}.`, color: palette.value, title: palette.text, strong: false }, head: "",
+    : { key: item.id, mark: { glyph: `${all().indexOf(item) + 1}.`, color: palette.value, title: palette.text, strong: false },
       time: `added ${relative(item.createdAt)}`, title: item.message }
   const hints = () => props.completed ? [
     ...tab.navigation,

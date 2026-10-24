@@ -22,8 +22,8 @@ export interface Mark {
 export interface Item {
   key: string
   mark: Mark
-  /** Colored by the mark, e.g. a status. */
-  head: string
+  /** Colored by the mark, e.g. a status. Without one, a dialog card's title follows the glyph, wrapping under itself. */
+  head?: string
   /** Muted, after the head. */
   detail?: string
   title: string
@@ -90,20 +90,28 @@ export function ItemList(props: {
 function ItemCard(props: { item: Item; id: string; focused: boolean; click(): void }) {
   const palette = usePalette()
   const strong = (text: string) => props.item.mark.strong ? <b>{text}</b> : text
+  const title = () => <text minWidth={0} wrapMode="word" fg={props.item.mark.title}>{strong(props.item.title)}</text>
   return (
     // Every card keeps its border so focus moves without shifting layout.
     <box id={props.id} flexDirection="column" minWidth={0} flexShrink={0} border paddingLeft={1} paddingRight={1}
       borderColor={props.focused ? palette.value : palette.background}
       onMouseDown={(event) => { if (event.button !== 0) return; event.stopPropagation(); props.click() }}>
       <box flexDirection="row" justifyContent="space-between" gap={2} minWidth={0}>
-        <text wrapMode="none" minWidth={0} flexShrink={1} fg={props.item.mark.color}>
-          {props.item.mark.glyph} {strong(props.item.head)}
-          <Show when={props.item.detail}><span style={{ fg: palette.muted }}>  {props.item.detail}</span></Show>
-        </text>
+        <Show when={props.item.head} fallback={
+          <box flexDirection="row" gap={1} minWidth={0} flexShrink={1}>
+            <text wrapMode="none" flexShrink={0} fg={props.item.mark.color}>{props.item.mark.glyph}</text>
+            {title()}
+          </box>
+        }>{(head) => (
+          <text wrapMode="none" minWidth={0} flexShrink={1} fg={props.item.mark.color}>
+            {props.item.mark.glyph} {strong(head())}
+            <Show when={props.item.detail}><span style={{ fg: palette.muted }}>  {props.item.detail}</span></Show>
+          </text>
+        )}</Show>
         <text wrapMode="none" flexShrink={0} fg={palette.muted}>{props.item.time}</text>
       </box>
       <box flexDirection="column" minWidth={0} paddingLeft={2}>
-        <text minWidth={0} wrapMode="word" fg={props.item.mark.title}>{strong(props.item.title)}</text>
+        <Show when={props.item.head}>{title()}</Show>
         <Show when={props.item.summary}><text minWidth={0} wrapMode="word" fg={palette.muted}>{props.item.summary}</text></Show>
         <Show when={props.item.link}><text minWidth={0} wrapMode="none" fg={props.focused ? palette.value : palette.border}>{props.item.link}</text></Show>
       </box>
