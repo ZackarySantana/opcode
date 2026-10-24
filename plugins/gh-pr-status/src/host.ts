@@ -62,7 +62,7 @@ export async function sendFeedback(api: Pick<Context, "client" | "ui">, signal: 
     const feedback = await fetchFeedback(run, signal, session.location.directory)
     const { text, summary } = formatFeedback(feedback, prompt)
     const { pr } = feedback
-    const title = `PR #${pr.number}${pr.state === "OPEN" ? "" : ` (${pr.state.toLowerCase()})`}`
+    const title = `PR #${pr.number}`
     if (!text) return api.ui.toast.show({ title, message: `No review comments to send. ${summary}` })
     await api.client.session.prompt({ sessionID, text }, { signal })
     api.ui.toast.show({ variant: "success", title, message: `Sent review comments. ${summary}` })

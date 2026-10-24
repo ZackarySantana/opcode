@@ -42,7 +42,7 @@ test("sends unresolved feedback from others, anchored to code, and leaves out wh
   const { text } = formatFeedback(await fetchFeedback(runner(), signal, "/repo"), "Review {branch} (#{pr}).")
   expect(text).toBe(`Review cache-artifacts (#42).
 
-PR #42 (open): Cache build artifacts
+PR #42: Cache build artifacts
 ${url}
 Included 3 threads, 1 review, 1 comment; left out 1 resolved, 3 yours, 3 from bots.
 
@@ -75,7 +75,7 @@ Does this need a changelog?`)
 })
 
 test("caps each comment and the whole text, counting what was left out; sends nothing when nothing is left", () => {
-  const base: Feedback = { viewer: "me", pr: { number: 42, title: "t", url, branch: "b", state: "OPEN" }, threads: [], reviews: [], comments: [] }
+  const base: Feedback = { viewer: "me", pr: { number: 42, title: "t", url, branch: "b" }, threads: [], reviews: [], comments: [] }
   const long = { author: "alice", bot: false, body: "x".repeat(2000), url }
   const { text, summary } = formatFeedback({ ...base, comments: Array.from({ length: 40 }, () => long) })
   expect(summary).toBe("Included 24 comments; left out 16 over the length limit.")
@@ -83,9 +83,11 @@ test("caps each comment and the whole text, counting what was left out; sends no
   expect(formatFeedback({ ...base, comments: [{ ...long, author: "Me" }] })).toEqual({ summary: "Included nothing; left out 1 yours." })
 })
 
-test("gh's explanation surfaces when the branch has no pull request", async () => {
+test("a branch without an open pull request fails with the reason", async () => {
   const none: Runner = async () => ({ stdout: "", stderr: "no pull requests found for branch \"main\"\n", status: 1 })
   await expect(fetchFeedback(none, signal, "/repo")).rejects.toThrow("no pull requests found for branch \"main\"")
+  const merged: Runner = async () => ({ stdout: JSON.stringify({ number: 7, title: "t", url, headRefName: "main", state: "MERGED" }), stderr: "", status: 0 })
+  await expect(fetchFeedback(merged, signal, "/repo")).rejects.toThrow("no open pull request for branch \"main\" (#7 is merged)")
 })
 
 test("/ghpr-comments reads the open session's directory and sends the feedback to that session as a prompt", async () => {

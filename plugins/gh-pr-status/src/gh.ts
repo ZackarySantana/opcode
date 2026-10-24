@@ -152,6 +152,8 @@ export async function fetchFeedback(run: Runner, signal: AbortSignal, directory:
   const view = await run(["pr", "view", "--json", "number,title,url,headRefName,state"], signal, directory)
   // Without one, gh prints only an explanation, such as "no pull requests found for branch ...".
   const pr = json<{ number: number; title: string; url: string; headRefName: string; state: string }>(view.stdout, view.stderr, view.status)
+  // gh can pick a merged or closed pull request, such as an old one from a reused branch name.
+  if (pr.state !== "OPEN") throw new Error(`no open pull request for branch "${pr.headRefName}" (#${pr.number} is ${pr.state.toLowerCase()})`)
   const url = new URL(pr.url)
   const [, owner, name] = url.pathname.split("/")
   // gh api queries the default host, not the repository's, such as a GitHub Enterprise server's.
@@ -161,7 +163,7 @@ export async function fetchFeedback(run: Runner, signal: AbortSignal, directory:
   if (!response.data || !raw) throw failure(response.errors, result.stderr)
   return {
     viewer: response.data.viewer.login,
-    pr: { number: pr.number, title: pr.title, url: pr.url, branch: pr.headRefName, state: pr.state },
+    pr: { number: pr.number, title: pr.title, url: pr.url, branch: pr.headRefName },
     threads: raw.reviewThreads.nodes.map((thread) => ({ ...thread, diffHunk: thread.comments.nodes[0]?.diffHunk, comments: thread.comments.nodes.map(comment) })),
     reviews: raw.reviews.nodes.map((review) => ({ ...comment(review), state: review.state })),
     comments: raw.comments.nodes.map(comment),

@@ -29,7 +29,7 @@ export interface Review extends Comment {
 
 export interface Feedback {
   readonly viewer: string
-  readonly pr: { readonly number: number; readonly title: string; readonly url: string; readonly branch: string; readonly state: string }
+  readonly pr: { readonly number: number; readonly title: string; readonly url: string; readonly branch: string }
   readonly threads: readonly Thread[]
   readonly reviews: readonly Review[]
   readonly comments: readonly Comment[]
@@ -113,5 +113,5 @@ export function formatFeedback(feedback: Feedback, template = DEFAULT_PROMPT): {
   if (!kept.length) return { summary }
   const { pr } = feedback
   const prompt = template.replaceAll("{branch}", pr.branch).replaceAll("{pr}", String(pr.number))
-  return { summary, text: `${prompt}\n\nPR #${pr.number} (${pr.state.toLowerCase()}): ${pr.title}\n${pr.url}\n${summary}\n\n${kept.map((section) => section.text).join("\n\n")}` }
+  return { summary, text: `${prompt}\n\nPR #${pr.number}: ${pr.title}\n${pr.url}\n${summary}\n\n${kept.map((section) => section.text).join("\n\n")}` }
 }
