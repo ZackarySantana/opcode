@@ -8,7 +8,7 @@ Save the next idea without interrupting the current one. Keep a shared Later lis
 
 ## Install
 
-Requires OpenCode **2.1.1 or newer in the 2.x line**.
+Requires OpenCode **2.1.3 or newer in the 2.x line**.
 
 ```sh
 opencode plugin add @lidtop/opencode-later

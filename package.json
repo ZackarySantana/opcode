@@ -8,9 +8,9 @@
     "catalog": {
       "@changesets/cli": "2.31.1",
       "@xterm/headless": "6.0.0",
-      "@opencode/plugin": "2.1.1",
-      "@opencode/client": "2.1.1",
-      "@opencode/theme": "2.1.1",
+      "@opencode/plugin": "2.1.3",
+      "@opencode/client": "2.1.3",
+      "@opencode/theme": "2.1.3",
       "@opentui/core": "0.6.6",
       "@opentui/solid": "0.6.6",
       "solid-js": "1.9.12",

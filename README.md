@@ -100,7 +100,7 @@ Someone asked for your review an hour ago, and your own pull request has been ap
 
 ## Install
 
-Requires the **OpenCode 2.1.1+ terminal UI, within the 2.x release line**.
+Requires the **OpenCode 2.1.3+ terminal UI, within the 2.x release line**.
 
 Pick the plugins you want and run their install commands:
 

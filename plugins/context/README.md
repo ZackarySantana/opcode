@@ -8,7 +8,7 @@ See what's taking up space in your current OpenCode session: recorded token usag
 
 ## Install
 
-Requires OpenCode **2.1.1 or newer in the 2.x line**.
+Requires OpenCode **2.1.3 or newer in the 2.x line**.
 
 ```sh
 opencode plugin add @lidtop/opencode-context
