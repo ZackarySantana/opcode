@@ -33,13 +33,22 @@ test("the agent lists, adds, and completes items in the terminal's list without 
   const kept = f.terminal.add("from the terminal", 1)
   expect(await f.call("later_add", { message: "  from the agent\n" })).toMatch(/^Added /)
   expect(f.terminal.snapshot().active.map((item) => item.message)).toEqual(["from the terminal", "from the agent"])
-  expect(await f.call("later_complete", { id: kept })).toBe("Completed.")
-  expect(await f.call("later_complete", { id: kept })).toBe("Already completed.")
+  expect(await f.call("later_edit", { id: kept, completed: true })).toBe("Completed.")
   const added = f.terminal.snapshot().active[0]!.id
   expect(JSON.parse(await f.call("later_list", {}))).toEqual({ active: [{ id: added, message: "from the agent" }] })
   expect(JSON.parse(await f.call("later_list", { completed: true })).completed).toEqual([{ id: kept, message: "from the terminal" }])
-  await expect(f.call("later_complete", { id: "missing" })).rejects.toThrow("later_list")
+  await expect(f.call("later_edit", { id: "missing", completed: true })).rejects.toThrow("later_list")
   await expect(f.call("later_add", { message: " " })).rejects.toThrow("empty")
+  expect(f.approvals).toEqual([])
+})
+
+test("editing reports the previous text and can restore a completed item", async () => {
+  const f = await fixture()
+  const id = f.terminal.add("first draft", 1)
+  f.terminal.complete(f.terminal.get(id)!, 2)
+  expect(await f.call("later_edit", { id, message: "second draft", completed: false })).toBe('Edited. Previous text: "first draft". Restored.')
+  expect(f.terminal.get(id)).toMatchObject({ message: "second draft", completedAt: undefined })
+  await expect(f.call("later_edit", { id })).rejects.toThrow("message, completed")
   expect(f.approvals).toEqual([])
 })
 

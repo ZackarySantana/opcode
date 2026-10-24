@@ -65,10 +65,10 @@ When the server side is loaded (an `opencode.json(c)` entry), the agent can mana
 | --- | --- |
 | `later_list` | Lists active items with their IDs, and completed ones on request |
 | `later_add` | Adds an item to the end of the list |
-| `later_complete` | Moves an active item to history |
+| `later_edit` | Replaces an item's text, moves an active item to history, or restores a completed one to the end of the list |
 | `later_delete` | Deletes an item permanently, **after you approve it** in OpenCode's permission prompt, which shows the item's text |
 
-Adding and completing don't ask: a completed item can be restored from History. Deleting asks unless your permission rules already allow or deny `later_delete`. If the item changes while you decide, it is not deleted. Changes show up in an open `/later` dialog and the sidebar within a poll.
+Adding and editing don't ask: an edit's result in the transcript includes the previous text, and a completed item can be restored. Deleting asks unless your permission rules already allow or deny `later_delete`. If the item changes while you decide, it is not deleted. Changes show up in an open `/later` dialog and the sidebar within a poll.
 
 The tools edit the list on **the server's machine**. With a local server that is the terminal's own list. With a remote server they edit a separate list on that machine, not the one in your sidebar; load Later from `cli.json` alone there if that would be confusing.
 
