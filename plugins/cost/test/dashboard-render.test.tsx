@@ -499,8 +499,6 @@ test("Time tab shows turn timing and opens a longest turn's session; tab switche
     }
     expect(frame.split("\n").find((line) => line.includes("Root sessions only"))?.trimEnd().endsWith("1h 30m")).toBe(true)
 
-    await harness.run("turn.open")
-    expect(harness.toasts).toEqual(["Open OpenCode in /other to resume this session."])
     await harness.run("turn.next")
     await scene.waitForFrame((text) => text.includes("> Fix login"))
     await harness.run("turn.open")

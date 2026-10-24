@@ -95,10 +95,7 @@ function DashboardScreen(props: ScreenProps) {
   const longest = () => time()?.longest ?? []
   const current = () => Math.max(0, Math.min(selected(), longest().length - 1))
   const openTurn = (turn: LongTurn | undefined) => {
-    if (!turn) return
-    // Like Sessions: the terminal opens only sessions of its own location.
-    if (turn.directory === props.location().directory) props.api.ui.router.navigate({ type: "session", sessionID: turn.sessionID })
-    else props.api.ui.toast.show({ variant: "info", message: `Open OpenCode in ${turn.directory} to resume this session.` })
+    if (turn) props.api.ui.router.navigate({ type: "session", sessionID: turn.sessionID })
   }
   props.api.keymap.layer(() => ({
     mode: MODE,
