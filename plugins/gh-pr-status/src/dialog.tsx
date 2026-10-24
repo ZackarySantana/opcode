@@ -13,8 +13,6 @@ import { card } from "./style"
 export const PREFIX = "opcode-gh-pr-status"
 export const TITLE = "Pull requests"
 
-export const hiddenLine = (hidden: number, noun: string) => `${hidden} ${noun}${hidden === 1 ? "" : "s"} hidden`
-
 export function PullRequestsDialog(props: { prs: PullRequestsController }) {
   const current = createMemo(() => view(props.prs.snapshot()))
   return (
@@ -71,9 +69,9 @@ function PullList(props: {
       ]}
       header={<>
         <Show when={props.prs.error()}>{(error) => <text minWidth={0} wrapMode="word" fg={palette.error}>! {error()}</text>}</Show>
-        <Show when={hidden()}>
-          <text minWidth={0} wrapMode="word" fg={palette.warning}>! {hiddenLine(hidden(), "pull request")}{reason() ? `: ${reason()}` : ""}</text>
-        </Show>
+        <Show when={hidden()}>{(count) => (
+          <text minWidth={0} wrapMode="word" fg={palette.warning}>! {count()} pull request{count() === 1 ? "" : "s"} hidden{reason() ? `: ${reason()}` : ""}</text>
+        )}</Show>
       </>} />
   )
 }
