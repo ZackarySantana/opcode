@@ -7,7 +7,7 @@ export const team = (name: string): Reviewer => { const [org, slug] = name.split
 
 export function pr(number: number, title: string, options: {
   author?: string; draft?: boolean; conflicts?: boolean; decision?: string; checks?: string
-  requested?: { reviewer: Reviewer; hours?: number }[]; review?: { author: string; state: string }
+  requested?: { reviewer: Reviewer; hours?: number }[]; review?: { state: string; hours?: number }
 } = {}) {
   return {
     url: `https://github.com/acme/web/pull/${number}`, number, title, isDraft: options.draft ?? false, createdAt: hoursAgo(72),
@@ -15,7 +15,7 @@ export function pr(number: number, title: string, options: {
     author: { login: options.author ?? "me" }, repository: { nameWithOwner: "acme/web" },
     commits: { nodes: [{ commit: { statusCheckRollup: options.checks ? { state: options.checks } : null } }] },
     reviewRequests: { nodes: (options.requested ?? []).map(({ reviewer }) => ({ requestedReviewer: reviewer })) },
-    latestReviews: { nodes: options.review ? [{ author: { login: options.review.author }, state: options.review.state, submittedAt: hoursAgo(1) }] : [] },
+    viewerLatestReview: options.review ? { state: options.review.state, submittedAt: hoursAgo(options.review.hours ?? 1) } : null,
     timelineItems: { nodes: (options.requested ?? []).filter(({ hours }) => hours !== undefined).map(({ reviewer, hours }) => ({ createdAt: hoursAgo(hours!), requestedReviewer: reviewer })) },
   }
 }
@@ -40,8 +40,8 @@ export const response = JSON.stringify({
       null,
     ] },
     reviewed: { nodes: [
-      pr(10, "Cache build artifacts", { author: "alice", review: { author: "me", state: "COMMENTED" } }),
-      pr(20, "Docs for webhooks", { author: "erin", review: { author: "me", state: "APPROVED" } }),
+      pr(10, "Cache build artifacts", { author: "alice", review: { state: "COMMENTED" } }),
+      pr(20, "Docs for webhooks", { author: "erin", review: { state: "APPROVED" } }),
     ] },
   },
   errors: [{ type: "FORBIDDEN", path: ["requested", "nodes", 4], extensions: { saml_failure: true }, message: saml }],

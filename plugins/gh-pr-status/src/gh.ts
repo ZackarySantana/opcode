@@ -30,7 +30,7 @@ fragment pr on PullRequest {
   repository { nameWithOwner }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
   reviewRequests(first: 30) { nodes { requestedReviewer { ${reviewer} } } }
-  latestReviews(first: 30) { nodes { author { login } state submittedAt } }
+  viewerLatestReview { state submittedAt }
   timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: 50) { nodes { ... on ReviewRequestedEvent { createdAt requestedReviewer { ${reviewer} } } } }
 }`
 
@@ -47,7 +47,7 @@ interface RawPullRequest {
   repository: { nameWithOwner: string }
   commits: { nodes: { commit: { statusCheckRollup: { state: string } | null } }[] }
   reviewRequests: { nodes: { requestedReviewer: RawReviewer }[] }
-  latestReviews: { nodes: { author: { login: string } | null; state: string; submittedAt: string | null }[] }
+  viewerLatestReview: { state: string; submittedAt: string | null } | null
   timelineItems: { nodes: { createdAt?: string; requestedReviewer?: RawReviewer }[] }
 }
 interface GraphQLResponse {
@@ -61,7 +61,7 @@ const nameOf = (raw: RawReviewer) => raw?.slug && raw.organization ? `${raw.orga
 const checks = { SUCCESS: "passing", FAILURE: "failing", ERROR: "failing", PENDING: "running", EXPECTED: "running" } as const
 const decisions = ["APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED"] as const
 
-function parsePullRequest(raw: RawPullRequest, viewer: string): PullRequest {
+function parsePullRequest(raw: RawPullRequest): PullRequest {
   const requestedAt = new Map<string, number>()
   for (const event of raw.timelineItems.nodes) {
     const name = event.requestedReviewer && nameOf(event.requestedReviewer)
@@ -71,7 +71,8 @@ function parsePullRequest(raw: RawPullRequest, viewer: string): PullRequest {
     const name = nameOf(requestedReviewer)
     return name ? { kind: requestedReviewer?.slug ? "team" : "user", name, requestedAt: requestedAt.get(name) } : { kind: "hidden" }
   })
-  const yours = raw.latestReviews.nodes.find((review) => review.author?.login.toLowerCase() === viewer.toLowerCase())
+  // latestReviews can leave yours out, such as an approval of commits since rebased away. A draft review has no submittedAt.
+  const yours = raw.viewerLatestReview
   const state = raw.commits.nodes[0]?.commit.statusCheckRollup?.state
   return {
     url: raw.url, number: raw.number, title: raw.title, repository: raw.repository.nameWithOwner, author: raw.author?.login ?? "ghost",
@@ -79,7 +80,7 @@ function parsePullRequest(raw: RawPullRequest, viewer: string): PullRequest {
     decision: decisions.find((decision) => decision === raw.reviewDecision),
     checks: state ? checks[state as keyof typeof checks] : undefined,
     requested,
-    yourReview: yours?.state,
+    yourReview: yours?.submittedAt ? { state: yours.state, submittedAt: Date.parse(yours.submittedAt) } : undefined,
   }
 }
 
@@ -94,14 +95,13 @@ export function parseResponse(stdout: string, stderr: string, status = 0): Omit<
   }
   const data = response.data
   if (!data) throw new Error(response.errors?.[0]?.message ?? (stderr.trim() || "gh returned no data"))
-  const viewer = data.viewer.login
   const search = (alias: keyof typeof searches): Search => {
     const nodes = data[alias]?.nodes ?? []
-    const prs = nodes.filter((node): node is RawPullRequest => node !== null).map((node) => parsePullRequest(node, viewer))
+    const prs = nodes.filter((node): node is RawPullRequest => node !== null).map(parsePullRequest)
     const error = response.errors?.find((error) => error.path?.[0] === alias)
     return { prs, hidden: nodes.length - prs.length, reason: error?.extensions?.saml_failure ? SAML : error?.message }
   }
-  return { viewer, mine: search("mine"), requested: search("requested"), reviewed: search("reviewed") }
+  return { viewer: data.viewer.login, mine: search("mine"), requested: search("requested"), reviewed: search("reviewed") }
 }
 
 /** Your pull requests, review requests, and reviews, with the teams you're on as "org/slug". */

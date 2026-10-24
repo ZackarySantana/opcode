@@ -45,7 +45,7 @@ Each pull request shows its status, author, repository and number, when it was o
 
 A pull request **waits on you** when:
 
-- it requests your review, or your team's;
+- it requests your review, or your team's, and you haven't reviewed it since (GitHub can keep a team's request after you review, such as one a ruleset requires);
 - it's yours and has merge conflicts, failing checks, or requested changes, or is approved and ready to merge.
 
 Statuses are colored by urgency: red for your pull requests that are blocked, yellow for review requests (**Review requested** for you, **Team: web** for your team), green for approved, the theme's highlight for pull requests waiting on someone else, and gray for drafts and pull requests you've approved or commented on.

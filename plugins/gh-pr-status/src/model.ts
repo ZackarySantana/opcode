@@ -18,8 +18,8 @@ export interface PullRequest {
   readonly decision?: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED"
   readonly checks?: "passing" | "failing" | "running"
   readonly requested: readonly Reviewer[]
-  /** The state of your latest review, such as "APPROVED". */
-  readonly yourReview?: string
+  /** Your latest submitted review, such as "APPROVED". */
+  readonly yourReview?: { readonly state: string; readonly submittedAt: number }
 }
 
 export interface Search {
@@ -91,31 +91,42 @@ function authored(pr: PullRequest): Entry {
 
 type Named = Extract<Reviewer, { name: string }>
 
-/** A pull request GitHub says requests your review, directly or through one of your teams. */
-function requested(pr: PullRequest, snapshot: Snapshot): Entry {
+/**
+ * A pull request GitHub's search says requests your review, directly or through one of your teams, checked against its
+ * current reviewers: the search can lag behind a review you just submitted. Undefined when nothing requested could be you.
+ */
+function requested(pr: PullRequest, snapshot: Snapshot): Entry | undefined {
   const viewer = snapshot.viewer.toLowerCase()
   const direct = pr.requested.find((reviewer): reviewer is Named => reviewer.kind === "user" && reviewer.name.toLowerCase() === viewer)
   const visible = pr.requested.filter((reviewer): reviewer is Named => reviewer.kind === "team")
   const known = visible.filter((team) => snapshot.teams.includes(team.name))
   // Only without your team list (no read:org) may any visible team be yours. A request that isn't for you by name
-  // and matches none of your teams came through a team your token can't see.
+  // and matches none of your teams came through a team your token can't see, or a team it can but your list lacks.
   const teams = known.length || snapshot.teams.length || direct ? known : visible
-  const names = [...teams.map((team) => team.name), ...!direct && !teams.length ? [HIDDEN_TEAM] : []]
+  const unseen = direct || teams.length ? [] : pr.requested.filter((reviewer) => reviewer.kind !== "user")
+  if (!direct && !teams.length && !unseen.length) return undefined
+  // A review satisfies every request made before it; one made since, or at an unknown time, still waits on you.
+  // GitHub drops your own request when you review, but can keep a team's, such as one a ruleset requires.
+  const reviewedAt = pr.yourReview?.submittedAt
+  const waits = (reviewer: Reviewer) => reviewer.kind === "hidden" || reviewer.requestedAt === undefined || reviewedAt === undefined || reviewer.requestedAt > reviewedAt
+  const names = [...teams.map((team) => team.name), ...unseen.length ? [HIDDEN_TEAM] : []]
   const times = teams.flatMap((team) => team.requestedAt ?? [])
   const team = names[0]?.split("/").pop()
+  const shared = { pr, own: false, direct: !!direct, teams: names, requestedAt: direct ? direct.requestedAt : times.length ? Math.max(...times) : undefined }
+  if (![...direct ? [direct] : [], ...teams, ...unseen].some(waits)) return { ...shared, ...reviewStatus(pr), pending: false }
   return {
-    pr, pending: true, own: false, direct: !!direct, teams: names, tone: "attention",
+    ...shared, pending: true, tone: "attention",
     label: direct ? "Review requested" : !teams.length ? "Team review" : `Team: ${team}${names.length > 1 ? ` +${names.length - 1}` : ""}`,
-    requestedAt: direct ? direct.requestedAt : times.length ? Math.max(...times) : undefined,
   }
 }
 
-function reviewed(pr: PullRequest): Entry {
-  const entry = (label: string, tone: Tone): Entry => ({ pr, label, tone, pending: false, own: false, direct: false, teams: [] })
-  if (pr.yourReview === "APPROVED") return entry("You approved", "quiet")
-  if (pr.yourReview === "CHANGES_REQUESTED") return entry("You requested changes", "waiting")
-  return entry("You commented", "quiet")
+function reviewStatus(pr: PullRequest): { label: string; tone: Tone } {
+  if (pr.yourReview?.state === "APPROVED") return { label: "You approved", tone: "quiet" }
+  if (pr.yourReview?.state === "CHANGES_REQUESTED") return { label: "You requested changes", tone: "waiting" }
+  return { label: "You commented", tone: "quiet" }
 }
+
+const reviewed = (pr: PullRequest): Entry => ({ pr, ...reviewStatus(pr), pending: false, own: false, direct: false, teams: [] })
 
 export interface View {
   readonly mine: readonly Entry[]
@@ -127,12 +138,12 @@ export interface View {
 
 export function view(snapshot: Snapshot | undefined): View {
   if (!snapshot) return { mine: [], reviewing: [], teams: [] }
-  const requests = snapshot.requested.prs.filter((pr) => pr.author !== snapshot.viewer).map((pr) => requested(pr, snapshot))
+  const requests = snapshot.requested.prs.filter((pr) => pr.author !== snapshot.viewer).flatMap((pr) => requested(pr, snapshot) ?? [])
   const direct = requests.filter((entry) => entry.direct)
-  const pending = new Set(direct.map((entry) => entry.pr.url))
+  const byName = new Set(direct.map((entry) => entry.pr.url))
   return {
     mine: snapshot.mine.prs.map(authored),
-    reviewing: [...direct, ...snapshot.reviewed.prs.filter((pr) => !pending.has(pr.url)).map(reviewed)],
+    reviewing: [...direct, ...snapshot.reviewed.prs.filter((pr) => !byName.has(pr.url)).map(reviewed)],
     teams: [...direct, ...requests.filter((entry) => !entry.direct)].filter((entry) => entry.teams.length),
   }
 }
@@ -147,8 +158,8 @@ export function teamChoices(snapshot: Snapshot, entries: readonly Entry[], saved
 /** What waits on you, as the sidebar lists it: your review requests, your teams', then your own pull requests. */
 export function sidebarEntries(current: View, settings: Settings): Entry[] {
   return [
-    ...current.reviewing.filter((entry) => entry.direct),
-    ...settings.sidebarTeams ? onTeam(current.teams, settings.team).filter((entry) => !entry.direct) : [],
+    ...current.reviewing.filter((entry) => entry.pending),
+    ...settings.sidebarTeams ? onTeam(current.teams, settings.team).filter((entry) => entry.pending && !entry.direct) : [],
     ...settings.sidebarMine ? current.mine.filter((entry) => entry.pending) : [],
   ]
 }
