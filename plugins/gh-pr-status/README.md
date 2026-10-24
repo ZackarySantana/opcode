@@ -54,6 +54,12 @@ The sidebar lists only what waits on you: review requests for you first, then yo
 
 Links open in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-open` (Linux); on WSL it tries `wslview`, `xdg-open`, then PowerShell.
 
+## Send review comments to the agent
+
+Run `/ghpr-comments` in a session (or select **Send PR review comments** in the command palette) to send the review feedback on the pull request for the branch checked out in the session's directory, as `gh pr view` finds it there. It arrives as your prompt in that session: instructions to verify each comment against the code and come back with an action for it (reply why not, or change the code and what that changes), then the pull request and its comments, each anchored to its file and line with links.
+
+It sends the unresolved review threads someone else started, with your replies in them, plus others' review summaries and pull request comments. It leaves out resolved threads, threads you started, your own review summaries and comments, pending reviews, and anything from bots. An outdated thread stays, marked with the line it was on and the end of its diff. Long comments are cut at 1,500 characters, a long thread keeps its first comment and last three replies, and the whole message stops at about 40,000 characters; the message and the toast count what was left out. When nothing is left, nothing is sent. It reads the first 100 threads, reviews, and comments, and the first 100 comments in a thread. It only reads from GitHub.
+
 ## Teams and hidden pull requests
 
 Review requests come from GitHub's `review-requested:@me` search, which includes requests to any team you're on, closed and secret teams included, as long as `gh` can see them. Team names come from `gh api /user/teams`, which needs the `read:org` scope that `gh auth login` grants by default; without it, every team requested on a pull request that asks for your review is treated as yours.
@@ -84,11 +90,12 @@ Load the plugin in global `~/.config/opencode/cli.json` to pass options; server-
 }
 ```
 
+- `commentsPrompt`: the instructions `/ghpr-comments` sends before the comments. `{branch}` becomes the pull request's branch and `{pr}` its number. The default asks the agent to verify each comment, look at the bigger picture, and come back with an actionable item for each.
 - `database`: where settings and the team filter are stored. Relative paths resolve from the client's `$XDG_STATE_HOME/opencode` (or `~/.local/state/opencode`), not the project directory. The default is `$XDG_STATE_HOME/opencode/opcode-gh-pr-status/gh-pr-status.sqlite` (or `~/.local/state/opencode/opcode-gh-pr-status/gh-pr-status.sqlite`).
 
 ## Data and privacy
 
-The database stores your settings and team filter. Pull requests are kept in memory only. Requests go to GitHub through `gh`, with its credentials; nothing else is sent.
+The database stores your settings and team filter. Pull requests are kept in memory only. Requests go to GitHub through `gh`, with its credentials. `/ghpr-comments` sends the comments it reads to your session, and from there to your model provider, like any prompt; nothing else is sent.
 
 ## Development
 

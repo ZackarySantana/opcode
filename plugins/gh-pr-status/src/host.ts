@@ -1,7 +1,10 @@
+import { errorMessage } from "@opcode/core"
 import { createRefresh, setTimer, type RefreshState, type SetTimer } from "@opcode/core/refresh"
 import { createSchedule, type Schedule } from "@opcode/tabs/schedule"
 import { createSignal, type Signal } from "solid-js"
-import { fetchSnapshot, runGh, type Runner } from "./gh"
+import type { Context } from "@opencode/plugin/tui/context"
+import { formatFeedback } from "./comments"
+import { fetchFeedback, fetchSnapshot, runGh, type Runner } from "./gh"
 import type { Settings, Snapshot } from "./model"
 import type { SettingsDatabase } from "./sqlite"
 
@@ -44,5 +47,26 @@ export class PullRequestsController {
   dispose(): void {
     this.reads.dispose()
     this.schedule.dispose()
+  }
+}
+
+/** Sends the review feedback on the open session's pull request to that session, as your prompt. */
+export async function sendFeedback(api: Pick<Context, "client" | "ui">, signal: AbortSignal, prompt?: string, run: Runner = runGh): Promise<void> {
+  const route = api.ui.router.current()
+  if (route.type !== "session") return api.ui.toast.show({ variant: "warning", message: "Open a session first: /ghpr-comments sends to the open session." })
+  const { sessionID } = route
+  api.ui.toast.show({ message: "Fetching review comments..." })
+  try {
+    // The session's directory, not the client's, picks the branch.
+    const session = await api.client.session.get({ sessionID }, { signal })
+    const feedback = await fetchFeedback(run, signal, session.location.directory)
+    const { text, summary } = formatFeedback(feedback, prompt)
+    const { pr } = feedback
+    const title = `PR #${pr.number}${pr.state === "OPEN" ? "" : ` (${pr.state.toLowerCase()})`}`
+    if (!text) return api.ui.toast.show({ title, message: `No review comments to send. ${summary}` })
+    await api.client.session.prompt({ sessionID, text }, { signal })
+    api.ui.toast.show({ variant: "success", title, message: `Sent review comments. ${summary}` })
+  } catch (error) {
+    if (!signal.aborted) api.ui.toast.show({ variant: "error", title: "Review comments", message: errorMessage(error) })
   }
 }
