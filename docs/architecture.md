@@ -10,7 +10,7 @@
 | Sessions | Searchable user/assistant text and session metadata; active sessions projected from server state | Server-owned SQLite, live events, RPC; client history import; client-side snapshot plus live events for active sessions | Browser, filters, preview, active-sessions sidebar, `/go` |
 | Feed | Subscriptions, settings, and an interpreted timeline of feed items | Client-local SQLite, feed fetching | Status/Upcoming/Releases/Subscribe/Settings dialog, feed picker, sidebar |
 | GH PR Status | Pull requests classified by what waits on you, settings, and a saved team filter | Client-local SQLite, `gh` GraphQL and REST calls | Mine/Reviewing/Teams/Settings dialog, team picker, sidebar |
-| Snippets | Global and project snippet files, precedence, and `#name` tokens | Server-owned files, skill registration, prompt/context hooks, authoring tools, RPC | List with preview, prompt paste bridge, authoring sessions |
+| Snippets | Global and project snippet files, precedence, and `#name` tokens | Server-owned files, skill registration, prompt/context hooks, authoring tools, RPC | Dialog with previews, prompt paste bridge, authoring sessions |
 
 Later is deliberately not an execution engine: starting an item pastes it into
 the existing prompt, without submission. Its server side only registers agent
@@ -53,10 +53,11 @@ through OpenTUI without submitting.
 
 `@opcode/ui/screen` shares route ownership, immutable return-route snapshots,
 open/update/back navigation, stale-interaction guards, mounted input modes, and
-stable keymap registration. Snippets uses the same controller; Context and the
-dialog plugins (Cost, Feed, GH PR Status, Later, Sessions) use the shared
-component-owned dialog commands instead: native dialogs already own the `modal`
-input mode, so plugins must not push a competing route mode. Tab pills and actionable keyboard hints invoke the same commands/state
+stable keymap registration for full-screen routes; no plugin opens one now.
+Context and the dialog plugins (Cost, Feed, GH PR Status, Later, Sessions,
+Snippets) use the shared component-owned dialog commands: native dialogs already
+own the `modal` input mode, so plugins must not push a competing route mode.
+Tab pills and actionable keyboard hints invoke the same commands/state
 transitions from mouse input. The host's `router.current()`
 is a live store proxy, never a safe value to save directly as a return destination.
 Persistence, domain actions, and their cancellable I/O remain plugin-specific.
@@ -65,9 +66,10 @@ Persistence, domain actions, and their cancellable I/O remain plugin-specific.
 search box and Escape that undoes one step at a time, grouped item cards that
 open on enter or click, the picker, the Settings tab, sidebar items with "+N
 more" and refresh countdown lines, the refresh schedule, and the browser
-launcher. Sessions uses its dialog, picker, and sidebar items too, and Cost its tabbed
-dialog and picker. Native prompts replace a custom dialog, so Later passes its own tab
-and focus signals to come back on the same tab and item. It is a separate workspace so
+launcher. Sessions uses its dialog, picker, and sidebar items too, Cost its tabbed
+dialog and picker, and Snippets its tabbed dialog and item cards. Native prompts
+replace a custom dialog, so Later passes its own tab and focus signals, and Snippets
+its focus signal, to come back on the same tab and item. It is a separate workspace so
 that changing it releases only its consumers, not every consumer of `@opcode/ui`.
 
 `@opcode/core` contains small host-independent utilities, including the XDG
