@@ -89,6 +89,29 @@ test("images take the returned format's extension, are numbered when several, an
   ])
 })
 
+test("fewer images than requested keep the approved numbered names, without another edit check", async () => {
+  const f = fixture(() => Response.json({ data: [{ b64_json: Buffer.from("image").toString("base64"), media_type: "image/png" }] }))
+  expect(await f.call("media_image", { prompt: "x", model: "openai/gpt-image-2", path: "art/hero.png", count: 2 })).toContain("Saved art/hero-1.png.")
+  expect(await Bun.file(join(f.project, "art/hero-1.png")).text()).toBe("image")
+  expect(f.checks.filter((check) => check.action === "edit")).toEqual([{ action: "edit", resources: ["art/hero-1.png", "art/hero-2.png"] }])
+})
+
+test("an extension that already names the returned format is kept as written", async () => {
+  let type = "image/jpeg"
+  const f = fixture(() => Response.json({ data: [{ b64_json: Buffer.from("image").toString("base64"), media_type: type }] }))
+  const image = (path: string) => f.call("media_image", { prompt: "x", model: "openai/gpt-image-2", path })
+  expect(await image("photo.jpeg")).toContain("Saved photo.jpeg.")
+  type = "image/png"
+  expect(await image("Hero.PNG")).toContain("Saved Hero.PNG.")
+  expect(f.checks.filter((check) => check.action === "edit")).toEqual([{ action: "edit", resources: ["photo.jpeg"] }, { action: "edit", resources: ["Hero.PNG"] }])
+})
+
+test("no audio from OpenRouter is an error, and nothing is saved", async () => {
+  const f = fixture(() => new Response(new Uint8Array(0), { headers: { "content-type": "audio/mpeg" } }))
+  await expect(f.call("media_speech", { text: "x", model: "elevenlabs/eleven-v3", path: "a.mp3" })).rejects.toThrow("OpenRouter returned no audio.")
+  expect(await Bun.file(join(f.project, "a.mp3")).exists()).toBe(false)
+})
+
 test("nothing is spent on a request that can't be saved, read, or allowed, or has no key", async () => {
   const f = fixture(unreachable)
   mkdirSync(join(f.root, "elsewhere"))
@@ -100,6 +123,9 @@ test("nothing is spent on a request that can't be saved, read, or allowed, or ha
   for (const reference of ["../secret.png", "logo.png"]) await expect(image({ references: [reference] })).rejects.toThrow("outside the project")
   await expect(f.call("media_speech", { text: "x", model: "elevenlabs/eleven-v3", path: "voice.ogg" })).rejects.toThrow("Save speech as .mp3")
   await expect(image({ model: "../key" })).rejects.toThrow("not an OpenRouter model ID")
+  await expect(image({ references: ["missing.png"] })).rejects.toThrow("missing.png doesn't exist in the project.")
+  // None of these asked the user anything.
+  expect(f.checks).toEqual([])
   await Bun.write(join(f.project, "private.png"), "private")
   for (const action of ["media_image", "edit", "read"]) {
     f.deny(action)

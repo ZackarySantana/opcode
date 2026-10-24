@@ -72,7 +72,7 @@ The key is an OpenCode integration credential, so the tools still work if a [pol
 
 ## Limitations
 
-- `.wav` files come from OpenRouter's raw PCM, which is 24 kHz unless the response says otherwise. If a model's `.wav` sounds too fast or too slow, use `.mp3`. Gemini and HeyGen models only make `.wav`.
+- `.wav` files come from OpenRouter's raw PCM, which is 24 kHz unless the response says otherwise. If a model's `.wav` sounds too fast or too slow, use `.mp3`. Gemini and HeyGen models only make `.wav`, and MiniMax models only make `.mp3`.
 - Multi-speaker input, voice cloning, and video generation aren't supported yet.
 
 ## Development

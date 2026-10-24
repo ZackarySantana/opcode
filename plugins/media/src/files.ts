@@ -38,11 +38,15 @@ export function imageType(path: string): string | undefined {
   return imageTypes[extname(path).toLowerCase()]
 }
 
-/** Where each image goes: the requested path with its format's extension, numbered when there are several. */
-export function imagePaths(path: string, types: (string | undefined)[]): string[] {
+/**
+ * Where each image goes: the requested path with its format's extension, kept as written when it already names that format.
+ * `numbered` comes from the request, so a provider returning fewer images than asked for doesn't change the names.
+ */
+export function imagePaths(path: string, types: (string | undefined)[], numbered: boolean): string[] {
   const stem = path.slice(0, path.length - extname(path).length)
-  const extension = (type: string | undefined) => Object.keys(imageTypes).find((key) => imageTypes[key] === type) ?? (extname(path) || ".png")
-  return types.map((type, index) => `${stem}${types.length > 1 ? `-${index + 1}` : ""}${extension(type)}`)
+  const extension = (type: string | undefined) => type && imageType(path) === type ? extname(path)
+    : Object.keys(imageTypes).find((key) => imageTypes[key] === type) ?? (extname(path) || ".png")
+  return types.map((type, index) => `${stem}${numbered ? `-${index + 1}` : ""}${extension(type)}`)
 }
 
 /** Raw 16-bit mono PCM framed as WAV, so players and browsers can open it. Audio that is already WAV is kept. */

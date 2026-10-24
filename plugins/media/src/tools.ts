@@ -54,7 +54,7 @@ export function mediaTools({ openrouter, directory, assert }: ToolDependencies) 
         voice: { type: "string", description: "Voice ID. Voices vary by model; media_models with this model lists them." },
         instructions: { type: "string", description: "Tone, pacing, or emotion. Supported by OpenAI, Gemini, and Fish Audio models." },
         speed: { type: "number", description: "Playback speed multiplier, for models that support it." },
-        path: { type: "string", description: "Where to save it, relative to the project: .mp3, or .wav for uncompressed audio. Gemini and HeyGen models only make .wav." },
+        path: { type: "string", description: "Where to save it, relative to the project: .mp3, or .wav for uncompressed audio. Gemini and HeyGen models only make .wav; MiniMax models only make .mp3." },
       }, ["text", "model", "path"]),
       options: { codemode: false },
       execute: async (input: unknown, context: ToolContext) => {
@@ -65,6 +65,7 @@ export function mediaTools({ openrouter, directory, assert }: ToolDependencies) 
         if (format !== ".mp3" && format !== ".wav") throw new Error(`Save speech as .mp3, or .wav for uncompressed audio, not ${path}.`)
         await approve(context, "media_speech", model, [file])
         const audio = await openrouter.speech({ model, input: text, voice, instructions, speed, response_format: format === ".wav" ? "pcm" : "mp3" }, context.signal)
+        if (!audio.bytes.length) throw new Error("OpenRouter returned no audio.")
         const bytes = format === ".wav" ? wav(audio.bytes, audio.rate) : audio.bytes
         await save(file, bytes)
         const length = format === ".wav" ? ` (${wavSeconds(bytes).toFixed(2)} s)` : ""
@@ -97,13 +98,15 @@ export function mediaTools({ openrouter, directory, assert }: ToolDependencies) 
         const n = Math.min(Math.max(Math.trunc(count ?? 1), 1), 4)
         const requested = await projectPath(directory, path)
         const expected = imageType(output_format ? `.${output_format}` : requested.relative)
-        const planned = await Promise.all(imagePaths(requested.relative, Array(n).fill(expected)).map((file) => projectPath(directory, file)))
+        const planned = await Promise.all(imagePaths(requested.relative, Array(n).fill(expected), n > 1).map((file) => projectPath(directory, file)))
         // In the agent's order, since prompts can refer to references by position.
         const sources = await Promise.all(references.map(async (reference): Promise<{ url: string } | { file: ProjectPath; type: string }> => {
           if (/^https?:\/\//i.test(reference)) return { url: reference }
           const type = imageType(reference)
           if (!type || type === "image/svg+xml") throw new Error(`${reference} is not a PNG, JPEG, WebP, or GIF image.`)
-          return { file: await projectPath(directory, reference), type }
+          const file = await projectPath(directory, reference)
+          if (!await Bun.file(file.absolute).exists()) throw new Error(`${reference} doesn't exist in the project.`)
+          return { file, type }
         }))
         await approve(context, "media_image", model, planned)
         // Reference files are sent to OpenRouter, so they need the same read permission as any other read.
@@ -121,7 +124,7 @@ export function mediaTools({ openrouter, directory, assert }: ToolDependencies) 
         }, context.signal)
         if (!images.length) throw new Error("OpenRouter returned no images.")
         const spent = cost === undefined ? "" : ` Cost: ${formatMoney(cost)}.`
-        const saved = await Promise.all(imagePaths(requested.relative, images.map((image) => image.mediaType)).map((file) => projectPath(directory, file)))
+        const saved = await Promise.all(imagePaths(requested.relative, images.map((image) => image.mediaType), n > 1 || images.length > 1).map((file) => projectPath(directory, file)))
         // A different format or more images than asked for lands on paths that weren't approved yet.
         const unplanned = saved.filter((file) => !planned.some((approved) => approved.relative === file.relative))
         if (unplanned.length) {
