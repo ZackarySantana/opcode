@@ -1,5 +1,21 @@
 # @lidtop/opencode-cost
 
+## 0.3.0
+
+### Minor Changes
+
+- 2b142b5: `/cost` is now a dialog, like `/feed` and `/ghpr`, with one search box and an in-dialog date range picker (`d`). Opening a longest turn closes the dialog and opens its session. Amounts show tokens beside cost; a view with no recorded cost, as on a subscription, hides cost and shows only tokens, and breakdowns rank cost ties by tokens.
+- 3f3b12d: `/cost` has Overview, Models, Projects, Daily, and Turns tabs instead of panels stacked in one view. The Overview holds every total; each breakdown row shows its usage and its time together, and lists every model (now split by variant, as on the time side), project, and date in the range rather than the top eight or newest 14. ↑/↓ select rows one at a time and scroll to keep the selection in view; enter on a turn still opens its session. The date range (`d`) is the only filter: the project and model pickers and `x` reset are gone, along with the server's project/model filter parameters and picker options.
+- 47f719c: Add time to `/cost`: agent working time per turn, time waiting on you (at most 30 minutes per wait), parallel time across root sessions with its peak, breakdowns by model/variant, project, and day, and the longest turns, which open their session. Delete the existing Cost database and its SQLite sidecars before upgrading; the history import rebuilds usage and backfills turn timing.
+
+### Patch Changes
+
+- 0c50ac8: Keep the Overview cards inside the `/cost` dialog, and leave a blank line between rows in the list tabs.
+- bb097fd: Require OpenCode 2.1.3 or newer.
+- 1708674: Move Later's prompt paste helper into the shared UI package so Snippets can reuse it. No behavior changes.
+- 44bad65: The Pull requests and Feeds sidebar sections show their refresh countdown beside the title instead of on a line of their own. Those sections and Agents no longer add a line saying there's nothing to show; they show just the title.
+- f27f920: The shared item card can lead with its title when an item has no head, for Later. No behavior changes.
+
 ## 0.2.4
 
 ### Patch Changes

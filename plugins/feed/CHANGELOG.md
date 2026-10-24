@@ -1,5 +1,17 @@
 # @lidtop/opencode-feed
 
+## 0.4.1
+
+### Patch Changes
+
+- 941f43b: The sidebar no longer lists operational status pages; it shows only incidents, scheduled maintenance, and unreachable feeds. `/feed` still lists every status page.
+- bb097fd: Require OpenCode 2.1.3 or newer.
+- 1708674: Move Later's prompt paste helper into the shared UI package so Snippets can reuse it. No behavior changes.
+- c1cfd3c: Clicking "+N more in /ghpr" or "+N more in /feed" in the sidebar now opens the dialog and keeps it open. Before, the dialog closed again as soon as the mouse button was released.
+- 44bad65: The Pull requests and Feeds sidebar sections show their refresh countdown beside the title instead of on a line of their own. Those sections and Agents no longer add a line saying there's nothing to show; they show just the title.
+- e85fab8: The shared tabbed dialog can keep its open tab when shown again, for Later. No behavior changes.
+- f27f920: The shared item card can lead with its title when an item has no head, for Later. No behavior changes.
+
 ## 0.4.0
 
 ### Minor Changes

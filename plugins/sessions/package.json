@@ -1,6 +1,6 @@
 {
   "name": "@lidtop/opencode-sessions",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Browse OpenCode sessions across projects",
   "keywords": [
     "opencode",

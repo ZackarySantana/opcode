@@ -1,5 +1,21 @@
 # @lidtop/opencode-later
 
+## 0.3.0
+
+### Minor Changes
+
+- 889f494: The agent can now edit a Later item's text and restore a completed item, not only complete one: `later_edit` replaces `later_complete`. Edits don't ask, and the result in the transcript includes the previous text.
+- e85fab8: `/later` is now a dialog in the format of `/feed` and `/ghpr`, with Later, History, and Settings tabs, search, and the same keys; `c` completes or restores an item, and `enter` closes the dialog and pastes the item into the prompt. The sidebar is quieter, lists 5 items by default (3 to 20 in Settings), and points to `/later` for the rest. When Later's server side is loaded, the agent can list, add, and complete Later items, and delete one after you approve it.
+- e945860: Add an **Agent tools** setting to `/later` Settings, on by default. Turned off, sessions created afterward don't get the Later tools, and older sessions keep them listed (so their prompt cache still applies) but every call is refused. Turning them back on asks first, because each open session's next message then misses the prompt cache once.
+
+### Patch Changes
+
+- f27f920: `/later` cards start an item's text beside its number, with the age on the same line, and wrap long text under itself rather than under the number. History cards do the same beside their check mark.
+- 76fed78: Show the Later sidebar's item numbers in the text color, with the items' text still muted.
+- bb097fd: Require OpenCode 2.1.3 or newer.
+- 1708674: Move Later's prompt paste helper into the shared UI package so Snippets can reuse it. No behavior changes.
+- 44bad65: The Pull requests and Feeds sidebar sections show their refresh countdown beside the title instead of on a line of their own. Those sections and Agents no longer add a line saying there's nothing to show; they show just the title.
+
 ## 0.2.3
 
 ### Patch Changes

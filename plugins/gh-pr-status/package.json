@@ -1,8 +1,12 @@
 {
   "name": "@lidtop/opencode-gh-pr-status",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "See the GitHub pull requests waiting on you in the OpenCode sidebar",
-  "keywords": ["opencode", "opencode-plugin", "github"],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "github"
+  ],
   "type": "module",
   "license": "MIT",
   "author": "ZackarySantana",
