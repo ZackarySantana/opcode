@@ -2,7 +2,7 @@ import { existsSync } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 
-export const pluginIDs = ["context", "cost", "later", "sessions", "feed", "gh-pr-status"] as const
+export const pluginIDs = ["context", "cost", "later", "sessions", "feed", "gh-pr-status", "snippets"] as const
 export function publicPackageName(id: typeof pluginIDs[number]) {
   return `@lidtop/opencode-${id}`
 }

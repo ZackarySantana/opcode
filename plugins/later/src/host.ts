@@ -4,7 +4,7 @@ import type { Context, KeymapCommand, Route } from "@opencode/plugin/tui/context
 import { createSignal } from "solid-js"
 import { sameItem, type LaterItem } from "./domain"
 import { LaterModel } from "./model"
-import { pasteIntoPrompt } from "./paste"
+import { pasteIntoPrompt } from "@opcode/ui/paste"
 import type { LaterDatabase } from "./sqlite"
 
 export const MANAGER_ROUTE = "opcode-later.manage"

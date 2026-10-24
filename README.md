@@ -11,6 +11,7 @@
 | [Sessions](#sessions-find-the-conversation-not-just-the-project) | Work worth coming back to | [![Sessions version](https://img.shields.io/npm/v/@lidtop/opencode-sessions?label=sessions)](https://www.npmjs.com/package/@lidtop/opencode-sessions) |
 | [Feed](#feed-know-whats-down-before-you-debug) | What's happening with the services you depend on | [![Feed version](https://img.shields.io/npm/v/@lidtop/opencode-feed?label=feed)](https://www.npmjs.com/package/@lidtop/opencode-feed) |
 | [GH PR Status](#gh-pr-status-never-leave-a-review-waiting) | The pull requests waiting on you | [![GH PR Status version](https://img.shields.io/npm/v/@lidtop/opencode-gh-pr-status?label=gh-pr-status)](https://www.npmjs.com/package/@lidtop/opencode-gh-pr-status) |
+| [Snippets](#snippets-say-it-once-reuse-it-everywhere) | The prompts you'd otherwise type again | [![Snippets version](https://img.shields.io/npm/v/@lidtop/opencode-snippets?label=snippets)](https://www.npmjs.com/package/@lidtop/opencode-snippets) |
 
 *Screenshots show the OpenCode terminal UI with fictional demo data, except Feed, which shows real public status feeds.*
 
@@ -100,6 +101,14 @@ Someone asked for your review an hour ago, and your own pull request has been ap
 
 [Explore GH PR Status →](plugins/gh-pr-status/README.md)
 
+## Snippets: say it once, reuse it everywhere
+
+Typing the same review checklist or project briefing again? Save it as a snippet and drop it into any message with `#name` or `@name`. The message still reads `#name`; the snippet's text goes along with it.
+
+**Ask for a snippet → approve it → use it anywhere.** `/snippets new` opens a chat where the agent writes snippets for you, and every write waits for your approval. `/snippets` lists them with a preview, inserts one into your prompt, or opens one for editing in chat. Snippets are plain Markdown files, global or per project, and project snippets override global ones.
+
+[Explore Snippets →](plugins/snippets/README.md)
+
 ## Install
 
 Requires the **OpenCode 2.1.3+ terminal UI, within the 2.x release line**.
@@ -113,6 +122,7 @@ opencode plugin add @lidtop/opencode-cost
 opencode plugin add @lidtop/opencode-sessions
 opencode plugin add @lidtop/opencode-feed
 opencode plugin add @lidtop/opencode-gh-pr-status
+opencode plugin add @lidtop/opencode-snippets
 ```
 
 **Prefer editing your config?** Instead, add the packages you want to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `opencode.json`), keeping your existing entries:
@@ -126,7 +136,8 @@ opencode plugin add @lidtop/opencode-gh-pr-status
     "@lidtop/opencode-cost",
     "@lidtop/opencode-sessions",
     "@lidtop/opencode-feed",
-    "@lidtop/opencode-gh-pr-status"
+    "@lidtop/opencode-gh-pr-status",
+    "@lidtop/opencode-snippets"
   ]
 }
 ```
@@ -137,6 +148,6 @@ Replacing the original plugins? Remove their old configuration entries rather th
 
 ---
 
-**Make it yours:** [Later guide](plugins/later/README.md) · [Context guide](plugins/context/README.md) · [Cost guide](plugins/cost/README.md) · [Sessions guide](plugins/sessions/README.md) · [Feed guide](plugins/feed/README.md) · [GH PR Status guide](plugins/gh-pr-status/README.md)
+**Make it yours:** [Later guide](plugins/later/README.md) · [Context guide](plugins/context/README.md) · [Cost guide](plugins/cost/README.md) · [Sessions guide](plugins/sessions/README.md) · [Feed guide](plugins/feed/README.md) · [GH PR Status guide](plugins/gh-pr-status/README.md) · [Snippets guide](plugins/snippets/README.md)
 
 **Working on Opcode?** [Local development](docs/development.md) · [Architecture](docs/architecture.md) · [Verification](docs/verification.md) · [Releases](docs/releases.md)

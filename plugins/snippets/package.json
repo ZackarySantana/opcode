@@ -1,0 +1,44 @@
+{
+  "name": "@lidtop/opencode-snippets",
+  "version": "0.0.0",
+  "description": "Reusable OpenCode prompt snippets, inserted with #name or @name and written in chat",
+  "keywords": [
+    "opencode",
+    "opencode-plugin"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "author": "ZackarySantana",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZackarySantana/opcode.git",
+    "directory": "plugins/snippets"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./tui": "./src/tui.tsx",
+    "./rpc": "./src/rpc.ts"
+  },
+  "engines": {
+    "opencode": "^2.1.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@opcode/core": "workspace:*",
+    "@opcode/ui": "workspace:*",
+    "@opencode/plugin": "catalog:",
+    "@opencode/client": "catalog:"
+  },
+  "peerDependencies": {
+    "@opentui/core": "catalog:host",
+    "@opentui/solid": "catalog:host",
+    "solid-js": "catalog:host"
+  }
+}

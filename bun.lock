@@ -134,6 +134,21 @@
         "solid-js": "catalog:host",
       },
     },
+    "plugins/snippets": {
+      "name": "@lidtop/opencode-snippets",
+      "version": "0.0.0",
+      "dependencies": {
+        "@opcode/core": "workspace:*",
+        "@opcode/ui": "workspace:*",
+        "@opencode/client": "catalog:",
+        "@opencode/plugin": "catalog:",
+      },
+      "peerDependencies": {
+        "@opentui/core": "catalog:host",
+        "@opentui/solid": "catalog:host",
+        "solid-js": "catalog:host",
+      },
+    },
   },
   "catalog": {
     "@changesets/cli": "2.31.1",
@@ -334,6 +349,8 @@
     "@lidtop/opencode-later": ["@lidtop/opencode-later@workspace:plugins/later"],
 
     "@lidtop/opencode-sessions": ["@lidtop/opencode-sessions@workspace:plugins/sessions"],
+
+    "@lidtop/opencode-snippets": ["@lidtop/opencode-snippets@workspace:plugins/snippets"],
 
     "@manypkg/find-root": ["@manypkg/find-root@1.1.0", "", { "dependencies": { "@babel/runtime": "^7.5.5", "@types/node": "^12.7.1", "find-up": "^4.1.0", "fs-extra": "^8.1.0" } }, "sha512-mki5uBvhHzO8kYYix/WRy2WX8S3B5wdVSc9D6KcU5lQNglP2yt58/VfLuAK49glRXChosY8ap2oJ1qgma3GUVA=="],
 
