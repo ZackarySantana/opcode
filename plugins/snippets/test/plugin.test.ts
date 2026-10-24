@@ -99,13 +99,13 @@ test("a snippet failure never blocks sending the prompt", async () => {
 test("snippet tools exist only in authoring sessions that still ask before writing", async () => {
   const f = await fixture({})
   const context = async (sessionID: string) => {
-    const event = { sessionID, system: [] as any[], tools: { snippet_list: {}, snippet_write: {}, snippet_delete: {}, read: {} } }
+    const event = { sessionID, tools: { snippet_list: {}, snippet_write: {}, snippet_delete: {}, read: {} } }
     await f.hooks.context!(event)
-    return { tools: Object.keys(event.tools), system: event.system.length }
+    return Object.keys(event.tools)
   }
-  expect(await context("normal")).toEqual({ tools: ["read"], system: 0 })
-  expect(await context("unprotected")).toEqual({ tools: ["read"], system: 0 })
-  expect(await context("authoring")).toEqual({ tools: ["snippet_list", "snippet_write", "snippet_delete", "read"], system: 1 })
+  expect(await context("normal")).toEqual(["read"])
+  expect(await context("unprotected")).toEqual(["read"])
+  expect(await context("authoring")).toEqual(["snippet_list", "snippet_write", "snippet_delete", "read"])
   for (const sessionID of ["normal", "unprotected"]) {
     await expect(f.call("snippet_list", {}, sessionID)).rejects.toThrow("only available in a snippet authoring session")
   }

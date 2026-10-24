@@ -1,6 +1,6 @@
 import { Plugin, Skill } from "@opencode/plugin"
 import { errorMessage } from "@opcode/core"
-import { authoringInstructions, authoringOf, findTokens, PLUGIN_ID, type Authoring, type Scope } from "./domain"
+import { authoringOf, findTokens, PLUGIN_ID, type Authoring, type Scope } from "./domain"
 import { SnippetsRpc } from "./rpc"
 import { SnippetService } from "./service"
 import { snippetDirectories, SnippetStore } from "./store"
@@ -48,11 +48,7 @@ export default Plugin.define({
         console.warn(`${PLUGIN_ID}: could not read session ${event.sessionID}: ${errorMessage(error)}`)
         return undefined
       })
-      if (!target) {
-        for (const name of TOOL_NAMES) delete event.tools[name]
-        return
-      }
-      event.system.push({ type: "text", text: authoringInstructions(target) })
+      if (!target) for (const name of TOOL_NAMES) delete event.tools[name]
     })
 
     const registration = await ctx.rpc.register(SnippetsRpc, {

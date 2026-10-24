@@ -48,7 +48,7 @@ The list marks a global snippet **overridden** when a project snippet has the sa
 
 ### Write snippets in chat
 
-`/snippets new` (or `/snippets new name`) opens a new session for writing snippets. Describe what you want; the agent creates or updates snippets with its snippet tools, and **you approve every write and delete** in OpenCode's permission prompt, which shows the name, scope, and text. `e` in `/snippets` opens the same kind of session for the selected snippet.
+`/snippets new` (or `n` in `/snippets`) opens a new session for writing snippets with instructions for the agent already in the prompt (OpenCode may show them as a "pasted N lines" placeholder), followed by "The following message is what the user wants:". Type what you want after it and send. `/snippets new Never commit until I say so` sends the instructions right away, ending with "The user wants to create a snippet that Never commit until I say so". `e` in `/snippets` opens the same kind of session for the selected snippet. Before writing anything, the agent walks you through an example: the name and scope, the exact text, and a sample message that uses it. It creates or updates snippets with its snippet tools, and **you approve every write and delete** in OpenCode's permission prompt, which shows the name, scope, and text. The session uses the model selected in your prompt.
 
 The snippet tools exist only in these sessions. Other sessions never see them.
 

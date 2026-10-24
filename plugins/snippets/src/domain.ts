@@ -165,13 +165,19 @@ export function authoringSession(target: Authoring) {
   return { title: target.name ? `Snippet #${target.name}` : "New snippet", metadata: { [AUTHORING]: target }, permissions: authoringRules }
 }
 
-export function authoringInstructions(target: Authoring): string {
+/** How snippets work, opening an authoring session; the user's request follows it after a few blank lines. */
+export function authoringGuide(target: Authoring): string {
   return [
-    "This session writes snippets: reusable prompt text the user inserts into a message with #name or @name.",
-    "Use snippet_list, snippet_write, and snippet_delete. Never edit snippet files directly.",
-    "Names are lowercase kebab-case. Global snippets apply everywhere; project snippets apply to this project and override a global snippet with the same name.",
-    "Write only the text to insert. Snippets have no templating, arguments, shell substitution, or includes.",
-    "The user approves each write and delete.",
-    ...(target.name ? [`This session is for #${target.name}${target.scope ? ` (${target.scope})` : ""}. If it exists, read it with snippet_list before changing it.`] : []),
-  ].join("\n")
+    "You are helping the user make a snippet: reusable prompt text they insert into a message with #name or @name. This is how it works:",
+    "- Use snippet_list, snippet_write, and snippet_delete. Never edit snippet files directly.",
+    "- Names are lowercase kebab-case. Global snippets apply everywhere; project snippets apply to this project and override a global snippet with the same name.",
+    "- A snippet is only the text to insert. Snippets have no templating, arguments, shell substitution, or includes.",
+    "- Before writing any snippet, walk the user through a human-digestible example: the name and scope you propose, the exact text, and a sample message that uses it (such as \"#name fix the login bug\") with what the agent would take from it. Write it only once the user agrees; they also approve each write and delete.",
+    ...target.name ? [`- This session is about the existing snippet #${target.name}${target.scope ? ` (${target.scope})` : ""}. Read it with snippet_list first. If the user's message doesn't say what to change, ask them.`] : [],
+  ].join("\n") + "\n\n\n\n"
 }
+
+/** Leads the user's own message when the guide waits in the prompt for them to finish. */
+export const AUTHORING_LEAD = "The following message is what the user wants: "
+
+export const authoringRequest = (target: Authoring, request: string) => `${authoringGuide(target)}The user wants to create a snippet that ${request}`

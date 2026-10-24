@@ -76,12 +76,13 @@ function waitForPrompt(
 /**
  * V2 exposes no prompt-text setter. Use the public OpenTUI paste pipeline, never
  * prompt submission, clipboard mutation, or host render-tree inspection.
- * Reachable prompt.paste is a readiness check, not a delivery acknowledgement.
+ * Reachable prompt.paste is a readiness check, not a delivery acknowledgement. Several texts are pasted in order, as
+ * separate pastes: the host may collapse a long one into a placeholder, but keeps a short one readable.
  */
 export async function pasteIntoPrompt(
   api: Pick<Context, "renderer" | "keymap" | "ui">,
   destination: PromptRoute,
-  text: string,
+  text: string | readonly string[],
   valid: () => boolean,
   unchanged: () => boolean,
   options: { signal: AbortSignal; timeoutMs?: number },
@@ -91,6 +92,6 @@ export async function pasteIntoPrompt(
   if (options.signal.aborted || !valid() || api.renderer.isDestroyed || !sameDestination(api.ui.router.current(), destination)) return "cancelled"
   if (!promptReady(api)) return "unavailable"
   if (!unchanged()) return "changed"
-  api.renderer.keyInput.processPaste(new TextEncoder().encode(text))
+  for (const part of typeof text === "string" ? [text] : text) api.renderer.keyInput.processPaste(new TextEncoder().encode(part))
   return "pasted"
 }
