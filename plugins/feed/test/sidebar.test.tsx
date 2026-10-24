@@ -19,9 +19,9 @@ const rss = `<rss><channel><title>npm</title>
   ${item("Planned work", "Scheduled", -3)}
 </channel></rss>`
 
-test("clicking a sidebar item opens its link like enter in /feed, and the /feed pointer opens the dialog", async () => {
+async function mount(xml: string) {
   const database = new FeedsDatabase(":memory:")
-  const feeds = new FeedsController(database, async () => rss)
+  const feeds = new FeedsController(database, async () => xml)
   const toasts: { message: string; variant: string }[] = []
   const commands: string[] = []
   const host = {
@@ -30,6 +30,12 @@ test("clicking a sidebar item opens its link like enter in /feed, and the /feed 
     keymap: { dispatch: (id: string) => commands.push(id) },
   } as unknown as Context
   const view = await testRender(() => <PluginContextProvider value={host}><Sidebar feeds={feeds} /></PluginContextProvider>, { width: 48, height: 30 })
+  const dispose = async () => { await view.dispose(); feeds.dispose(); database.close() }
+  return { feeds, view, toasts, commands, dispose }
+}
+
+test("clicking a sidebar item opens its link like enter in /feed, and the /feed pointer opens the dialog", async () => {
+  const { feeds, view, toasts, commands, dispose } = await mount(rss)
   const click = async (text: string, button?: MouseButton) => {
     const lines = (await view.waitForFrame((frame) => frame.includes(text))).split("\n")
     const y = lines.findIndex((line) => line.includes(text))
@@ -48,8 +54,16 @@ test("clicking a sidebar item opens its link like enter in /feed, and the /feed 
     await click("/feed")
     expect(commands).toEqual(["opcode-feed.open"])
   } finally {
-    await view.dispose()
-    feeds.dispose()
-    database.close()
+    await dispose()
+  }
+})
+
+test("operational status pages stay out of the sidebar", async () => {
+  const { feeds, view, dispose } = await mount("<rss><channel><title>Quiet</title></channel></rss>")
+  try {
+    feeds.subscribe("https://quiet.test/rss", "status")
+    expect(await view.waitForFrame((frame) => frame.includes("Nothing in the last 12 hours"))).not.toContain("Quiet")
+  } finally {
+    await dispose()
   }
 })

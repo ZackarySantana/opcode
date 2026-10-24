@@ -10,6 +10,7 @@ import type { FeedsController } from "./host"
 import { sidebarLayout, windowLabel } from "./model"
 import { phaseStyle } from "./style"
 
+/** Only what needs attention; /feed also lists the operational status pages. */
 export function Sidebar(props: { feeds: FeedsController }) {
   const api = usePlugin()
   const palette = usePalette()
@@ -20,9 +21,6 @@ export function Sidebar(props: { feeds: FeedsController }) {
       <box paddingTop={1}>
         <Section title="Feeds">
           <box flexDirection="column" minWidth={0} gap={1}>
-            <Show when={view().operational.length}>
-              <text minWidth={0} wrapMode="word" fg={palette.muted}>✓ {view().operational.join(" · ")}</text>
-            </Show>
             <For each={layout().entries}>{(entry) => (
               <SidebarItem open={() => openLink(api, "Feed", entry.link)} item={{
                 key: entry.key, mark: phaseStyle(entry.phase, palette), head: entry.source, detail: entry.status,
