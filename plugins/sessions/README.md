@@ -61,10 +61,20 @@ The **Agents** section at the top of the sidebar lists root sessions from every 
 Subagents are rolled up into their root session ("2 agents"); only the root needs to be seen for a finished run to drop out, and archived sessions never appear. The session you are in is listed too, marked **current**. Each row shows its project, the time since it finished or was last active, and its title. Five rows are shown; "+N more" opens the full list.
 
 - Click a row, or run `/go <n>`, to open session n. `/go` alone, or **Go to active session** in the command palette, lists them all.
-- After the plugin takes you somewhere (a sidebar click, `/go`, the list, or opening a session from `/sessions`), a **Back to …** row appears above the list; click it or run `/go back`. Going back again retraces each step. Switching sessions any other way, such as with tabs or going home, forgets the trail.
-- `/go` is skipped when another command already uses that name; the palette entry always works.
+- After the plugin takes you somewhere (a sidebar click, `/go`, the list, or opening a session from `/sessions`), a **Back to …** row appears above the list; click it, or run `/back`, `/previous`, or `/go back`. Going back again retraces each step. Switching sessions any other way, such as with tabs or going home, forgets the trail.
+- `/go`, `/back`, and `/previous` are each skipped when another command already uses that name; the palette entries (**Go to active session**, **Go back**) always work.
 
 The list follows the connected server's live events and is rebuilt on every (re)connection; nothing is stored. A finished session outside the newest 100 root sessions appears only once it becomes active again.
+
+### From other plugins
+
+To open a session so that **Back to …** returns to where the user was, dispatch `opcode-sessions.navigate` with the session ID instead of navigating directly:
+
+```ts
+api.keymap.dispatch("opcode-sessions.navigate", sessionID)
+```
+
+It works from any input mode, including over a dialog, but only navigates: close your own dialog first (`api.ui.dialog.clear()`). With `inbox.enabled: false` it still navigates, without a back trail.
 
 ## Indexing
 
@@ -100,7 +110,7 @@ Configure the active-sessions sidebar on the **terminal**: terminal extensions r
 }
 ```
 
-- `inbox.enabled` (default `true`): `false` removes the sidebar section and `/go`, and stops listening for session events.
+- `inbox.enabled` (default `true`): `false` removes the sidebar section and its commands (`/go`, `/back`, `/previous`), and stops listening for session events.
 - `inbox.rows` (default `5`): rows shown before "+N more".
 - `inbox.notify` (default `false`): a desktop notification and sound while the terminal is unfocused, plus a toast, for each new permission or question and each finished or failed run, except in the session family you are in. They follow your OpenCode attention settings.
 

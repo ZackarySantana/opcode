@@ -4,7 +4,7 @@ import type { Context, KeymapLayer } from "@opencode/plugin/tui/context"
 import { createRoot } from "solid-js"
 import { sleep } from "@opcode/core/live"
 import server from "../src/index"
-import tui from "../src/tui"
+import tui, { NAVIGATE_COMMAND } from "../src/tui"
 import { session, user } from "./fixtures"
 
 test("server unload aborts initial indexing and stream, unregistering RPC before closing index", async () => {
@@ -31,7 +31,7 @@ test("server unload aborts initial indexing and stream, unregistering RPC before
   expect(disposed).toBe(true)
 })
 
-test("TUI setup defers sync to the first browser opening, pins it to one connection, and unload closes the open dialog", async () => {
+test("TUI setup defers sync to the first browser opening, pins it to one connection, navigates for other plugins without the inbox, and unload closes the open dialog", async () => {
   const searched = Promise.withResolvers<void>()
   const calls: string[] = []
   const locations: string[] = []
@@ -62,11 +62,12 @@ test("TUI setup defers sync to the first browser opening, pins it to one connect
   let connected = makeClient("A")
   const dialog: unknown[] = []
   const layers: KeymapLayer[] = []
+  const navigated: unknown[] = []
   const api = {
     options: { inbox: { enabled: false } }, location: { directory: "/connected/A" }, get client() { return connected },
     data: { location: { command: { list: () => [] } } },
     keymap: { layer: (factory: () => KeymapLayer) => { layers.push(factory()) }, commands: () => [] },
-    ui: { dialog: { show: () => dialog.push(["show"]), set: (options: object) => dialog.push(["set", options]), clear: () => dialog.push(["clear"]) } },
+    ui: { router: { navigate: (route: unknown) => navigated.push(route) }, dialog: { show: () => dialog.push(["show"]), set: (options: object) => dialog.push(["set", options]), clear: () => dialog.push(["clear"]) } },
   } as unknown as Context
   const owner = createRoot((dispose) => ({ cleanup: tui.setup(api), dispose }))
   connected = makeClient("B") // The original setup must not start reading this replacement client.
@@ -80,6 +81,11 @@ test("TUI setup defers sync to the first browser opening, pins it to one connect
     expect(calls).toContain("A:messages:A")
     expect(uploaded).toEqual([{ server: "A", text: "A fixture conversation" }])
     expect(locations.every((directory) => directory === "/connected/A")).toBe(true)
+    // Global, so other plugins can dispatch it over their own dialogs.
+    const navigate = layers.find((layer) => layer.commands?.some((command) => command.id === NAVIGATE_COMMAND))!
+    expect(navigate.mode).toBe("global")
+    await navigate.commands!.find((command) => command.id === NAVIGATE_COMMAND)!.run("target")
+    expect(navigated).toEqual([{ type: "session", sessionID: "target" }])
   } finally { await cleanup?.(); owner.dispose() }
-  expect(dialog).toEqual([["show"], ["set", { size: "large", centered: true }], ["clear"]])
+  expect(dialog).toEqual([["show"], ["set", { size: "xlarge", centered: true }], ["clear"]])
 })
