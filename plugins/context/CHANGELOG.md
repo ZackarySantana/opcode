@@ -1,5 +1,13 @@
 # @lidtop/opencode-context
 
+## 0.3.3
+
+### Patch Changes
+
+- bb097fd: Require OpenCode 2.1.3 or newer.
+- 1708674: Move Later's prompt paste helper into the shared UI package so Snippets can reuse it. No behavior changes.
+- 44bad65: The Pull requests and Feeds sidebar sections show their refresh countdown beside the title instead of on a line of their own. Those sections and Agents no longer add a line saying there's nothing to show; they show just the title.
+
 ## 0.3.2
 
 ### Patch Changes

@@ -1,5 +1,24 @@
 # @lidtop/opencode-sessions
 
+## 0.3.0
+
+### Minor Changes
+
+- f5d0ff2: Add an Agents section at the top of the sidebar listing active sessions across all projects: working, retrying, waiting on you, or finished or failed since you last looked, with subagents rolled up into their session. Rows keep the order they became active; click one or run `/go <n>` to open it, and `/go back` (or the Back row) to return. Optional notifications for new requests and finished runs are off by default; configure everything under `inbox` in `cli.json`. `/sessions` now opens sessions from other directories directly instead of copying a resume command.
+- a5ede26: `/sessions` opens as an extra-large dialog with more room for titles and a wider preview. `/back` and `/previous` return along the back trail, like the sidebar's **Back to …** row. Other plugins can dispatch `opcode-sessions.navigate` with a session ID to open it while recording the back trail.
+
+### Patch Changes
+
+- bb097fd: Require OpenCode 2.1.3 or newer.
+- fe9d281: Remove the `/opcode-sessions` and `/opcode-go` slash names. Use `/sessions`, `/sessions-all`, or `/all-sessions` to browse sessions, and `/go` for active sessions. When `/go` belongs to another command, use **Go to active session** in the command palette.
+- 14bdfde: The Agents sidebar, `/go`, and its list no longer include the session you're in.
+- 2549f8e: Hide the Agents sidebar section while there are no active sessions and no way back.
+- e7e3fcb: `/sessions` opens as a large centered dialog, like `/feed` and `/ghpr`, instead of a full-screen page. The search box filters as you type, `p` picks a project in place, and `esc` steps back one filter at a time before closing.
+- 1708674: Move Later's prompt paste helper into the shared UI package so Snippets can reuse it. No behavior changes.
+- 44bad65: The Pull requests and Feeds sidebar sections show their refresh countdown beside the title instead of on a line of their own. Those sections and Agents no longer add a line saying there's nothing to show; they show just the title.
+- e85fab8: The shared tabbed dialog can keep its open tab when shown again, for Later. No behavior changes.
+- f27f920: The shared item card can lead with its title when an item has no head, for Later. No behavior changes.
+
 ## 0.2.3
 
 ### Patch Changes
