@@ -25,23 +25,26 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 
 ## Use
 
-Run `/cost` or select **Cost** in the command palette.
+Run `/cost` or select **Cost** in the command palette. It opens a dialog with **Cost** and **Time** tabs.
 
 | Key | Action |
 | --- | --- |
-| `↑` / `↓` | Scroll |
-| `tab` | Switch between the Cost and Time tabs (or click a tab) |
+| `tab` / `shift+tab` | Switch between the Cost and Time tabs (or click a tab) |
+| `↑` / `↓`, `j` / `k` | Scroll; on the Time tab, select one of the longest turns |
+| `enter` | Time tab: close the dialog and open the selected turn's session (or click it) |
 | `d` | Date range: today, last 7 days, last 30 days, or all time |
 | `p` | Filter by project |
 | `m` | Filter by provider and model |
 | `x` | Reset to 30 days and all projects and models |
+| `/` | Search the breakdowns (and, on the Time tab, the longest turns) |
 | `r` | Refresh and reconcile the current project's complete history; retry failed imports |
-| `j` / `k`, `enter` | Time tab: select a longest turn and open its session (or click it) |
-| `esc` | Return to the originating session, home, or plugin page |
+| `esc` | Leave the search box, clear the search, close a picker, then close the dialog |
 
-Totals show USD cost, **recorded messages**, and input, output, reasoning, cache-read, and cache-write tokens. Model and project breakdowns show the top eight by cost; daily activity shows the last 14 dates with recorded usage, newest first. Totals are never truncated. Selecting an entity hides its redundant breakdown, but daily activity stays available even on narrow terminals with both filters selected.
+Totals show **recorded messages** and input, output, reasoning, cache-read, and cache-write tokens, plus USD cost when there is any. Model and project breakdowns show the top eight by cost, then tokens; daily activity shows the last 14 dates with recorded usage, newest first. Totals are never truncated, and the search narrows only the rows shown. Selecting an entity hides its redundant breakdown; daily activity always stays.
 
-The view rereads the server ledger every five seconds while open and shortly after public usage updates. Date filters use the **server's local calendar**, include today, and attribute usage to message creation time. Filter pickers show entities present in the selected range. The project picker shows each project's path beside its name; a project is named after its most recently used directory, and choosing one includes its recorded worktrees.
+**Tokens, and cost when there is any.** Amounts show cost and tokens (`$2.00  15 tok`), and bars follow cost. A view with no recorded cost, as on a subscription, drops the cost card and shows and sizes everything by tokens. The rule covers the whole view, never single rows, so a free model beside paid ones reads `$0.00` with an empty bar.
+
+The filters apply to both tabs and are shown before the search box; reopening `/cost` starts again from the last 30 days. The view rereads the server ledger every five seconds while open and shortly after public usage updates. Date filters use the **server's local calendar**, include today, and attribute usage to message creation time. Filter pickers show entities present in the selected range. The project picker shows each project's path beside its name; a project is named after its most recently used directory, and choosing one includes its recorded worktrees.
 
 ## Time tab
 
@@ -116,4 +119,4 @@ mise exec -- bun run typecheck
 mise run dev cost
 ```
 
-The build bundles the private `@opcode/core` and `@opcode/ui` workspaces into the package; OpenCode, OpenTUI, and Solid stay external.
+The build bundles the private `@opcode/core`, `@opcode/tabs`, and `@opcode/ui` workspaces into the package; OpenCode, OpenTUI, and Solid stay external.

@@ -130,7 +130,8 @@ export class CostLedger {
     const labels = new Map(projectOptions.map((option) => [option.id, option.label]))
     const group = (key: string) => this.db.query<Sums & { id: string }, Filter>(`SELECT ${key} AS id, ${sums}
       FROM usage WHERE ${filtered} GROUP BY 1`).all(params)
-    const ranked = (rows: Breakdown[]) => rows.sort((a, b) => b.cost - a.cost || a.label.localeCompare(b.label)).slice(0, 8)
+    // Tokens break ties, so a view with no cost (subscriptions) keeps its biggest users.
+    const ranked = (rows: Breakdown[]) => rows.sort((a, b) => b.cost - a.cost || b.tokens - a.tokens || a.label.localeCompare(b.label)).slice(0, 8)
     return {
       total,
       projects: ranked(group("project_id").map((row) => ({ ...row, label: labels.get(row.id) ?? row.id }))),

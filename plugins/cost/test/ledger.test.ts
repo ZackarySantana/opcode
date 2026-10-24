@@ -164,7 +164,7 @@ test("local-calendar boundaries and combined date/project/model filters", () => 
   expect(empty.projectOptions).toHaveLength(2)
 })
 
-test("breakdowns are bounded, daily activity shows the newest 14 dates first, and totals remain complete", () => {
+test("breakdowns are bounded and ranked by cost then tokens, daily activity shows the newest 14 dates first, and totals remain complete", () => {
   const ledger = open()
   for (let index = 1; index <= 20; index++) ledger.importBatch([{
     ...record, messageID: `m${index}`, projectID: `p${index}`, directory: `/work/p${index}`, modelID: `model${index}`,
@@ -176,6 +176,9 @@ test("breakdowns are bounded, daily activity shows the newest 14 dates first, an
   expect(dashboard.models[0]?.id).toBe("provider/model20")
   expect(dashboard.daily).toHaveLength(14)
   expect(dashboard.daily.map((day) => day.id)).toEqual(Array.from({ length: 14 }, (_, index) => `2026-07-${String(20 - index).padStart(2, "0")}`))
+  const free = open()
+  for (let index = 1; index <= 9; index++) free.importBatch([{ ...record, messageID: `f${index}`, modelID: `model${index}`, cost: 0, input: index }])
+  expect(free.dashboard({ range: "all" }).models.map((model) => model.id)).not.toContain("provider/model1")
 })
 
 test("project options label by the most recently used directory, show paths, and retain project-wide worktree filtering", () => {
