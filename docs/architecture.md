@@ -50,10 +50,10 @@ through OpenTUI without submitting.
 
 `@opcode/ui/screen` shares route ownership, immutable return-route snapshots,
 open/update/back navigation, stale-interaction guards, mounted input modes, and
-stable keymap registration. Later, Cost, Sessions, and Snippets use the same controller;
-Context uses the shared component-owned dialog commands instead: native dialogs
-already own the `modal` input mode, so plugins must not push a competing route
-mode. Tab pills and actionable keyboard hints invoke the same commands/state
+stable keymap registration. Later, Cost, and Snippets use the same controller;
+Context, Feed, GH PR Status, and Sessions use the shared component-owned dialog
+commands instead: native dialogs already own the `modal` input mode, so plugins
+must not push a competing route mode. Tab pills and actionable keyboard hints invoke the same commands/state
 transitions from mouse input. The host's `router.current()`
 is a live store proxy, never a safe value to save directly as a return destination.
 Persistence, domain actions, and their cancellable I/O remain plugin-specific.
@@ -62,8 +62,9 @@ Persistence, domain actions, and their cancellable I/O remain plugin-specific.
 search box and Escape that undoes one step at a time, grouped item cards that
 open on enter or click, the picker, the Settings tab, sidebar items with "+N
 more" and refresh countdown lines, the refresh schedule, and the browser
-launcher. Sessions uses its sidebar items too. It is a separate workspace so that
-changing it releases only those three plugins, not every consumer of `@opcode/ui`.
+launcher. Sessions uses its dialog, picker, and sidebar items too. It is a
+separate workspace so that changing it releases only those three plugins, not
+every consumer of `@opcode/ui`.
 
 `@opcode/core` contains small host-independent utilities, including the XDG
 state directory and owner-only WAL SQLite setup shared by Cost, Later, and

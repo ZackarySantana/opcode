@@ -1,11 +1,10 @@
 import { expect, test } from "bun:test"
 import type { Plugin } from "@opencode/plugin"
-import type { Context, Destination, KeymapLayer, Route } from "@opencode/plugin/tui/context"
-import { createRoot, createSignal } from "solid-js"
+import type { Context, KeymapLayer } from "@opencode/plugin/tui/context"
+import { createRoot } from "solid-js"
 import { sleep } from "@opcode/core/live"
 import server from "../src/index"
 import tui from "../src/tui"
-import { BROWSER_ROUTE } from "../src/view"
 import { session, user } from "./fixtures"
 
 test("server unload aborts initial indexing and stream, unregistering RPC before closing index", async () => {
@@ -32,7 +31,7 @@ test("server unload aborts initial indexing and stream, unregistering RPC before
   expect(disposed).toBe(true)
 })
 
-test("TUI setup defers sync to the first browser opening, pins it to one connection, and restores a foreign same-name route", async () => {
+test("TUI setup defers sync to the first browser opening, pins it to one connection, and unload closes the open dialog", async () => {
   const searched = Promise.withResolvers<void>()
   const calls: string[] = []
   const locations: string[] = []
@@ -61,18 +60,13 @@ test("TUI setup defers sync to the first browser opening, pins it to one connect
     },
   })
   let connected = makeClient("A")
-  const [route, setRoute] = createSignal<Route>({ type: "plugin", id: "another-plugin", name: BROWSER_ROUTE })
-  const navigations: Destination[] = []
-  let unregistered = false
+  const dialog: unknown[] = []
   const layers: KeymapLayer[] = []
   const api = {
     options: { inbox: { enabled: false } }, location: { directory: "/connected/A" }, get client() { return connected },
     data: { location: { command: { list: () => [] } } },
     keymap: { layer: (factory: () => KeymapLayer) => { layers.push(factory()) }, commands: () => [] },
-    ui: { router: {
-      register: () => () => { unregistered = true }, current: route,
-      navigate: (next: Destination) => { navigations.push(next); setRoute(next as Route) },
-    } },
+    ui: { dialog: { show: () => dialog.push(["show"]), set: (options: object) => dialog.push(["set", options]), clear: () => dialog.push(["clear"]) } },
   } as unknown as Context
   const owner = createRoot((dispose) => ({ cleanup: tui.setup(api), dispose }))
   connected = makeClient("B") // The original setup must not start reading this replacement client.
@@ -87,7 +81,5 @@ test("TUI setup defers sync to the first browser opening, pins it to one connect
     expect(uploaded).toEqual([{ server: "A", text: "A fixture conversation" }])
     expect(locations.every((directory) => directory === "/connected/A")).toBe(true)
   } finally { await cleanup?.(); owner.dispose() }
-  expect(unregistered).toBe(true)
-  expect(navigations.at(-1)).toEqual({ type: "plugin", id: "another-plugin", name: BROWSER_ROUTE, data: undefined })
-  expect(route()).toMatchObject({ type: "plugin", id: "another-plugin", name: BROWSER_ROUTE })
+  expect(dialog).toEqual([["show"], ["set", { size: "large", centered: true }], ["clear"]])
 })

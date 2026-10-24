@@ -1,5 +1,5 @@
 import type { OpenCodeEvent, SessionInfo } from "@opencode/client"
-import type { AttentionSoundName, Context, Route, ToastVariant } from "@opencode/plugin/tui/context"
+import type { AttentionSoundName, Context, ToastVariant } from "@opencode/plugin/tui/context"
 import { errorMessage } from "@opcode/core"
 import { consumeLive } from "@opcode/core/live"
 import { createEffect, createMemo, createSignal, untrack } from "solid-js"
@@ -188,8 +188,9 @@ export function createInbox(api: Context, options: InboxOptions) {
     currentRoot,
     /** The session the back row returns to, while on the session this plugin last opened. */
     back: () => backEntry(history, currentSession()),
-    /** Navigate, remembering the session it came from. `from` is the session a plugin page was opened over. */
-    open(sessionID: string, from: Route = api.ui.router.current()) {
+    /** Navigate, remembering the session it came from. */
+    open(sessionID: string) {
+      const from = api.ui.router.current()
       saveHistory(pushHistory(history, from.type === "session" ? { id: from.sessionID, title: titleOf(from.sessionID, "previous session") } : undefined, sessionID))
       api.ui.router.navigate({ type: "session", sessionID })
     },

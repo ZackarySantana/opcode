@@ -70,9 +70,10 @@ your only copy of a production ledger or session index.
 - Later: add multiline Unicode items, reorder, edit, complete, restore, delete;
   make a second client modify the selected item. Paste an item into both home and
   session prompts: it must not submit. Cancel dialogs and unload mid-action.
-- Sessions: search title/path/message text, try invalid regex, toggle children,
-  navigate beyond a screen, inspect a preview, and refresh after deletion. Open a
-  session in another directory from the browser. Run agents in two projects:
+- Sessions: search title/path/message text, try invalid regex, pick a project,
+  toggle children, navigate beyond a screen, inspect a preview, and refresh
+  after deletion. Open a session in another directory from the browser: `/go
+  back` returns to the session it was opened over. Run agents in two projects:
   check the sidebar's states, numbering, `/go <n>`, `/go back`, and that the back
   row disappears after navigating with host tabs.
 - Reload/disable each plugin while its view and a request are active. Check
