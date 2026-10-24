@@ -36,6 +36,21 @@ test("movement never searches again, and newer filters win over late async respo
   } finally { await model.dispose() }
 })
 
+test("typing keeps the rows, marked outdated, and the selection follows its session into the new results", async () => {
+  const pending = Promise.withResolvers<SearchOutput>()
+  const model = createBrowser(emptyClient, remoteStub({ search: async (input) => input.query ? pending.promise : { rows: ["a", "b", "c"].map(result), projects: [], truncated: false } }))
+  try {
+    await model.load()
+    model.move(1)
+    const searching = model.search("x")
+    expect(model.state()).toMatchObject({ outdated: true, selected: 1 })
+    expect(model.state().rows.map((row) => row.id)).toEqual(["a", "b", "c"])
+    pending.resolve({ rows: ["c", "d", "b"].map(result), projects: [], truncated: false })
+    await searching
+    expect(model.state()).toMatchObject({ outdated: false, selected: 2 })
+  } finally { await model.dispose() }
+})
+
 test("refresh actually synchronizes server state and imports connected-client history", async () => {
   const order: string[] = []
   const client: HistorySource = { session: { list: async () => { order.push("history"); return { data: [session()], cursor: {} } } }, message: { list: async () => ({ data: [user()], cursor: {} }) } }

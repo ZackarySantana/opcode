@@ -1,14 +1,12 @@
 /** @jsxImportSource @opentui/solid */
 import { Plugin } from "@opencode/plugin/tui"
-import { createScreen, type Screen } from "@opcode/ui/screen"
-import type { Context, Route } from "@opencode/plugin/tui/context"
-import { createBrowser, type BrowserModel } from "./browser"
+import { ThemeSurface } from "@opcode/ui"
+import type { Context } from "@opencode/plugin/tui/context"
+import { createBrowser } from "./browser"
+import { SessionsDialog } from "./dialog"
 import { createInbox, inboxOptions, type Inbox } from "./inbox-host"
 import { sessionsRemote } from "./rpc"
 import { InboxSidebar, rowSummary } from "./sidebar"
-import { BROWSER_MODE, BROWSER_ROUTE, SessionsView } from "./view"
-
-const PLUGIN_ID = "opcode-sessions"
 
 /** Names already used by other commands are left alone; the first free one becomes the primary slash name. */
 export function availableSlashNames(api: Pick<Context, "keymap" | "data" | "location">, candidates: readonly string[]) {
@@ -18,59 +16,6 @@ export function availableSlashNames(api: Pick<Context, "keymap" | "data" | "loca
 }
 
 const slash = (names: readonly string[], extra?: { arguments: true }) => names[0] ? { slash: { name: names[0], aliases: names.slice(1), ...extra } } : {}
-
-export function registerBrowserCommands(api: Context, model: BrowserModel, screen: Screen, alive: () => boolean, open: (sessionID: string, from: Route) => void) {
-  const names = availableSlashNames(api, ["sessions", "sessions-all", "all-sessions"])
-  const invalidate = screen.invalidate
-  const active = () => alive() && screen.active()
-  const invocation = () => {
-    const current = screen.interaction()
-    return () => alive() && current()
-  }
-  api.keymap.layer(() => ({ mode: "global", commands: [{
-    id: "opcode-sessions.open", title: "All sessions", description: "Search recorded sessions across projects", group: "Session", palette: true,
-    ...slash(names),
-    run() {
-      if (!alive()) return
-      if (screen.owns()) return
-      void model.activate()
-      screen.open()
-    },
-  }] }))
-  screen.commands(() => [
-    { id: "opcode-sessions.close", title: "Back", bind: "escape", run() { if (active()) screen.close() } },
-    { id: "opcode-sessions.up", title: "Previous session", bind: "up,k", run() { if (active()) model.move(-1) } },
-    { id: "opcode-sessions.down", title: "Next session", bind: "down,j", run() { if (active()) model.move(1) } },
-    { id: "opcode-sessions.clear", title: "Clear filters", bind: "x", run: async () => { if (active()) await model.clear() } },
-    { id: "opcode-sessions.refresh", title: "Resynchronize sessions", bind: "r", run: async () => { if (active()) await model.refresh() } },
-    { id: "opcode-sessions.subagents", title: "Toggle child sessions", bind: "s", run: async () => { if (active()) await model.filters({ showSubagents: !model.state().showSubagents }) } },
-    { id: "opcode-sessions.search", title: "Search sessions", bind: "/", async run() {
-      if (!active()) return
-      const current = invocation()
-      const query = await api.ui.dialog.prompt({ title: "Search sessions (regular expression)", value: model.state().query, placeholder: "title, directory, or message text; max 256 characters" })
-      if (current() && query !== undefined) await model.filters({ query })
-    } },
-    { id: "opcode-sessions.project", title: "Filter project", bind: "p", async run() {
-      if (!active()) return
-      const current = invocation()
-      const value = model.state()
-      const project = await api.ui.dialog.select({ title: "Project", current: value.projectID ?? "", options: [
-        { title: "All projects", value: "" }, ...value.projects.map((project) => ({ title: project.label, description: project.directory, value: project.id })),
-      ] })
-      if (current() && project !== undefined) await model.filters({ projectID: project || undefined })
-    } },
-    { id: "opcode-sessions.select", title: "Open session", bind: "enter,return", run() {
-      if (!active()) return
-      const value = model.state()
-      const row = value.rows[value.selected]
-      // Rows stay valid while a re-query runs; filter changes clear them first.
-      if (!row) return
-      invalidate()
-      open(row.id, screen.previous())
-    } },
-  ])
-  return invalidate
-}
 
 export const GO_COMMAND = "opcode-sessions.go"
 
@@ -102,34 +47,41 @@ export function registerInboxCommands(api: Context, inbox: Inbox, names: readonl
 }
 
 export default Plugin.define({
-  id: PLUGIN_ID,
+  id: "opcode-sessions",
   setup(api) {
     const location = api.location ?? api.data.location.default()
     // Both adapters use this exact connected client. Never read or upload a local index.
     const client = api.client
     const model = createBrowser(client, sessionsRemote(client, location.directory))
-    const screen = createScreen(api, { id: PLUGIN_ID, name: BROWSER_ROUTE, mode: BROWSER_MODE })
     const options = inboxOptions(api.options.inbox)
     // Disabled: no slot, no listeners, and the browser navigates without a back trail.
     const inbox = options && createInbox(api, options)
-    let active = true
-    let invalidate = () => {}
+    // A dialog is not a route: the back trail records the session the browser was opened over.
+    const open = inbox ? inbox.open : (sessionID: string) => api.ui.router.navigate({ type: "session", sessionID })
+    const names = availableSlashNames(api, ["sessions", "sessions-all", "all-sessions"])
+    let opened = false
     let unregisterSidebar = () => {}
-    const unregister = api.ui.router.register({ name: BROWSER_ROUTE, render: () => <SessionsView model={model} screen={screen} currentSession={() => { const route = screen.previous(); return route.type === "session" ? route.sessionID : undefined }} /> })
     const dispose = () => {
-      active = false
-      invalidate()
+      if (opened) api.ui.dialog.clear()
       unregisterSidebar()
       inbox?.dispose()
-      unregister()
     }
     try {
-      invalidate = registerBrowserCommands(api, model, screen, () => active, inbox ? inbox.open : (sessionID) => api.ui.router.navigate({ type: "session", sessionID }))
+      api.keymap.layer(() => ({ mode: "global", commands: [{
+        id: "opcode-sessions.open", title: "All sessions", description: "Search recorded sessions across projects", group: "Session", palette: true,
+        ...slash(names),
+        run() {
+          void model.activate()
+          api.ui.dialog.show(() => <ThemeSurface name="dialog"><SessionsDialog model={model} open={open} /></ThemeSurface>, () => { opened = false })
+          opened = true
+          api.ui.dialog.set({ size: "large", centered: true })
+        },
+      }] }))
       if (inbox) {
-        const names = availableSlashNames(api, ["go"])
-        registerInboxCommands(api, inbox, names)
+        const go = availableSlashNames(api, ["go"])
+        registerInboxCommands(api, inbox, go)
         // At the very top of the sidebar, above other plugins' sections.
-        unregisterSidebar = api.ui.slot({ prepend: "sidebar.content", render: () => <InboxSidebar inbox={inbox} limit={options.rows} command={GO_COMMAND} pointer={names[0] && `/${names[0]}`} /> })
+        unregisterSidebar = api.ui.slot({ prepend: "sidebar.content", render: () => <InboxSidebar inbox={inbox} limit={options.rows} command={GO_COMMAND} pointer={go[0] && `/${go[0]}`} /> })
       }
     } catch (error) {
       dispose()
@@ -138,7 +90,6 @@ export default Plugin.define({
     }
     return async () => {
       dispose()
-      screen.dispose()
       await model.dispose()
     }
   },

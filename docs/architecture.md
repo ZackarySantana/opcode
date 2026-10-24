@@ -53,10 +53,10 @@ through OpenTUI without submitting.
 
 `@opcode/ui/screen` shares route ownership, immutable return-route snapshots,
 open/update/back navigation, stale-interaction guards, mounted input modes, and
-stable keymap registration. Sessions and Snippets use the same controller;
-Context uses the shared component-owned dialog commands instead: native dialogs
-already own the `modal` input mode, so plugins must not push a competing route
-mode. Tab pills and actionable keyboard hints invoke the same commands/state
+stable keymap registration. Snippets uses the same controller; Context and the
+dialog plugins (Cost, Feed, GH PR Status, Later, Sessions) use the shared
+component-owned dialog commands instead: native dialogs already own the `modal`
+input mode, so plugins must not push a competing route mode. Tab pills and actionable keyboard hints invoke the same commands/state
 transitions from mouse input. The host's `router.current()`
 is a live store proxy, never a safe value to save directly as a return destination.
 Persistence, domain actions, and their cancellable I/O remain plugin-specific.
@@ -65,10 +65,10 @@ Persistence, domain actions, and their cancellable I/O remain plugin-specific.
 search box and Escape that undoes one step at a time, grouped item cards that
 open on enter or click, the picker, the Settings tab, sidebar items with "+N
 more" and refresh countdown lines, the refresh schedule, and the browser
-launcher. Sessions uses its sidebar items too, and Cost its tabbed dialog and picker.
-Native prompts replace a custom dialog, so Later passes its own tab and focus signals
-to come back on the same tab and item. It is a separate workspace so that changing it
-releases only its consumers, not every consumer of `@opcode/ui`.
+launcher. Sessions uses its dialog, picker, and sidebar items too, and Cost its tabbed
+dialog and picker. Native prompts replace a custom dialog, so Later passes its own tab
+and focus signals to come back on the same tab and item. It is a separate workspace so
+that changing it releases only its consumers, not every consumer of `@opcode/ui`.
 
 `@opcode/core` contains small host-independent utilities, including the XDG
 state directory and owner-only WAL SQLite setup shared by Cost, Later, and

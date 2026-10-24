@@ -70,12 +70,4 @@ export function clampSelection(selected: number, count: number) {
   return Math.max(0, Math.min(selected, count - 1))
 }
 
-/** Keep the selected row on screen, including after a resize or result shrink. */
-export function viewport(selected: number, count: number, capacity: number, previous = 0) {
-  const size = Math.max(1, capacity)
-  const selection = clampSelection(selected, count)
-  const start = Math.max(0, Math.min(previous, selection, Math.max(0, count - size)))
-  return { selected: selection, start: selection >= start + size ? selection - size + 1 : start, size }
-}
-
 export const projectName = (directory: string) => directory.split(/[\\/]/).filter(Boolean).at(-1) || directory

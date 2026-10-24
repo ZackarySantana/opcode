@@ -25,24 +25,24 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 
 ## Use
 
-Run `/sessions` or select **All sessions** in the command palette. `/sessions-all` and `/all-sessions` are aliases: names already used by other commands are left alone, and the first free name becomes the primary command. The palette entry works even if every name is taken.
+Run `/sessions` or select **All sessions** in the command palette to open the browser dialog. `/sessions-all` and `/all-sessions` are aliases: names already used by other commands are left alone, and the first free name becomes the primary command. The palette entry works even if every name is taken.
 
 | Key | Action |
 | --- | --- |
 | `↑` / `↓`, `j` / `k` | Move selection |
-| `/` | Edit the search: a case-insensitive JavaScript regular expression |
-| `p` | Filter by project, including all of its indexed directories |
+| `/` | Type in the search box: a case-insensitive JavaScript regular expression, applied as you type |
+| `p` | Filter by project, including all of its indexed directories; clears the search |
 | `s` | Show or hide child sessions (hidden initially) |
-| `enter` | Open the selected session |
+| `enter` | Close the dialog and open the selected session |
 | `x` | Clear the search and project filter; keep child visibility |
 | `r` | Resynchronize changed sessions and message history |
-| `esc` | Return to the screen that opened the browser |
+| `esc` | Undo one step: stop typing, clear the search, drop the project filter, then close |
 
 Search matches titles, full directory paths, and complete indexed user and assistant messages, each separately, so anchors such as `^/home` apply to a whole field. Results are newest-updated first. Filters and matching apply **before** the newest 200 matches are kept; refine the search or project filter for older ones. Opening the browser resets its filters.
 
 Expressions use Unicode mode when valid, otherwise legacy syntax, and are limited to 256 characters. Invalid expressions stay editable. Matching runs in a background worker with a three-second budget; when it expires, the matches found so far are shown, marked **partial**. The browser re-queries every five seconds while open.
 
-On wide enough terminals, the preview shows the newest matching message centered on the match (up to 4,096 characters), the latest model, model count, indexed message count, recorded cost, and token counters. These are **indexed historical totals**, not current context use or billing totals.
+When the dialog is wide enough, the preview shows the newest matching message centered on the match (up to 4,096 characters), the latest model, model count, indexed message count, recorded cost, and token counters. These are **indexed historical totals**, not current context use or billing totals.
 
 `enter` opens the session in this terminal, whichever directory it belongs to.
 

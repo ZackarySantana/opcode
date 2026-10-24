@@ -14,6 +14,8 @@ export interface BrowserState {
   projects: ProjectOption[]
   /** The server's scan budget expired: rows are partial. */
   truncated: boolean
+  /** Rows still answer an earlier query while the latest search runs. */
+  outdated: boolean
   loading: boolean
   syncing: boolean
   searchError: string
@@ -27,9 +29,9 @@ const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ?
 /** Selection changes are local; asynchronous results cannot replace a newer query. */
 export function createBrowser(client: HistorySource, remote: SessionsRemote) {
   const lifetime = new AbortController()
-  const [state, setState] = createSignal<BrowserState>({ query: "", showSubagents: false, selected: 0, rows: [], projects: [], truncated: false, loading: false, syncing: false, searchError: "", syncError: "", syncNotice: "" })
+  const [state, setState] = createSignal<BrowserState>({ query: "", showSubagents: false, selected: 0, rows: [], projects: [], truncated: false, outdated: false, loading: false, syncing: false, searchError: "", syncError: "", syncNotice: "" })
   const patch = (value: Partial<BrowserState>) => { if (!lifetime.signal.aborted) setState((current) => ({ ...current, ...value })) }
-  let search: AbortController | undefined
+  let searching: AbortController | undefined
   let generation = 0
   let refreshing: Promise<void> | undefined
   let synchronized = false
@@ -37,9 +39,9 @@ export function createBrowser(client: HistorySource, remote: SessionsRemote) {
   async function load() {
     if (lifetime.signal.aborted) return
     const request = ++generation
-    search?.abort()
-    search = new AbortController()
-    const signal = AbortSignal.any([search.signal, lifetime.signal])
+    searching?.abort()
+    searching = new AbortController()
+    const signal = AbortSignal.any([searching.signal, lifetime.signal])
     const value = state()
     try {
       validateQuery(value.query)
@@ -49,14 +51,20 @@ export function createBrowser(client: HistorySource, remote: SessionsRemote) {
       const current = state()
       const selectedID = current.rows[current.selected]?.id
       const position = selectedID ? result.rows.findIndex((row) => row.id === selectedID) : -1
-      patch({ ...result, selected: position >= 0 ? position : clampSelection(current.selected, result.rows.length) })
+      patch({ ...result, outdated: false, selected: position >= 0 ? position : clampSelection(current.selected, result.rows.length) })
     } catch (error) {
-      if (!signal.aborted && request === generation) patch({ rows: [], selected: 0, truncated: false, searchError: errorMessage(error) })
+      if (!signal.aborted && request === generation) patch({ rows: [], selected: 0, truncated: false, outdated: false, searchError: errorMessage(error) })
     } finally { if (request === generation && !signal.aborted) patch({ loading: false }) }
   }
 
   function filters(value: Partial<Pick<BrowserState, "query" | "projectID" | "showSubagents">>) {
     patch({ ...value, rows: [], selected: 0, truncated: false })
+    return load()
+  }
+
+  /** Typing refines the query in place: the rows shown stay, marked outdated, until the new results replace them. */
+  function search(query: string) {
+    patch({ query, outdated: true })
     return load()
   }
 
@@ -87,7 +95,7 @@ export function createBrowser(client: HistorySource, remote: SessionsRemote) {
   }
 
   return {
-    state, load, filters, refresh,
+    state, load, filters, search, refresh,
     move(delta: number) { patch({ selected: clampSelection(state().selected + delta, state().rows.length) }) },
     /** Opening resets filters; the first opening also synchronizes, so launching a TUI stays cheap. */
     activate() {
@@ -96,7 +104,7 @@ export function createBrowser(client: HistorySource, remote: SessionsRemote) {
       return reset
     },
     clear() { return filters({ query: "", projectID: undefined }) },
-    async dispose() { lifetime.abort(); search?.abort(); await refreshing },
+    async dispose() { lifetime.abort(); searching?.abort(); await refreshing },
   }
 }
 

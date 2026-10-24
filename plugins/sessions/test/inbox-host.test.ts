@@ -116,11 +116,9 @@ test("the back row follows plugin navigation and disappears once the user naviga
   expect(ui.inbox.goBack()).toBe(true)
   expect(ui.route()).toEqual({ type: "session", sessionID: "B" })
   expect(ui.inbox.back()).toEqual({ id: "A", title: "Session A" })
-  // A session browser picked over D (a plugin page) remembers D.
   ui.setRoute({ type: "session", sessionID: "D" })
   expect(ui.inbox.back()).toBeUndefined()
-  ui.setRoute({ type: "plugin", id: "opcode-sessions", name: "browser" })
-  ui.inbox.open("A", { type: "session", sessionID: "D" })
+  ui.inbox.open("A")
   expect(ui.inbox.back()?.id).toBe("D")
   ui.setRoute({ type: "session", sessionID: "B" })
   ui.setRoute({ type: "session", sessionID: "A" })
