@@ -5,7 +5,7 @@
 | Plugin | Domain data | Host adapter | Presentation |
 | --- | --- | --- | --- |
 | Context | Recorded telemetry and observable retained-context estimate | Public history/context/catalog reads; read-only tool RPC | Session dialog and explicit metadata export |
-| Cost | Normalized usage ledger and date/entity aggregates | Server-owned SQLite, live events, RPC; client history import | Dashboard and native filters |
+| Cost | Normalized usage ledger and date/entity aggregates | Server-owned SQLite, live events, RPC; client history import | Cost/Time dialog with filter pickers |
 | Later | Ordered active items and completed history | Client-local SQLite and isolated prompt-paste bridge | Manager, native edit/confirmation dialogs, sidebar |
 | Sessions | Searchable user/assistant text and session metadata; active sessions projected from server state | Server-owned SQLite, live events, RPC; client history import; client-side snapshot plus live events for active sessions | Browser, filters, preview, active-sessions sidebar, `/go` |
 | Feed | Subscriptions, settings, and an interpreted timeline of feed items | Client-local SQLite, feed fetching | Status/Upcoming/Releases/Subscribe/Settings dialog, feed picker, sidebar |
@@ -50,7 +50,7 @@ through OpenTUI without submitting.
 
 `@opcode/ui/screen` shares route ownership, immutable return-route snapshots,
 open/update/back navigation, stale-interaction guards, mounted input modes, and
-stable keymap registration. Later, Cost, Sessions, and Snippets use the same controller;
+stable keymap registration. Later, Sessions, and Snippets use the same controller;
 Context uses the shared component-owned dialog commands instead: native dialogs
 already own the `modal` input mode, so plugins must not push a competing route
 mode. Tab pills and actionable keyboard hints invoke the same commands/state
@@ -62,8 +62,8 @@ Persistence, domain actions, and their cancellable I/O remain plugin-specific.
 search box and Escape that undoes one step at a time, grouped item cards that
 open on enter or click, the picker, the Settings tab, sidebar items with "+N
 more" and refresh countdown lines, the refresh schedule, and the browser
-launcher. Sessions uses its sidebar items too. It is a separate workspace so that
-changing it releases only those three plugins, not every consumer of `@opcode/ui`.
+launcher. Sessions uses its sidebar items too, and Cost its tabbed dialog and picker. It is
+a separate workspace so that changing it releases only its consumers, not every consumer of `@opcode/ui`.
 
 `@opcode/core` contains small host-independent utilities, including the XDG
 state directory and owner-only WAL SQLite setup shared by Cost, Later, and
