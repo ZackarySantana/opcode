@@ -11,7 +11,7 @@ afterAll(async () => { for (const root of temporary) await rm(root, { recursive:
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "opcode-dev-test-"))
   temporary.push(root)
-  for (const id of ["context", "cost", "later", "sessions", "feed", "gh-pr-status"]) {
+  for (const id of ["context", "cost", "later", "sessions", "feed", "gh-pr-status", "snippets"]) {
     const directory = join(root, ".release", `opcode-${id}`, "dist")
     await mkdir(directory, { recursive: true })
     for (const entry of ["index", "tui"]) {
@@ -22,7 +22,7 @@ async function fixture() {
 }
 
 test("preview defaults to the suite and accepts individual package names", () => {
-  expect(selectPlugins([])).toEqual(["context", "cost", "later", "sessions", "feed", "gh-pr-status"])
+  expect(selectPlugins([])).toEqual(["context", "cost", "later", "sessions", "feed", "gh-pr-status", "snippets"])
   expect(selectPlugins(["@lidtop/opencode-feed"])).toEqual(["feed"])
   expect(selectPlugins(["opcode-cost", "later", "cost", "@lidtop/opencode-cost", "@lidtop/opencode-sessions"])).toEqual(["cost", "later", "sessions"])
   expect(() => selectPlugins(["../../outside"])).toThrow("Unknown plugin")
@@ -52,7 +52,7 @@ test("preview loads both built entrypoints and separates plugin data without rew
   expect(await Bun.file(userConfig).text()).toBe("// existing project config\n{\"model\":\"example/model\"}")
   expect(environment.OPENCODE_CONFIG_CONTENT).toBe(JSON.stringify({ model: "example/model", plugins: ["another-plugin"] }))
   const entries = [...settings.plugins, ...cli.plugins].filter((entry: unknown): entry is { package: string; options: { database: string } } => !!entry && typeof entry === "object" && "package" in entry)
-  expect(entries).toHaveLength(6)
+  expect(entries).toHaveLength(7)
   for (const entry of entries) {
     const id = basename(entry.options.database, ".sqlite")
     expect(entry.options.database).toBe(join(preview.data, `${id}.sqlite`))
@@ -62,7 +62,7 @@ test("preview loads both built entrypoints and separates plugin data without rew
       expect(module.default.entry).toBe(name)
     }
   }
-  expect(settings.plugins.filter((entry: unknown) => typeof entry === "object")).toHaveLength(3)
+  expect(settings.plugins.filter((entry: unknown) => typeof entry === "object")).toHaveLength(4)
   // Client-local plugins load in the terminal process, not the server.
   expect(cli.plugins.filter((entry: unknown) => typeof entry === "object")).toMatchObject(["later", "feed", "gh-pr-status"].map((id) => ({
     package: join(root, `.release/dev/plugins/${id}`), options: { database: join(preview.data, `${id}.sqlite`) },

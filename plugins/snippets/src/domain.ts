@@ -1,0 +1,177 @@
+export const PLUGIN_ID = "opcode-snippets"
+export type Scope = "global" | "project"
+export const scopes: readonly Scope[] = ["global", "project"]
+
+/** Lowercase kebab-case with at least one letter, so `#123` issue references never expand. */
+const NAME = /^(?=[a-z0-9-]*[a-z])[a-z0-9]+(?:-[a-z0-9]+)*$/
+export const MAX_NAME = 64
+export const MAX_BODY = 65_536
+
+export function validName(name: unknown): name is string {
+  return typeof name === "string" && name.length <= MAX_NAME && NAME.test(name)
+}
+
+export interface SnippetFields {
+  description?: string
+  aliases: string[]
+  body: string
+}
+
+export interface Snippet extends SnippetFields {
+  name: string
+  scope: Scope
+  path: string
+}
+
+const FRONTMATTER = /^---[\t ]*\r?\n(?:([\s\S]*?)\r?\n)??---[\t ]*(?:\r?\n|$)/
+
+function unquote(value: string): string {
+  if (value.startsWith("\"")) { try { return String(JSON.parse(value)) } catch { /* Keep the raw text. */ } }
+  if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) return value.slice(1, -1).replaceAll("''", "'")
+  return value
+}
+
+/** Reads `description` and `aliases` (inline list, comma list, or `- item` lines); other keys are ignored. */
+export function parseSnippet(text: string): SnippetFields {
+  const match = FRONTMATTER.exec(text)
+  if (!match) return { aliases: [], body: text.trim() }
+  let description: string | undefined
+  const aliases: string[] = []
+  let key: string | undefined
+  for (const line of (match[1] ?? "").split(/\r?\n/)) {
+    const item = /^\s+-\s*(.*)$/.exec(line)
+    if (item) { if (key === "aliases") aliases.push(unquote(item[1]!.trim())); continue }
+    const field = /^([A-Za-z][\w-]*)\s*:\s*(.*)$/.exec(line)
+    if (!field) continue
+    key = field[1]
+    const value = field[2]!.trim()
+    if (key === "description" && value) description = unquote(value)
+    if (key === "aliases" && value) aliases.push(...value.replace(/^\[(.*)\]$/, "$1").split(",").map((alias) => unquote(alias.trim())).filter(Boolean))
+  }
+  return { ...(description ? { description } : {}), aliases: aliases.filter(validName), body: text.slice(match[0].length).trim() }
+}
+
+export function formatSnippet(fields: SnippetFields): string {
+  const lines = [
+    ...(fields.description ? [`description: ${JSON.stringify(fields.description)}`] : []),
+    ...(fields.aliases.length ? [`aliases: [${fields.aliases.join(", ")}]`] : []),
+  ]
+  const body = `${fields.body.trim()}\n`
+  // A body that itself starts like frontmatter needs a block before it to be read back unchanged.
+  if (!lines.length && !FRONTMATTER.test(body)) return body
+  return `---\n${lines.map((line) => `${line}\n`).join("")}---\n\n${body}`
+}
+
+/** Normalized fields for a write, or an error a user or model can act on. */
+export function validateSnippet(name: string, fields: SnippetFields): SnippetFields {
+  if (!validName(name)) throw new Error(`Invalid snippet name "${name}". Use lowercase letters, digits, and single hyphens, with at least one letter.`)
+  const body = fields.body.trim()
+  if (!body) throw new Error("A snippet needs body text.")
+  if (Buffer.byteLength(body) > MAX_BODY) throw new Error(`Snippet bodies are limited to ${MAX_BODY} bytes.`)
+  const aliases = [...new Set(fields.aliases)]
+  const invalid = aliases.find((alias) => !validName(alias) || alias === name)
+  if (invalid !== undefined) throw new Error(`Invalid alias "${invalid}".`)
+  // Frontmatter values are single lines.
+  return { description: fields.description?.replace(/\s+/g, " ").trim() || undefined, aliases, body }
+}
+
+/** Every name and alias a user can type, mapped to its snippet. Project names override global ones, and names beat aliases. */
+export function effectiveSnippets(snippets: readonly Snippet[]): Map<string, Snippet> {
+  const ordered = [...snippets.filter((snippet) => snippet.scope === "project"), ...snippets.filter((snippet) => snippet.scope === "global")]
+  const keys = new Map<string, Snippet>()
+  for (const snippet of ordered) if (!keys.has(snippet.name)) keys.set(snippet.name, snippet)
+  for (const snippet of ordered) {
+    if (keys.get(snippet.name) !== snippet) continue
+    for (const alias of snippet.aliases) if (!keys.has(alias)) keys.set(alias, snippet)
+  }
+  return keys
+}
+
+/** Fenced blocks and inline code spans, where `#name` stays literal. */
+function codeRanges(text: string): [number, number][] {
+  const ranges: [number, number][] = []
+  let fence: { marker: string; start: number } | undefined
+  let offset = 0
+  for (const line of text.split("\n")) {
+    const end = offset + line.length + 1
+    const [, marker, rest = ""] = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line) ?? []
+    if (fence) {
+      // Only a bare fence of the same kind, at least as long, closes the block.
+      if (marker && marker[0] === fence.marker[0] && marker.length >= fence.marker.length && !rest.trim()) { ranges.push([fence.start, end]); fence = undefined }
+    } else if (marker) fence = { marker, start: offset }
+    offset = end
+  }
+  if (fence) ranges.push([fence.start, text.length])
+  for (const span of text.matchAll(/(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g)) {
+    const start = span.index
+    if (!ranges.some(([from, to]) => start >= from && start < to)) ranges.push([start, start + span[0].length])
+  }
+  return ranges
+}
+
+export interface Token { name: string; start: number; end: number }
+
+/**
+ * `#name` tokens for known names, first occurrence of each. A token must start the text or follow whitespace or an
+ * opening bracket, so URL fragments, `a#b`, headings, and `[link](#anchor)` never match.
+ */
+export function findTokens(text: string, known: (name: string) => boolean): Token[] {
+  const code = codeRanges(text)
+  const seen = new Set<string>()
+  const tokens: Token[] = []
+  for (const match of text.matchAll(/(?<![^\s([{])(?<!\]\()#([a-z0-9]+(?:-[a-z0-9]+)*)(?![\p{L}\p{N}_-])/gu)) {
+    const name = match[1]!
+    const start = match.index
+    // `known` runs last: callers may record what it accepts.
+    if (seen.has(name) || !validName(name) || code.some(([from, to]) => start >= from && start < to) || !known(name)) continue
+    seen.add(name)
+    tokens.push({ name, start, end: start + match[0].length })
+  }
+  return tokens
+}
+
+/** The skill name that marks a registration as ours; anything else at the same ID is a collision. */
+export function skillName(key: string): string {
+  return `${key} · snippet`
+}
+
+export function skillDescription(key: string, snippet: Snippet): string {
+  if (key !== snippet.name) return `Snippet · alias of #${snippet.name}`
+  const summary = snippet.description || snippet.body.split("\n").find((line) => line.trim())?.trim() || "empty"
+  return `Snippet · ${summary.length > 80 ? `${summary.slice(0, 79)}…` : summary}`
+}
+
+/** Session metadata key marking an authoring session, and its optional target snippet. */
+export const AUTHORING = PLUGIN_ID
+export type Authoring = { name?: string; scope?: Scope }
+export const WRITE_ACTION = "snippet_write"
+export const DELETE_ACTION = "snippet_delete"
+const authoringRules = [WRITE_ACTION, DELETE_ACTION].map((action) => ({ action, resource: "*", effect: "ask" as const }))
+
+type Rule = { action: string; resource: string; effect: string }
+
+/** An authoring session carries its marker and still has the rules that make writes and deletes ask. */
+export function authoringOf(session: { metadata?: unknown; permissions?: readonly Rule[] }): Authoring | undefined {
+  const value = session.metadata && typeof session.metadata === "object" ? (session.metadata as Record<string, unknown>)[AUTHORING] : undefined
+  if (!value || typeof value !== "object") return undefined
+  const rules = session.permissions ?? []
+  if (!authoringRules.every((rule) => rules.some((other) => other.action === rule.action && other.resource === rule.resource && other.effect === rule.effect))) return undefined
+  const { name, scope } = value as Record<string, unknown>
+  return { ...(validName(name) ? { name } : {}), ...(scope === "global" || scope === "project" ? { scope } : {}) }
+}
+
+/** Session fields for a new authoring session: its marker, and rules so every write and delete asks first. */
+export function authoringSession(target: Authoring) {
+  return { title: target.name ? `Snippet #${target.name}` : "New snippet", metadata: { [AUTHORING]: target }, permissions: authoringRules }
+}
+
+export function authoringInstructions(target: Authoring): string {
+  return [
+    "This session writes snippets: reusable prompt text the user inserts into a message with #name or @name.",
+    "Use snippet_list, snippet_write, and snippet_delete. Never edit snippet files directly.",
+    "Names are lowercase kebab-case. Global snippets apply everywhere; project snippets apply to this project and override a global snippet with the same name.",
+    "Write only the text to insert. Snippets have no templating, arguments, shell substitution, or includes.",
+    "The user approves each write and delete.",
+    ...(target.name ? [`This session is for #${target.name}${target.scope ? ` (${target.scope})` : ""}. If it exists, read it with snippet_list before changing it.`] : []),
+  ].join("\n")
+}

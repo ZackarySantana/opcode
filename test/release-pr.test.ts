@@ -47,7 +47,7 @@ test("every independent release is listed, including proposed prerelease version
   const f = await fixture()
   for (const [index, id] of pluginIDs.entries()) await f.manifest(id, `0.${index + 2}.0${id === "sessions" ? "-beta.2" : ""}`)
   expect(releasePRUpdate(previousInstructions, await proposedReleases(f.root, f.base)).title)
-    .toBe("chore(release): publish context@0.2.0 cost@0.3.0 later@0.4.0 sessions@0.5.0-beta.2 feed@0.6.0 gh-pr-status@0.7.0")
+    .toBe("chore(release): publish context@0.2.0 cost@0.3.0 later@0.4.0 sessions@0.5.0-beta.2 feed@0.6.0 gh-pr-status@0.7.0 snippets@0.8.0")
 })
 
 test("body updates preserve all release notes and are idempotent", () => {

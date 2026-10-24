@@ -10,12 +10,16 @@
 | Sessions | Searchable user/assistant text and session metadata | Server-owned SQLite, live events, RPC; client history import | Browser, filters, preview, safe resume action |
 | Feed | Subscriptions, settings, and an interpreted timeline of feed items | Client-local SQLite, feed fetching | Status/Upcoming/Releases/Subscribe/Settings dialog, feed picker, sidebar |
 | GH PR Status | Pull requests classified by what waits on you, settings, and a saved team filter | Client-local SQLite, `gh` GraphQL and REST calls | Mine/Reviewing/Teams/Settings dialog, team picker, sidebar |
+| Snippets | Global and project snippet files, precedence, and `#name` tokens | Server-owned files, skill registration, prompt/context hooks, authoring tools, RPC | List with preview, prompt paste bridge, authoring sessions |
 
 Later is deliberately not an execution engine: starting an item pastes it into
 the existing prompt, without submission. Cost is recorded message telemetry,
 not an invoice. Context estimates visible retained content, not the exact hidden
 provider payload. Sessions stores conversation text; treat its database as
-sensitive.
+sensitive. Snippets registers each snippet as a user-only skill
+(`autoinvoke: false`), so `@name` and `#name` share the host's attachment path;
+its writing tools exist only in sessions it marks for authoring, and every write
+asks for permission.
 
 ## Shared code
 
@@ -40,9 +44,13 @@ keeps Context's shared cards and hints on the resolved dialog surface. Palette
 reads stay reactive, including when an open view changes theme or mode. A theme
 with neutral accent/interactive aliases intentionally remains monochrome.
 
+`@opcode/ui/paste` is the prompt paste bridge Later and Snippets share: it
+returns to a home or session prompt, waits for its paste command, and pastes
+through OpenTUI without submitting.
+
 `@opcode/ui/screen` shares route ownership, immutable return-route snapshots,
 open/update/back navigation, stale-interaction guards, mounted input modes, and
-stable keymap registration. Later, Cost, and Sessions use the same controller;
+stable keymap registration. Later, Cost, Sessions, and Snippets use the same controller;
 Context uses the shared component-owned dialog commands instead: native dialogs
 already own the `modal` input mode, so plugins must not push a competing route
 mode. Tab pills and actionable keyboard hints invoke the same commands/state
@@ -73,7 +81,7 @@ Private workspace source is bundled into each package. Host runtimes and all
 third-party dependencies stay external.
 
 The public npm packages are `@lidtop/opencode-context`, `@lidtop/opencode-cost`,
-`@lidtop/opencode-later`, `@lidtop/opencode-sessions`, `@lidtop/opencode-feed`, and `@lidtop/opencode-gh-pr-status`. Each has its own version
+`@lidtop/opencode-later`, `@lidtop/opencode-sessions`, `@lidtop/opencode-feed`, `@lidtop/opencode-gh-pr-status`, and `@lidtop/opencode-snippets`. Each has its own version
 and changeset history; they are not a permanent lockstep group. The npm scope does not rename runtime plugin, command,
 or RPC IDs, nor existing database paths. Shared-source or
 catalog updates require releases of affected consumers, not a forced permanent

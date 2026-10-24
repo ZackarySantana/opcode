@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "exports": { ".": "./src/index.tsx", "./screen": "./src/screen.ts", "./test-support/*": "./test-support/*.ts" },
+  "exports": { ".": "./src/index.tsx", "./screen": "./src/screen.ts", "./paste": "./src/paste.ts", "./test-support/*": "./test-support/*.ts" },
   "dependencies": {
     "@opencode/plugin": "catalog:",
     "@opentui/core": "catalog:",
