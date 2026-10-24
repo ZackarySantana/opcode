@@ -1,26 +1,5 @@
 import { expect, test } from "bun:test"
-import { effectiveSnippets, findTokens, formatSnippet, parseSnippet, type Snippet } from "../src/domain"
-
-const tokens = (text: string, known: (name: string) => boolean = () => true) => findTokens(text, known).map((token) => text.slice(token.start, token.end))
-
-test.each([
-  ["(#review) and [#hi], then #review again", ["#review", "#hi"]],
-  ["#review. #hi, #a1!", ["#review", "#hi", "#a1"]],
-  ["see https://x.dev/#review, a#review, ##review, [link](#review)", []],
-  ["# review heading, #Review, #review-, #review_x, #café", []],
-  ["#123 issue references", []],
-  ["`#review` and ``a `#hi` b``", []],
-  ["```\n#review\n```\n#hi", ["#hi"]],
-  ["```\n#review\n```js\n#hi", []],
-  ["```\nunterminated #review", []],
-])("%j expands %j", (text, expected) => {
-  expect(tokens(text)).toEqual(expected)
-})
-
-test("unknown names stay literal, and offsets are UTF-16 indices like host mentions", () => {
-  expect(tokens("#unknown #hi", (name) => name === "hi")).toEqual(["#hi"])
-  expect(findTokens("😀 #hi", () => true)).toEqual([{ name: "hi", start: 3, end: 6 }])
-})
+import { effectiveSnippets, formatSnippet, parseSnippet, type Snippet } from "../src/domain"
 
 const snippet = (name: string, scope: Snippet["scope"], aliases: string[] = []): Snippet => ({ name, scope, aliases, body: `${scope} ${name}`, path: `/${scope}/${name}.md` })
 

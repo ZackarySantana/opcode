@@ -1,7 +1,7 @@
 {
   "name": "@lidtop/opencode-snippets",
   "version": "0.0.0",
-  "description": "Reusable OpenCode prompt snippets, inserted with #name or @name and written in chat",
+  "description": "Reusable OpenCode prompt snippets, inserted with @name and written in chat",
   "keywords": [
     "opencode",
     "opencode-plugin"

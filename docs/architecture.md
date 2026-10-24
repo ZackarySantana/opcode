@@ -10,7 +10,7 @@
 | Sessions | Searchable user/assistant text and session metadata; active sessions projected from server state | Server-owned SQLite, live events, RPC; client history import; client-side snapshot plus live events for active sessions | Browser, filters, preview, active-sessions sidebar, `/go` |
 | Feed | Subscriptions, settings, and an interpreted timeline of feed items | Client-local SQLite, feed fetching | Status/Upcoming/Releases/Subscribe/Settings dialog, feed picker, sidebar |
 | GH PR Status | Pull requests classified by what waits on you, settings, and a saved team filter | Client-local SQLite, `gh` GraphQL and REST calls | Mine/Reviewing/Teams/Settings dialog, team picker, sidebar |
-| Snippets | Global and project snippet files, precedence, and `#name` tokens | Server-owned files, skill registration, prompt/context hooks, authoring tools, RPC | Dialog with previews, prompt paste bridge, authoring sessions |
+| Snippets | Global and project snippet files, precedence, and `@name` mentions | Server-owned files, skill registration, prompt/context hooks, authoring tools, RPC | Dialog with previews, prompt paste bridge, authoring sessions |
 
 Later is deliberately not an execution engine: starting an item pastes it into
 the existing prompt, without submission. Its server side only registers agent
@@ -20,7 +20,8 @@ Cost is recorded message telemetry,
 not an invoice. Context estimates visible retained content, not the exact hidden
 provider payload. Sessions stores conversation text; treat its database as
 sensitive. Snippets registers each snippet as a user-only skill
-(`autoinvoke: false`), so `@name` and `#name` share the host's attachment path;
+(`autoinvoke: false`), so `@name` uses the host's attachment path, and a prompt
+hook attaches `@name` text that was pasted rather than picked from completion;
 its writing tools exist only in sessions it marks for authoring, and every write
 asks for permission.
 

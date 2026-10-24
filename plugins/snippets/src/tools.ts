@@ -13,7 +13,7 @@ export interface ToolDependencies {
 }
 
 const object = (properties: Record<string, unknown>, required: string[]) => ({ type: "object", properties, required, additionalProperties: false })
-const name = { type: "string", description: "Lowercase kebab-case snippet name, typed as #name or @name." }
+const name = { type: "string", description: "Lowercase kebab-case snippet name, typed as @name." }
 const scope = { type: "string", enum: scopes, description: "global applies everywhere; project applies to this project and overrides global." }
 
 /** Snippet tools for authoring sessions. Other sessions never see them, and calls from them fail. */
@@ -52,13 +52,13 @@ export function snippetTools({ service, authoring, assert }: ToolDependencies) {
       options: { codemode: false },
       execute: guarded<{ name: string; body: string; scope?: Scope; description?: string; aliases?: string[] }>(async (input, context, target) => {
         const existing = await service.get(input.name)
-        if (existing && existing.name !== input.name) throw new Error(`${input.name} is an alias of #${existing.name}. Write ${existing.name} instead.`)
+        if (existing && existing.name !== input.name) throw new Error(`${input.name} is an alias of @${existing.name}. Write ${existing.name} instead.`)
         const scope = input.scope ?? existing?.scope ?? target.scope ?? "global"
         // Validate first, so an approval is never spent on a write that would fail.
         const fields = validateSnippet(input.name, { body: input.body, description: input.description, aliases: input.aliases ?? [] })
         await approve(context, WRITE_ACTION, scope, input.name, { ...fields })
         const path = await service.write(scope, input.name, fields)
-        return `Saved #${input.name} (${scope}) to ${path}.`
+        return `Saved @${input.name} (${scope}) to ${path}.`
       }),
     },
     {
@@ -68,7 +68,7 @@ export function snippetTools({ service, authoring, assert }: ToolDependencies) {
       options: { codemode: false },
       execute: guarded<{ name: string; scope: Scope }>(async (input, context) => {
         await approve(context, DELETE_ACTION, input.scope, input.name, {})
-        return await service.remove(input.scope, input.name) ? `Deleted #${input.name} (${input.scope}).` : `No ${input.scope} snippet named ${input.name}.`
+        return await service.remove(input.scope, input.name) ? `Deleted @${input.name} (${input.scope}).` : `No ${input.scope} snippet named ${input.name}.`
       }),
     },
   ]

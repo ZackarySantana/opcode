@@ -103,7 +103,7 @@ Someone asked for your review an hour ago, and your own pull request has been ap
 
 ## Snippets: say it once, reuse it everywhere
 
-Typing the same review checklist or project briefing again? Save it as a snippet and drop it into any message with `#name` or `@name`. The message still reads `#name`; the snippet's text goes along with it.
+Typing the same review checklist or project briefing again? Save it as a snippet and drop it into any message with `@name`. The message still reads `@name`; the snippet's text goes along with it.
 
 **Ask for a snippet → approve it → use it anywhere.** `/snippets new` opens a chat where the agent writes snippets for you, and every write waits for your approval. `/snippets` lists them with a preview, inserts one into your prompt, or opens one for editing in chat. Snippets are plain Markdown files, global or per project, and project snippets override global ones.
 

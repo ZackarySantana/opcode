@@ -23,7 +23,7 @@ export function SnippetsDialog(props: { browser: Browser }) {
   )
 }
 
-/** Snippets by scope with a preview of their text; enter inserts `#name` into the prompt. */
+/** Snippets by scope with a preview of their text; enter inserts `@name` into the prompt. */
 function Snippets(props: { browser: Browser }) {
   const api = usePlugin()
   const tab = useTab()
@@ -50,9 +50,9 @@ function Snippets(props: { browser: Browser }) {
         title: unavailable ? palette.muted : palette.text,
         strong: false,
       },
-      head: `#${row.name}`,
+      head: `@${row.name}`,
       detail: row.conflict ? "skill conflict" : row.overridden ? "overridden" : undefined,
-      time: row.aliases.map((alias) => `#${alias}`).join(" "),
+      time: row.aliases.map((alias) => `@${alias}`).join(" "),
       title: row.description ?? preview,
       summary: row.description ? preview : undefined,
     }

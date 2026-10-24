@@ -21,7 +21,7 @@ const missing = (error: unknown) => (error as NodeJS.ErrnoException)?.code === "
 
 /**
  * Markdown files named after their snippet. Global files may be symlinks, as in a dotfiles checkout; a repository's
- * project snippets must be regular files, so a cloned repository cannot point `#review` at a file elsewhere.
+ * project snippets must be regular files, so a cloned repository cannot point `@review` at a file elsewhere.
  */
 export class SnippetStore {
   constructor(readonly directories: Record<Scope, string>) {}
