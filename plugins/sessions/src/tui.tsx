@@ -20,7 +20,7 @@ export function availableSlashNames(api: Pick<Context, "keymap" | "data" | "loca
 const slash = (names: readonly string[], extra?: { arguments: true }) => names[0] ? { slash: { name: names[0], aliases: names.slice(1), ...extra } } : {}
 
 export function registerBrowserCommands(api: Context, model: BrowserModel, screen: Screen, alive: () => boolean, open: (sessionID: string, from: Route) => void) {
-  const names = availableSlashNames(api, ["sessions", "sessions-all", "all-sessions", "opcode-sessions"])
+  const names = availableSlashNames(api, ["sessions", "sessions-all", "all-sessions"])
   const invalidate = screen.invalidate
   const active = () => alive() && screen.active()
   const invocation = () => {
@@ -96,7 +96,7 @@ export function registerInboxCommands(api: Context, inbox: Inbox, names: readonl
       }
       const row = /^\d+$/.test(argument) ? inbox.rows()[Number(argument) - 1] : undefined
       if (row) inbox.open(row.id)
-      else api.ui.toast.show({ variant: "warning", message: `No active session ${argument}. Use /${names[0] ?? "go"} to list them.` })
+      else api.ui.toast.show({ variant: "warning", message: `No active session ${argument}. Use ${names[0] ? `/${names[0]}` : "Go to active session"} to list them.` })
     },
   }] }))
 }
@@ -126,7 +126,7 @@ export default Plugin.define({
     try {
       invalidate = registerBrowserCommands(api, model, screen, () => active, inbox ? inbox.open : (sessionID) => api.ui.router.navigate({ type: "session", sessionID }))
       if (inbox) {
-        const names = availableSlashNames(api, ["go", "opcode-go"])
+        const names = availableSlashNames(api, ["go"])
         registerInboxCommands(api, inbox, names)
         // At the very top of the sidebar, above other plugins' sections.
         unregisterSidebar = api.ui.slot({ prepend: "sidebar.content", render: () => <InboxSidebar inbox={inbox} limit={options.rows} command={GO_COMMAND} pointer={names[0] && `/${names[0]}`} /> })
