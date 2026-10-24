@@ -64,7 +64,7 @@ It sends the unresolved review threads someone else started, with your replies i
 
 Review requests come from GitHub's `review-requested:@me` search, which includes requests to any team you're on, closed and secret teams included, as long as `gh` can see them. Team names come from `gh api /user/teams`, which needs the `read:org` scope that `gh auth login` grants by default; without it, every team requested on a pull request that asks for your review is treated as yours.
 
-GitHub sometimes withholds results. A pull request in an organization that enforces SAML single sign-on stays hidden until you authorize `gh`'s token for that organization, and a team your token can't see shows as **hidden team**. `/ghpr` counts what was withheld and says what to do, such as authorizing GitHub CLI for an organization's single sign-on at [github.com/settings/connections/applications](https://github.com/settings/connections/applications); the sidebar notes hidden review requests.
+GitHub sometimes withholds results. A pull request in an organization that enforces SAML single sign-on stays hidden until you authorize `gh`'s token for that organization, and a team your token can't see shows as **hidden team**. `/ghpr` counts what was withheld and says what to do, such as authorizing GitHub CLI for an organization's single sign-on at [github.com/settings/connections/applications](https://github.com/settings/connections/applications).
 
 ## Settings
 
