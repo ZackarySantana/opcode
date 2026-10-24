@@ -46,7 +46,7 @@ test("root-session timelines derive turns, capped waits, overlap, and model attr
       { kind: "prompt", at: at(11, 0) }, { kind: "idle", at: at(11, 1) },
     ])
 
-    const all = ledger.time({ range: "all" })
+    const all = ledger.time("all")
     // main: 10 + 9 + 5 + 5 + 2 minutes; other: 3; fork: 1.
     expect(all.total).toEqual({ agent: minutes(35), turns: 7, wait: minutes(30), parallel: minutes(3), peak: 2 })
     expect(all.longest[0]).toEqual({
@@ -62,8 +62,6 @@ test("root-session timelines derive turns, capped waits, overlap, and model attr
       { id: "2026-07-11", agent: minutes(2) }, { id: "2026-07-10", agent: minutes(33) },
     ])
 
-    expect(ledger.time({ range: "all", model: "provider/large" }).total).toMatchObject({ agent: minutes(10), wait: 0, turns: 1 })
-    expect(ledger.time({ range: "all", projectID: "q" }).total).toEqual({ agent: minutes(3), turns: 1, wait: 0, parallel: 0, peak: 1 })
-    expect(ledger.time({ range: "today" }, at(12, 0, 0, 11)).total).toMatchObject({ agent: minutes(2), turns: 1 })
+    expect(ledger.time("today", at(12, 0, 0, 11)).total).toMatchObject({ agent: minutes(2), turns: 1 })
   } finally { ledger.close() }
 })

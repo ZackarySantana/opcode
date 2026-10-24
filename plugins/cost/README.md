@@ -1,6 +1,6 @@
 # @lidtop/opencode-cost
 
-See where your usage and time go: recorded costs and tokens across projects and models, with daily activity over time, plus a Time tab for how long agents worked, how long they waited on you, and how much ran in parallel. Costs come from OpenCode's provider-reported records, not a separate pricing table.
+See where your usage and time go: recorded costs and tokens across projects and models, with daily activity over time, plus how long agents worked, how long they waited on you, and how much ran in parallel. Costs come from OpenCode's provider-reported records, not a separate pricing table.
 
 ![Cost dashboard with usage totals, model and project breakdowns, and daily activity ordered newest first](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/cost-dashboard.png)
 
@@ -25,37 +25,34 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 
 ## Use
 
-Run `/cost` or select **Cost** in the command palette. It opens a dialog with **Cost** and **Time** tabs.
+Run `/cost` or select **Cost** in the command palette. It opens a dialog with five tabs:
+
+- **Overview:** the totals. **Recorded messages**, input, output, reasoning, cache-read, and cache-write tokens, and USD cost when there is any; then **agent time** and turn count, **waiting on you**, and **parallel** time with its peak.
+- **Models**, **Projects**, and **Daily:** one row per provider/model and variant, project, or date. Each row shows its usage, with a bar, and its time: agent time, turns, and waiting. Models and projects rank by cost, then tokens, followed by any with time but no usage, by agent time; dates are newest first.
+- **Turns:** the eight longest turns, with title, project, model, start, and duration.
 
 | Key | Action |
 | --- | --- |
-| `tab` / `shift+tab` | Switch between the Cost and Time tabs (or click a tab) |
-| `↑` / `↓`, `j` / `k` | Scroll; on the Time tab, select one of the longest turns |
-| `enter` | Time tab: close the dialog and open the selected turn's session (or click it) |
+| `tab` / `shift+tab` | Switch tabs (or click a tab) |
+| `↑` / `↓`, `j` / `k` | Select a row; the list scrolls to keep it in view. On the Overview, scroll |
+| `enter` | Turns tab: close the dialog and open the selected turn's session (or click it) |
 | `d` | Date range: today, last 7 days, last 30 days, or all time |
-| `p` | Filter by project |
-| `m` | Filter by provider and model |
-| `x` | Reset to 30 days and all projects and models |
-| `/` | Search the breakdowns (and, on the Time tab, the longest turns) |
+| `/` | Search the current tab's rows |
 | `r` | Refresh and reconcile the current project's complete history; retry failed imports |
-| `esc` | Leave the search box, clear the search, close a picker, then close the dialog |
+| `esc` | Leave the search box, clear the search, close the date picker, then close the dialog |
 
-Totals show **recorded messages** and input, output, reasoning, cache-read, and cache-write tokens, plus USD cost when there is any. Model and project breakdowns show the top eight by cost, then tokens; daily activity shows the last 14 dates with recorded usage, newest first. Totals are never truncated, and the search narrows only the rows shown. Selecting an entity hides its redundant breakdown; daily activity always stays.
+Totals are never narrowed: the search narrows only the rows shown. The date range applies to every tab and is shown before the search box; reopening `/cost` starts again from the last 30 days. The view rereads the server ledger every five seconds while open and shortly after public usage updates. Date ranges use the **server's local calendar**, include today, and attribute usage to message creation time and turns to their start. A project is named after its most recently used directory and includes its recorded worktrees.
 
-**Tokens, and cost when there is any.** Amounts show cost and tokens (`$2.00  15 tok`), and bars follow cost. A view with no recorded cost, as on a subscription, drops the cost card and shows and sizes everything by tokens. The rule covers the whole view, never single rows, so a free model beside paid ones reads `$0.00` with an empty bar.
+**Tokens, and cost when there is any.** Amounts show cost and tokens (`$2.00  15 tok`), and bars follow cost. With no recorded cost in the range, as on a subscription, the cost card is dropped and everything is shown and sized by tokens. The rule covers the whole dialog, never single rows, so a free model beside paid ones reads `$0.00` with an empty bar.
 
-The filters apply to both tabs and are shown before the search box; reopening `/cost` starts again from the last 30 days. The view rereads the server ledger every five seconds while open and shortly after public usage updates. Date filters use the **server's local calendar**, include today, and attribute usage to message creation time. Filter pickers show entities present in the selected range. The project picker shows each project's path beside its name; a project is named after its most recently used directory, and choosing one includes its recorded worktrees.
+## Time
 
-## Time tab
-
-"Where did my time go?" Totals show **agent time** and turn count, **waiting on you**, and **parallel** time with its peak. Like the Cost tab, there are model, project, and daily breakdowns (top eight, newest 14 dates), and the eight longest turns show title, project, model, start, and duration. The date, project, and model filters apply; with a model filter, waiting and parallel time count only that model's turns.
-
-Only **root sessions** are timed; a subagent's work is part of its parent's turn, so it is never counted twice.
+"Where did my time go?" Only **root sessions** are timed; a subagent's work is part of its parent's turn, so it is never counted twice.
 
 - **Turn (agent time):** from the user prompt, or the moment queued input is delivered, until the session goes idle. A prompt steered in while the agent works belongs to the same turn. A turn woken without a prompt, such as by a background subagent finishing, starts at its first recorded step.
 - **Waiting on you:** from a turn going idle until the next user prompt in that session, counting at most **30 minutes** per wait so nights away do not count. A turn woken without a prompt leaves no waiting gap. Waits are summed per session, so two sessions waiting at once count twice. A wait belongs to the turn it follows.
 - **Parallel:** time with two or more root sessions in a turn at once, and the most at any moment.
-- **Model:** each turn is attributed to the provider/model and variant whose steps produced the most output and reasoning tokens. Turns with no recorded step show as "no recorded step".
+- **Model:** each turn is attributed to the provider/model and variant whose steps produced the most output and reasoning tokens. Turns with no recorded step show as "no recorded step", a row with time but no usage.
 - **Dates:** a turn belongs to the server's local date on which it started, like usage to message creation.
 
 How times are derived: OpenCode history stores each delivered user prompt as a user message and each finished execution as an idle message, both at the moment of the underlying event. The server records the same moments live from `session.inbox.delivered` (user input only) and `session.execution.succeeded`, `failed`, or `interrupted`, so live collection and import agree without double counting. Import sends just these timestamps, never prompt text. Step times come from the same assistant records as costs.

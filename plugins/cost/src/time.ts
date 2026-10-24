@@ -6,15 +6,14 @@ export const WAIT_CAP = 30 * 60_000
 /** A recorded step carries the model that produced it; markers only carry their time. */
 export type TimelineEvent =
   | { kind: ActivityKind; at: number }
-  | { kind: "step"; at: number; end: number; model: string; variant?: string; output: number }
+  | { kind: "step"; at: number; end: number; model: string; output: number }
 
 export interface Turn {
   sessionID: string
   start: number
   end: number
-  /** `provider/model` of the step with the most output, matching the dashboard model filter. */
+  /** The model, as `provider/model (variant)`, whose steps produced the most output. */
   model?: string
-  variant?: string
   /** Waiting on you after this turn went idle, until the next user prompt. */
   wait: number
 }
@@ -26,12 +25,12 @@ export interface Turn {
  */
 export function deriveTurns(sessionID: string, events: readonly TimelineEvent[]): Turn[] {
   const turns: Turn[] = []
-  let turn: { start: number; last: number; output: Map<string, { model: string; variant?: string; output: number }> } | undefined
+  let turn: { start: number; last: number; output: Map<string, number> } | undefined
   let idleAt: number | undefined
   const close = (end: number) => {
-    let top: { model: string; variant?: string; output: number } | undefined
-    for (const entry of turn!.output.values()) if (!top || entry.output > top.output) top = entry
-    turns.push({ sessionID, start: turn!.start, end, model: top?.model, variant: top?.variant, wait: 0 })
+    let top: [string, number] | undefined
+    for (const entry of turn!.output) if (!top || entry[1] > top[1]) top = entry
+    turns.push({ sessionID, start: turn!.start, end, model: top?.[0], wait: 0 })
     turn = undefined
   }
   for (const event of events) {
@@ -51,9 +50,7 @@ export function deriveTurns(sessionID: string, events: readonly TimelineEvent[])
     }
     if (event.kind === "step") {
       turn.last = Math.max(turn.last, event.end)
-      const key = `${event.model}\n${event.variant ?? ""}`
-      const entry = turn.output.get(key) ?? { model: event.model, variant: event.variant, output: 0 }
-      turn.output.set(key, { ...entry, output: entry.output + event.output })
+      turn.output.set(event.model, (turn.output.get(event.model) ?? 0) + event.output)
     } else turn.last = Math.max(turn.last, event.at)
   }
   // A running turn (or one whose idle is missing) counts up to its latest recorded activity.
@@ -88,7 +85,7 @@ export interface TimedTurn extends Turn {
 /** Turns are attributed to their start time, like usage to message creation. */
 export function summarizeTime(turns: readonly TimedTurn[]): TimeDashboard {
   const duration = (turn: Turn) => turn.end - turn.start
-  const modelLabel = (turn: Turn) => turn.model ? turn.variant ? `${turn.model} (${turn.variant})` : turn.model : "no recorded step"
+  const modelLabel = (turn: Turn) => turn.model ?? "no recorded step"
   const group = (key: (turn: TimedTurn) => string, label: (turn: TimedTurn) => string) => {
     const rows = new Map<string, TimeBreakdown>()
     for (const turn of turns) {
@@ -101,7 +98,7 @@ export function summarizeTime(turns: readonly TimedTurn[]): TimeDashboard {
     }
     return [...rows.values()]
   }
-  const ranked = (rows: TimeBreakdown[]) => rows.sort((a, b) => b.agent - a.agent || a.label.localeCompare(b.label)).slice(0, 8)
+  const ranked = (rows: TimeBreakdown[]) => rows.sort((a, b) => b.agent - a.agent || a.label.localeCompare(b.label))
   const longest: LongTurn[] = [...turns].sort((a, b) => duration(b) - duration(a) || b.start - a.start).slice(0, 8).map((turn) => ({
     sessionID: turn.sessionID, title: turn.title ?? turn.sessionID, project: turn.project, directory: turn.directory,
     model: modelLabel(turn), start: turn.start, duration: duration(turn),
@@ -115,7 +112,7 @@ export function summarizeTime(turns: readonly TimedTurn[]): TimeDashboard {
     },
     projects: ranked(group((turn) => turn.projectID, (turn) => turn.project)),
     models: ranked(group(modelLabel, modelLabel)),
-    daily: group((turn) => localDay(turn.start), (turn) => localDay(turn.start)).sort((a, b) => b.id.localeCompare(a.id)).slice(0, 14),
+    daily: group((turn) => localDay(turn.start), (turn) => localDay(turn.start)).sort((a, b) => b.id.localeCompare(a.id)),
     longest,
   }
 }

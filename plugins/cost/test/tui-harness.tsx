@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 
-import type { Dashboard, DashboardFilter, TimeDashboard } from "../src/domain.js"
+import type { Dashboard, DateRange, TimeDashboard } from "../src/domain.js"
 import type { LocationRef } from "@opencode/client"
 import { PluginContextProvider } from "@opencode/plugin/tui"
 import type { Destination, DialogOptions, KeymapCommand, KeymapLayer } from "@opencode/plugin/tui/context"
@@ -18,8 +18,11 @@ export function dashboard(cost = 2, projectLabel = "Alpha"): Dashboard {
     projects: [{ id: "p", label: projectLabel, cost, messages: 1, tokens: 15 }],
     models: [{ id: "provider/model", label: "provider/model", cost, messages: 1, tokens: 15 }],
     daily: [{ id: day, label: day, cost, messages: 1, tokens: 15 }],
-    projectOptions: [{ id: "p", label: projectLabel, directory: "/remote/project" }], modelOptions: [{ id: "provider/model", label: "provider/model" }],
   }
+}
+
+export function timeDashboard(): TimeDashboard {
+  return { total: { agent: 0, turns: 0, wait: 0, parallel: 0, peak: 0 }, projects: [], models: [], daily: [], longest: [] }
 }
 
 /**
@@ -30,8 +33,8 @@ export async function createTuiHarness({ width = 120, height = 44 } = {}) {
   const [location, setLocation] = createSignal<LocationRef>({ directory: "/remote/project" })
   const [dialog, setDialog] = createSignal<{ render: () => JSX.Element; onClose?: () => void }>()
   let dialogOptions: DialogOptions | undefined
-  const queries: Array<ReturnType<typeof Promise.withResolvers<Dashboard>> & { filter: DashboardFilter; signal: AbortSignal }> = []
-  const times: Array<ReturnType<typeof Promise.withResolvers<TimeDashboard>> & { filter: DashboardFilter; signal: AbortSignal }> = []
+  const queries: Array<ReturnType<typeof Promise.withResolvers<Dashboard>> & { filter: { range: DateRange }; signal: AbortSignal }> = []
+  const times: Array<ReturnType<typeof Promise.withResolvers<TimeDashboard>> & { filter: { range: DateRange }; signal: AbortSignal }> = []
   const navigations: Destination[] = []
   const usageListeners = new Set<() => void>()
   const layers = new Set<() => KeymapLayer>()
@@ -58,12 +61,12 @@ export async function createTuiHarness({ width = 120, height = 44 } = {}) {
         status: async () => ({ projectID: "p", directory: "/remote/project", lastImport: null }),
         completeImport: async () => ({}),
         // Both deliberately ignore abort: callers must reject stale responses themselves.
-        dashboard: (filter: DashboardFilter, options: { signal: AbortSignal }) => {
+        dashboard: (filter: { range: DateRange }, options: { signal: AbortSignal }) => {
           const request = { ...Promise.withResolvers<Dashboard>(), filter, signal: options.signal }
           queries.push(request)
           return request.promise
         },
-        time: (filter: DashboardFilter, options: { signal: AbortSignal }) => {
+        time: (filter: { range: DateRange }, options: { signal: AbortSignal }) => {
           const request = { ...Promise.withResolvers<TimeDashboard>(), filter, signal: options.signal }
           times.push(request)
           return request.promise
@@ -123,6 +126,8 @@ export async function createTuiHarness({ width = 120, height = 44 } = {}) {
   return {
     api, scene, queries, times, navigations, usageListeners, intervals, debounces, setLocation, run, unload,
     open: () => run("open"),
+    /** Answers the latest read, which asks for usage and time together. */
+    respond: (usage = dashboard(), time = timeDashboard()) => { queries.at(-1)!.resolve(usage); times.at(-1)!.resolve(time) },
     isOpen: () => dialog() !== undefined,
     dialogOptions: () => dialogOptions,
     frame: (predicate: (frame: string) => boolean) => scene.waitForFrame(predicate),

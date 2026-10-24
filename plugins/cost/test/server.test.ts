@@ -39,7 +39,7 @@ test("server RPC owns storage, derives identities, allows same-project worktrees
     const batch = { sessionID: session.id, records: [usageFromMessage(message)] }
     await handlers.importBatch!(batch, call)
     await handlers.importBatch!(batch, call)
-    expect(await handlers.dashboard!({ range: "all" }, call)).toMatchObject({ total: { cost: 0.5, messages: 1 }, projectOptions: [{ id: session.projectID, label: "another-worktree" }] })
+    expect(await handlers.dashboard!({ range: "all" }, call)).toMatchObject({ total: { cost: 0.5, messages: 1 }, projects: [{ id: session.projectID, label: "another-worktree" }] })
     await expect(handlers.importBatch!({ ...batch, sessionID: "foreign" }, call)).rejects.toMatchObject({ type: "failed", message: "Cannot import a session from another project" })
     await expect(handlers.importBatch!({ ...batch, records: Array(101).fill(batch.records[0]) }, call)).rejects.toThrow("Invalid import batch")
     await expect(handlers.dashboard!({ range: "year" }, call)).rejects.toThrow("Invalid date range")
@@ -78,7 +78,7 @@ test("server lifetime cancels a pending RPC read before writing, then closes the
     expect(await outcome).toBe(true)
     expect(readSignal.aborted).toBe(true)
     const ledger = new CostLedger(database)
-    expect(ledger.dashboard({ range: "all" }).total.messages).toBe(0)
+    expect(ledger.dashboard("all").total.messages).toBe(0)
     ledger.close()
   } finally { rmSync(directory, { recursive: true, force: true }) }
 })
@@ -158,7 +158,7 @@ test("authorized fork imports cannot replace an existing source ID but can persi
     await handlers.completeImport!({}, call)
     expect(await handlers.status!({}, call)).toMatchObject({ lastImport: expect.any(Number) })
     expect(await handlers.dashboard!({ range: "all" }, call)).toMatchObject({
-      total: { cost: 1.75, messages: 3 }, modelOptions: [{ id: "provider/model", label: "provider/model" }],
+      total: { cost: 1.75, messages: 3 }, models: [{ id: "provider/model", label: "provider/model" }],
     })
   } finally { await cleanup() }
 })
@@ -190,9 +190,8 @@ test("server-authorized cross-project session moves preserve IDs and do not bloc
     await current.handlers.importBatch!({ sessionID: session.id, records: [
       { ...usage, messageID: "new-after-move", cost: 0.25 }, { ...usage, cost: 0 },
     ] }, call)
-    expect(await current.handlers.dashboard!({ range: "all", projectID: session.projectID }, call)).toMatchObject({ total: { messages: 0 } })
-    expect(await current.handlers.dashboard!({ range: "all", projectID: "destination" }, call)).toMatchObject({
-      total: { messages: 2, cost: 0.75 }, projectOptions: [{ id: "destination", label: "destination" }],
+    expect(await current.handlers.dashboard!({ range: "all" }, call)).toMatchObject({
+      projects: [{ id: "destination", label: "destination", messages: 2, cost: 0.75 }],
     })
   } finally { await current.cleanup(); rmSync(directory, { recursive: true, force: true }) }
 })

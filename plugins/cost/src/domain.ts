@@ -1,9 +1,8 @@
 export const DATE_RANGES = ["today", "7d", "30d", "all"] as const
 export type DateRange = (typeof DATE_RANGES)[number]
 export const IMPORT_BATCH_SIZE = 100
-/** Shared by the RPC schema and handler validation. A model filter is `provider/model`. */
+/** Shared by the RPC schema and handler validation. */
 export const MAX_ID_LENGTH = 512
-export const MAX_MODEL_FILTER_LENGTH = MAX_ID_LENGTH * 2 + 1
 export const MAX_TIME = 8.64e15
 export const MAX_COST = 1e12
 export const MAX_TOKENS = 1e15
@@ -31,11 +30,6 @@ export interface CollectionContext {
 }
 
 export type UsageRecord = Usage & CollectionContext
-export interface DashboardFilter {
-  range: DateRange
-  projectID?: string
-  model?: string
-}
 
 export interface Totals {
   cost: number
@@ -61,8 +55,6 @@ export interface Dashboard {
   projects: Breakdown[]
   models: Breakdown[]
   daily: Breakdown[]
-  projectOptions: Array<{ id: string; label: string; directory: string }>
-  modelOptions: Array<{ id: string; label: string }>
 }
 
 /** Turn boundaries from root-session history: a delivered user prompt, or the session going idle. */
@@ -148,14 +140,9 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
 }
 
-export function parseFilter(value: unknown): DashboardFilter {
+export function parseRange(value: unknown): DateRange {
   if (!isRecord(value) || !DATE_RANGES.includes(value.range as DateRange)) throw new Error("Invalid date range")
-  for (const [key, max] of [["projectID", MAX_ID_LENGTH], ["model", MAX_MODEL_FILTER_LENGTH]] as const) {
-    if (value[key] !== undefined && (typeof value[key] !== "string" || value[key].length > max)) {
-      throw new Error(`Invalid ${key}`)
-    }
-  }
-  return { range: value.range as DateRange, projectID: value.projectID as string | undefined, model: value.model as string | undefined }
+  return value.range as DateRange
 }
 
 /** Also validate in the handler: direct adapters/tests must not bypass the boundary. */
