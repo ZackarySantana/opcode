@@ -16,9 +16,11 @@ export interface LaterSnapshot {
 export interface Settings {
   /** How many active items the sidebar lists before "+N more". */
   readonly sidebarItems: number
+  /** Whether the agent's Later tools work. */
+  readonly agentTools: boolean
 }
 
-export const defaultSettings: Settings = { sidebarItems: 5 }
+export const defaultSettings: Settings = { sidebarItems: 5, agentTools: true }
 export const sidebarItemChoices: readonly number[] = [3, 5, 10, 15, 20]
 
 export function messageText(text: string): string {

@@ -18,7 +18,7 @@ export function laterTools(database: LaterDatabase, assert: Plugin.Context["perm
     return found
   }
   const changed = "The item changed while this ran; call later_list and try again."
-  return [
+  const tools = [
     {
       name: "later_list",
       description: "List the user's Later items: prompts they saved to come back to, in their order. Use these tools only when the user asks about their Later list.",
@@ -85,4 +85,10 @@ export function laterTools(database: LaterDatabase, assert: Plugin.Context["perm
       },
     },
   ]
+  // Sessions from before the user turned the tools off still list them, so every call reads the setting.
+  return tools.map((tool) => ({
+    ...tool,
+    execute: async (input: unknown, context: ToolContext) =>
+      database.toolsDisabledAt() === undefined ? tool.execute(input, context) : { content: "The user turned off Later tools. They won't be available in new sessions." },
+  }))
 }

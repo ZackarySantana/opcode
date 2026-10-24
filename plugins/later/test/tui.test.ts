@@ -21,7 +21,7 @@ function harness(sidebarItems?: number) {
   const path = join(directory.path, "later.sqlite")
   const external = new LaterDatabase(path)
   cleanup.push(() => external.close())
-  if (sidebarItems) external.saveSettings({ sidebarItems })
+  if (sidebarItems) external.saveSettings({ sidebarItems, agentTools: true })
   const route: Route = { type: "home" }
   let prompt: string | undefined
   const [dialog, setDialog] = createSignal<{ render: () => JSX.Element; onClose?: () => void }>()
@@ -119,7 +119,7 @@ test("the dialog adds, reorders, completes, deletes, and restores from its tabs,
     await h.dispatch("opcode-later.next")
     await frame((frame) => frame.includes("Sidebar items"))
     await h.dispatch("opcode-later.adjust.next")
-    expect(h.external.settings()).toEqual({ sidebarItems: 10 })
+    expect(h.external.settings().sidebarItems).toBe(10)
     // Escape closes the dialog once the search box is empty; /later opens again on its first tab.
     await h.dispatch("opcode-later.close")
     expect(h.dialog()).toBeUndefined()

@@ -72,10 +72,18 @@ export class LaterController {
     this.state[1](this.database.snapshot())
   }
 
-  updateSettings(change: Partial<Settings>): void {
-    const next = { ...this.settings(), ...change }
-    try { this.database.saveSettings(next) } catch (error) { this.toast(errorMessage(error), "error"); return }
-    this.settingsSignal[1](next)
+  async updateSettings(change: Partial<Settings>): Promise<void> {
+    try {
+      // Read fresh: another terminal may have turned the tools off, and saving a stale "on" would skip the warning.
+      const current = this.database.settings()
+      const next = { ...current, ...change }
+      if (next.agentTools && !current.agentTools && await this.ask(() => this.api.ui.dialog.confirm({
+        title: "Turn on agent tools?",
+        message: "Adding the tools changes every open session's request, so each one's next message misses the prompt cache once.",
+      })) !== true) return
+      this.database.saveSettings(next)
+      this.settingsSignal[1](next)
+    } catch (error) { this.toast(errorMessage(error), "error") }
   }
 
   async add(): Promise<void> {
