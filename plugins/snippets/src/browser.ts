@@ -8,6 +8,8 @@ import { AUTHORING_LEAD, authoringGuide, authoringRequest, authoringSession, typ
 import type { SnippetsRemote } from "./rpc"
 import type { SnippetEntry } from "./service"
 
+const SESSIONS_NAVIGATE = "opcode-sessions.navigate"
+
 interface BrowserState {
   rows: SnippetEntry[]
   loading: boolean
@@ -36,6 +38,15 @@ export function createBrowser(api: Context, remote: SnippetsRemote, render: () =
     if (opened) api.ui.dialog.clear()
   }
 
+  /**
+   * Through the Sessions plugin when it is loaded, so its sidebar offers a way back to the session the user left. Its
+   * command navigates synchronously, before anything else here navigates to the same session.
+   */
+  function navigate(sessionID: string) {
+    if (api.keymap.commands().some((command) => command.id === SESSIONS_NAVIGATE)) api.keymap.dispatch(SESSIONS_NAVIGATE, sessionID)
+    else api.ui.router.navigate({ type: "session", sessionID })
+  }
+
   async function load() {
     request?.abort()
     const current = request = new AbortController()
@@ -61,9 +72,9 @@ export function createBrowser(api: Context, remote: SnippetsRemote, render: () =
       const session = await api.client.session.create({ location: location(), model, ...authoringSession(target) })
       if (lifetime.signal.aborted) return
       const destination = { type: "session", sessionID: session.id } as const
+      navigate(session.id)
       const ask = request.trim()
       if (ask) {
-        api.ui.router.navigate(destination)
         await api.client.session.prompt({ sessionID: session.id, text: authoringRequest(target, ask) })
         return
       }
@@ -88,20 +99,20 @@ export function createBrowser(api: Context, remote: SnippetsRemote, render: () =
       if (verb === "new") await author({}, request)
       else open()
     },
-    /** Closes the dialog, then types `#name ` into the prompt under it. */
+    /** Closes the dialog, then types `@name ` into the prompt under it. */
     async insert(row: SnippetEntry) {
       if (row.overridden || row.conflict) {
-        toast(row.overridden ? `#${row.name} inserts the project snippet with the same name.` : `Another skill named ${row.name} replaces this snippet.`, "warning")
+        toast(row.overridden ? `@${row.name} inserts the project snippet with the same name.` : `Another skill named ${row.name} replaces this snippet.`, "warning")
         return
       }
       const destination = snapshotRoute(api.ui.router.current())
       if (destination.type === "plugin") { toast("Open /snippets from home or a session to insert into its prompt.", "warning"); return }
       close()
-      const result = await pasteIntoPrompt(api, destination, `#${row.name} `, () => !lifetime.signal.aborted, () => true, { signal: lifetime.signal })
+      const result = await pasteIntoPrompt(api, destination, `@${row.name} `, () => !lifetime.signal.aborted, () => true, { signal: lifetime.signal })
       if (result === "unavailable") toast("The prompt is not ready. Open /snippets and try again.", "error")
     },
     async remove(row: SnippetEntry) {
-      const confirmed = await api.ui.dialog.confirm({ title: `Delete #${row.name}?`, message: `This deletes ${row.path}.` })
+      const confirmed = await api.ui.dialog.confirm({ title: `Delete @${row.name}?`, message: `This deletes ${row.path}.` })
       // The confirmation replaced the list. An answer brings the list back, reloaded, since skill updates aren't followed
       // while it is closed; a dialog that replaced the confirmation stays.
       if (confirmed === undefined || lifetime.signal.aborted) return
@@ -109,7 +120,7 @@ export function createBrowser(api: Context, remote: SnippetsRemote, render: () =
       if (confirmed) {
         try {
           const removed = await remote.remove({ name: row.name, scope: row.scope })
-          toast(removed ? `Deleted #${row.name}.` : `#${row.name} was already gone.`, removed ? "success" : "info")
+          toast(removed ? `Deleted @${row.name}.` : `@${row.name} was already gone.`, removed ? "success" : "info")
         } catch (error) { toast(errorMessage(error), "error") }
       }
       await load()

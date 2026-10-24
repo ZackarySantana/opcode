@@ -7,7 +7,7 @@ import type { SnippetStore } from "./store"
 export interface SnippetEntry extends Snippet {
   /** A project snippet with the same name replaces this global one. */
   overridden: boolean
-  /** Another skill owns this name, so neither `@name` nor `#name` inserts the snippet. */
+  /** Another skill owns this name, so `@name` does not insert the snippet. */
   conflict: boolean
 }
 
@@ -16,7 +16,7 @@ export interface SkillHost {
   list(): Promise<{ data: readonly { id: string; name: string; path: string }[] }>
 }
 
-/** Snippet files projected into the host skill registry, where `@name` and `#name` attachments resolve. */
+/** Snippet files projected into the host skill registry, where `@name` attachments resolve. */
 export class SnippetService {
   private snippets: Snippet[] = []
   private fingerprint = "[]"

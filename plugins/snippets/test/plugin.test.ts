@@ -58,7 +58,7 @@ async function fixture(files: Record<string, string>, laterSkills: Skill[] = [])
   return { root: root.path, hooks, skills: () => skills, approvals, call, reject: () => { approve = false }, fail: () => { failing = true } }
 }
 
-test("#name attaches each available snippet once and leaves the text as typed", async () => {
+test("pasted @name attaches each available snippet once and leaves the text as typed", async () => {
   const f = await fixture({
     "config/opencode/snippets/review.md": "GLOBAL REVIEW",
     "project/.opencode/snippets/review.md": "---\naliases: [rv]\n---\nPROJECT REVIEW",
@@ -67,18 +67,16 @@ test("#name attaches each available snippet once and leaves the text as typed", 
     "project/.opencode/snippets/later.md": "loses to a later skill source",
   }, [{ id: "later", name: "Later", path: "/skills/later.md", content: "" }])
   expect(f.skills().find((skill) => skill.id === "review")).toMatchObject({ content: "PROJECT REVIEW", autoinvoke: false })
-  const text = "`#note` then #rv, #review, #report, #later, and #note"
-  const event = { prompt: { text, skills: [] as any[] } }
+  // `@note` was picked as an agent, and `@review.md` is a file path.
+  const text = "@rv @review @later @note @review.md"
+  const event = { prompt: { text, agents: [{ name: "note", mention: { start: 19, end: 24, text: "@note" } }], skills: [] as any[] } }
   await f.hooks.prompt!(event)
   expect(event.prompt.text).toBe(text)
-  expect(event.prompt.skills).toEqual([
-    { id: "rv", mention: { start: 13, end: 16, text: "#rv" } },
-    { id: "note", mention: { start: 48, end: 53, text: "#note" } },
-  ])
-  // An explicit @review attachment is not duplicated.
-  const attached = { prompt: { text: "#review", skills: [{ id: "review" }] } }
+  expect(event.prompt.skills).toEqual([{ id: "rv", mention: { start: 0, end: 3, text: "@rv" } }])
+  // A snippet picked from `@` completion is not attached again, even by its alias.
+  const attached = { prompt: { text: "@review @rv", skills: [{ id: "review", mention: { start: 0, end: 7, text: "@review" } }] } }
   await f.hooks.prompt!(attached)
-  expect(attached.prompt.skills).toEqual([{ id: "review" }])
+  expect(attached.prompt.skills).toEqual([{ id: "review", mention: { start: 0, end: 7, text: "@review" } }])
   // /snippets and snippet_list flag what the user cannot insert.
   const flags = JSON.parse(await f.call("snippet_list", {})).map((entry: any) => [entry.scope, entry.name, entry.overridden, entry.conflict])
   expect(flags).toEqual([
@@ -90,10 +88,10 @@ test("#name attaches each available snippet once and leaves the text as typed", 
 test("a snippet failure never blocks sending the prompt", async () => {
   const f = await fixture({ "config/opencode/snippets/review.md": "REVIEW" })
   f.fail()
-  const event = { prompt: { text: "#review", skills: [] as any[] } }
+  const event = { prompt: { text: "@review", skills: [] as any[] } }
   const warn = spyOn(console, "warn").mockImplementation(() => {})
   try { await f.hooks.prompt!(event) } finally { warn.mockRestore() }
-  expect(event.prompt).toEqual({ text: "#review", skills: [] })
+  expect(event.prompt).toEqual({ text: "@review", skills: [] })
 })
 
 test("snippet tools exist only in authoring sessions that still ask before writing", async () => {

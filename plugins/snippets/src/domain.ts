@@ -2,7 +2,7 @@ export const PLUGIN_ID = "opcode-snippets"
 export type Scope = "global" | "project"
 export const scopes: readonly Scope[] = ["global", "project"]
 
-/** Lowercase kebab-case with at least one letter, so `#123` issue references never expand. */
+/** Lowercase kebab-case with at least one letter. */
 const NAME = /^(?=[a-z0-9-]*[a-z])[a-z0-9]+(?:-[a-z0-9]+)*$/
 export const MAX_NAME = 64
 export const MAX_BODY = 65_536
@@ -87,56 +87,13 @@ export function effectiveSnippets(snippets: readonly Snippet[]): Map<string, Sni
   return keys
 }
 
-/** Fenced blocks and inline code spans, where `#name` stays literal. */
-function codeRanges(text: string): [number, number][] {
-  const ranges: [number, number][] = []
-  let fence: { marker: string; start: number } | undefined
-  let offset = 0
-  for (const line of text.split("\n")) {
-    const end = offset + line.length + 1
-    const [, marker, rest = ""] = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line) ?? []
-    if (fence) {
-      // Only a bare fence of the same kind, at least as long, closes the block.
-      if (marker && marker[0] === fence.marker[0] && marker.length >= fence.marker.length && !rest.trim()) { ranges.push([fence.start, end]); fence = undefined }
-    } else if (marker) fence = { marker, start: offset }
-    offset = end
-  }
-  if (fence) ranges.push([fence.start, text.length])
-  for (const span of text.matchAll(/(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g)) {
-    const start = span.index
-    if (!ranges.some(([from, to]) => start >= from && start < to)) ranges.push([start, start + span[0].length])
-  }
-  return ranges
-}
-
-export interface Token { name: string; start: number; end: number }
-
-/**
- * `#name` tokens for known names, first occurrence of each. A token must start the text or follow whitespace or an
- * opening bracket, so URL fragments, `a#b`, headings, and `[link](#anchor)` never match.
- */
-export function findTokens(text: string, known: (name: string) => boolean): Token[] {
-  const code = codeRanges(text)
-  const seen = new Set<string>()
-  const tokens: Token[] = []
-  for (const match of text.matchAll(/(?<![^\s([{])(?<!\]\()#([a-z0-9]+(?:-[a-z0-9]+)*)(?![\p{L}\p{N}_-])/gu)) {
-    const name = match[1]!
-    const start = match.index
-    // `known` runs last: callers may record what it accepts.
-    if (seen.has(name) || !validName(name) || code.some(([from, to]) => start >= from && start < to) || !known(name)) continue
-    seen.add(name)
-    tokens.push({ name, start, end: start + match[0].length })
-  }
-  return tokens
-}
-
 /** The skill name that marks a registration as ours; anything else at the same ID is a collision. */
 export function skillName(key: string): string {
   return `${key} · snippet`
 }
 
 export function skillDescription(key: string, snippet: Snippet): string {
-  if (key !== snippet.name) return `Snippet · alias of #${snippet.name}`
+  if (key !== snippet.name) return `Snippet · alias of @${snippet.name}`
   const summary = snippet.description || snippet.body.split("\n").find((line) => line.trim())?.trim() || "empty"
   return `Snippet · ${summary.length > 80 ? `${summary.slice(0, 79)}…` : summary}`
 }
@@ -162,18 +119,18 @@ export function authoringOf(session: { metadata?: unknown; permissions?: readonl
 
 /** Session fields for a new authoring session: its marker, and rules so every write and delete asks first. */
 export function authoringSession(target: Authoring) {
-  return { title: target.name ? `Snippet #${target.name}` : "New snippet", metadata: { [AUTHORING]: target }, permissions: authoringRules }
+  return { title: target.name ? `Snippet @${target.name}` : "New snippet", metadata: { [AUTHORING]: target }, permissions: authoringRules }
 }
 
 /** How snippets work, opening an authoring session; the user's request follows it after a few blank lines. */
 export function authoringGuide(target: Authoring): string {
   return [
-    "You are helping the user make a snippet: reusable prompt text they insert into a message with #name or @name. This is how it works:",
+    "You are helping the user make a snippet: reusable prompt text they insert into a message with @name. This is how it works:",
     "- Use snippet_list, snippet_write, and snippet_delete. Never edit snippet files directly.",
     "- Names are lowercase kebab-case. Global snippets apply everywhere; project snippets apply to this project and override a global snippet with the same name.",
     "- A snippet is only the text to insert. Snippets have no templating, arguments, shell substitution, or includes.",
-    "- Before writing any snippet, walk the user through a human-digestible example: the name and scope you propose, the exact text, and a sample message that uses it (such as \"#name fix the login bug\") with what the agent would take from it. Write it only once the user agrees; they also approve each write and delete.",
-    ...target.name ? [`- This session is about the existing snippet #${target.name}${target.scope ? ` (${target.scope})` : ""}. Read it with snippet_list first. If the user's message doesn't say what to change, ask them.`] : [],
+    "- Before writing any snippet, walk the user through a human-digestible example: the name and scope you propose, the exact text, and a sample message that uses it (such as \"@name fix the login bug\") with what the agent would take from it. Write it only once the user agrees; they also approve each write and delete.",
+    ...target.name ? [`- This session is about the existing snippet @${target.name}${target.scope ? ` (${target.scope})` : ""}. Read it with snippet_list first. If the user's message doesn't say what to change, ask them.`] : [],
   ].join("\n") + "\n\n\n\n"
 }
 
