@@ -2,11 +2,12 @@ import { paginate } from "@opcode/core/paginate"
 import type { OpenCodeClient } from "@opencode/client"
 import { IMPORT_BATCH_SIZE } from "./domain.js"
 import type { CostService } from "./client.js"
-import { isUsageMessage, usageFromMessage } from "./messages.js"
+import { activityFromMessage, isUsageMessage, usageFromMessage } from "./messages.js"
 
-const USAGE_TYPES = ["assistant", "compaction"] as const
+/** Only these message types carry usage or turn boundaries; the server filters, the client still checks. */
+const TYPES = ["assistant", "compaction", "user", "idle"] as const
 
-/** Full history is only exposed by the TUI's client in OpenCode 2.1.1. */
+/** Full history is only exposed by the TUI's client in OpenCode 2.1.3. */
 export async function importProject(
   client: Pick<OpenCodeClient, "session" | "message">,
   service: CostService,
@@ -18,17 +19,13 @@ export async function importProject(
   for await (const page of sessions) {
     for (const session of page) {
       if (session.projectID !== status.projectID) throw new Error("Session list returned another project")
-      // Only these message types carry usage; the server filters, the client still checks.
       // Like `order`, the filter is a first-page parameter: later cursors carry it.
-      for (const type of USAGE_TYPES) {
+      for (const type of TYPES) {
         const messages = paginate((cursor) => client.message.list({ sessionID: session.id, limit: IMPORT_BATCH_SIZE, ...(cursor ? { cursor } : { type }) }, { signal }), signal)
         for await (const messagePage of messages) {
-          const records = messagePage.filter(isUsageMessage).map(usageFromMessage)
-          // Bound writes even if a server ignores the requested page size.
-          for (let offset = 0; offset < records.length; offset += IMPORT_BATCH_SIZE) {
-            signal.throwIfAborted()
-            await service.importBatch({ sessionID: session.id, records: records.slice(offset, offset + IMPORT_BATCH_SIZE) }, signal)
-          }
+          // Prompt text never leaves the terminal: only marker times are sent.
+          await send(messagePage.filter(isUsageMessage).map(usageFromMessage), (records) => service.importBatch({ sessionID: session.id, records }, signal), signal)
+          await send(messagePage.flatMap((message) => activityFromMessage(message) ?? []), (activity) => service.importActivity({ sessionID: session.id, activity }, signal), signal)
         }
       }
     }
@@ -36,4 +33,12 @@ export async function importProject(
   signal.throwIfAborted()
   // Informational completion timestamp, NOT a permanent skip marker.
   await service.completeImport(signal)
+}
+
+/** Bound writes even if a server ignores the requested page size. */
+async function send<T>(items: T[], write: (batch: T[]) => Promise<void>, signal: AbortSignal) {
+  for (let offset = 0; offset < items.length; offset += IMPORT_BATCH_SIZE) {
+    signal.throwIfAborted()
+    await write(items.slice(offset, offset + IMPORT_BATCH_SIZE))
+  }
 }

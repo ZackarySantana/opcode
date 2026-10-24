@@ -6,7 +6,7 @@ import { parseRoute, PLUGIN_ID, ROUTE } from "../src/navigation.js"
 import { createTuiHarness, dashboard } from "./tui-harness.js"
 
 test("route parsing owns filters only; return navigation is not serialized into filter state", () => {
-  expect(parseRoute({ range: "bad", back: { type: "session" } })).toEqual({ range: "30d", projectID: undefined, model: undefined })
+  expect(parseRoute({ range: "bad", back: { type: "session" } })).toEqual({ range: "30d", projectID: undefined, model: undefined, tab: "cost" })
   expect(parseRoute({ range: "7d", projectID: "p", model: "m", back: { type: "plugin", id: "other", name: "other.page", data: { tab: 1 } } })).toMatchObject({
     range: "7d", projectID: "p", model: "m",
   })
@@ -231,7 +231,7 @@ test("TUI commands preserve return navigation; refresh rescans; unload cancels i
     const before = imports
     await run("refresh")
     expect(imports).toBe(before + 1)
-    expect(new Set(commands.flatMap((command) => command.bind ? [command.bind] : []))).toEqual(new Set(["escape", "d", "p", "m", "x", "r"]))
+    expect(new Set(commands.flatMap((command) => command.bind ? [command.bind] : []))).toEqual(new Set(["escape", "d", "p", "m", "x", "r", "tab,shift+tab"]))
     await run("close")
     expect(current).toEqual({ type: "session", sessionID: "session-a" })
   } finally { root.dispose(); await cleanup() }

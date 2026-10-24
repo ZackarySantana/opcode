@@ -119,7 +119,8 @@ test("import failures belong to their location; switching cancels the old import
 
 test("real narrow dashboard keeps daily activity reachable with both filters, and query labels/totals update reactively", async () => {
   const harness = await createTuiHarness(destination("7d", "p", "provider/model"))
-  const scene = await renderDashboard(harness, 20)
+  // At 72 columns the Cost/Time tabs wrap the model chip onto a second filter row.
+  const scene = await renderDashboard(harness, 23)
   try {
     await scene.waitFor(() => harness.queries.length > 0)
     const first = harness.queries.at(-1)!
@@ -470,5 +471,43 @@ test("an initial query failure has no stale cards or background-success implicat
     expect(frame).not.toContain("showing last loaded usage")
     expect(frame).not.toContain("TOTAL COST")
     expect(scene.renderer.root.findDescendantById("opcode-cost.totals")).toBeUndefined()
+  } finally { await scene.dispose(); await harness.cleanup() }
+})
+
+test("Time tab shows turn timing and opens a longest turn's session; tab switches back to cost", async () => {
+  const harness = await createTuiHarness({ ...destination("7d"), data: { range: "7d", tab: "time" } })
+  const scene = await renderDashboard(harness, 48, 144)
+  const row = (id: string, label: string, agent: number) => ({ id, label, agent, wait: 300_000, turns: 2 })
+  try {
+    await scene.waitFor(() => harness.times.length > 0)
+    expect(harness.queries).toHaveLength(0)
+    expect(harness.times.at(-1)!.filter).toEqual({ range: "7d", projectID: undefined, model: undefined })
+    harness.times.at(-1)!.resolve({
+      total: { agent: 5_400_000, turns: 3, wait: 900_000, parallel: 120_000, peak: 2 },
+      models: [row("provider/model (high)", "provider/model (high)", 5_400_000)],
+      projects: [row("p", "Alpha", 5_400_000)],
+      daily: [row("2026-07-10", "2026-07-10", 5_400_000)],
+      longest: [
+        { sessionID: "elsewhere", title: "Remote refactor", project: "Beta", directory: "/other", model: "provider/model", start: 0, duration: 3_600_000 },
+        { sessionID: "here", title: "Fix login", project: "Alpha", directory: "/remote/project", model: "provider/model (high)", start: 0, duration: 1_800_000 },
+      ],
+    })
+    const frame = await scene.waitForFrame((text) => text.includes("LONGEST TURNS"))
+    for (const text of ["AGENT TIME", "1h 30m", "3 turns", "WAITING ON YOU", "15m 00s", "PARALLEL", "2m 00s", "peak 2 sessions",
+      "BY MODEL", "BY PROJECT", "DAILY ACTIVITY", "5m 00s wait", "> Remote refactor", "Fix login", "Beta  provider/model"]) {
+      expect(frame).toContain(text)
+    }
+    expect(frame.split("\n").find((line) => line.includes("Root sessions only"))?.trimEnd().endsWith("1h 30m")).toBe(true)
+
+    await harness.run("turn.next")
+    await scene.waitForFrame((text) => text.includes("> Fix login"))
+    await harness.run("turn.open")
+    expect(harness.route()).toEqual({ type: "session", sessionID: "here" })
+
+    harness.setRoute({ ...destination("7d"), data: { range: "7d", tab: "time" } })
+    await scene.waitFor(() => harness.times.length > 1)
+    await harness.run("tab")
+    expect(harness.route()).toMatchObject({ data: { range: "7d", tab: "cost" } })
+    await scene.waitFor(() => harness.queries.length > 0)
   } finally { await scene.dispose(); await harness.cleanup() }
 })

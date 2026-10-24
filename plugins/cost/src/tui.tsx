@@ -9,9 +9,9 @@ import type { LocationRef } from "@opencode/client"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createComputed, createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack } from "solid-js"
 import { createCostService } from "./client.js"
-import { DATE_RANGES, rangeLabel, type Breakdown, type Dashboard } from "./domain.js"
+import { DATE_RANGES, localDay, rangeLabel, type Breakdown, type Dashboard, type LongTurn, type TimeBreakdown, type TimeDashboard } from "./domain.js"
 import { importProject } from "./importer.js"
-import { dashboardSections, MODE, parseRoute, PLUGIN_ID, ROUTE, type RouteState } from "./navigation.js"
+import { dashboardSections, MODE, parseRoute, PLUGIN_ID, ROUTE, TABS, type RouteState } from "./navigation.js"
 
 /** Injectable so tests drive refreshes without real timers. Each returns its cancel function. */
 export interface Timers {
@@ -40,34 +40,40 @@ interface ScreenProps {
 const backHint = { key: "esc", label: "back", command: "opcode-cost.close" }
 const refreshHint = { key: "r", label: "refresh", command: "opcode-cost.refresh" }
 
+/** Values are tagged by tab, so a render between a tab switch and its reset never reads the other tab's shape. */
+type Loaded = { tab: "cost"; cost: Dashboard } | { tab: "time"; time: TimeDashboard }
+
 function DashboardScreen(props: ScreenProps) {
   props.mount()
   const dimensions = useTerminalDimensions()
   const palette = usePalette()
   const { shorten } = useText()
-  const [read, setRead] = createSignal<RefreshState<Dashboard>>({ loading: true })
-  const data = () => read().value
+  const [read, setRead] = createSignal<RefreshState<Loaded>>({ loading: true })
+  const cost = () => { const value = read().value; return value?.tab === "cost" ? value.cost : undefined }
+  const time = () => { const value = read().value; return value?.tab === "time" ? value.time : undefined }
   // A failure with loaded data is a stale-data warning; without it, the dashboard has nothing honest to show.
-  const error = () => data() ? "" : read().error ?? ""
-  const refreshWarning = () => data() ? read().error ?? "" : ""
+  const error = () => read().value ? "" : read().error ?? ""
+  const refreshWarning = () => read().value ? read().error ?? "" : ""
   const state = createMemo(() => parseRoute(props.params))
   const sections = createMemo(() => dashboardSections(state()))
   const query = createMemo(() => {
     const filter = state()
     const location = props.location()
     return {
-      key: JSON.stringify([filter.range, filter.projectID ?? null, filter.model ?? null, location.directory, location.workspaceID ?? null]),
+      key: JSON.stringify([filter.tab, filter.range, filter.projectID ?? null, filter.model ?? null, location.directory, location.workspaceID ?? null]),
+      tab: filter.tab,
       filter: { range: filter.range, projectID: filter.projectID, model: filter.model },
       location: { directory: location.directory, workspaceID: location.workspaceID },
     }
   }, undefined, { equals: (previous, next) => previous.key === next.key })
   // Polls, usage events, and import revisions coalesce behind the in-flight read.
-  const refresh = createRefresh((signal) => {
-    const { filter, location } = untrack(query)
-    return createCostService(props.api.client, location).dashboard(filter, signal)
+  const refresh = createRefresh(async (signal): Promise<Loaded> => {
+    const { tab, filter, location } = untrack(query)
+    const service = createCostService(props.api.client, location)
+    return tab === "time" ? { tab, time: await service.time(filter, signal) } : { tab, cost: await service.dashboard(filter, signal) }
   }, setRead, { delay: 100, timer: props.timers.timer })
   createEffect(on(query, () => {
-    // Drop stale values only for a different filter/location, not a background refresh.
+    // Drop stale values only for a different tab/filter/location, not a background refresh.
     refresh.reset()
     void refresh.refresh()
   }))
@@ -81,14 +87,40 @@ function DashboardScreen(props: ScreenProps) {
   }
   const projectLabel = () => {
     const id = state().projectID
-    return id ? data()?.projectOptions.find((option) => option.id === id)?.label ?? id : "all projects"
+    return id ? cost()?.projectOptions.find((option) => option.id === id)?.label ?? time()?.projects.find((row) => row.id === id)?.label ?? id : "all projects"
   }
   const wide = () => dimensions().width >= 100
   const panelWidth = () => Math.floor((dimensions().width - 6) / (wide() ? 1 + Number(sections().models) + Number(sections().projects) : 1))
-  const hints = () => wide() ? [
-    backHint, { key: "d", label: "date", command: "opcode-cost.date" }, { key: "p", label: "project", command: "opcode-cost.project" },
-    { key: "m", label: "model", command: "opcode-cost.model" }, { key: "x", label: "reset", command: "opcode-cost.reset" }, refreshHint,
-  ] : [backHint, { key: "d/p/m", label: "filters" }, refreshHint, { key: "↑/↓", label: "scroll" }]
+  const [selected, setSelected] = createSignal(0)
+  const longest = () => time()?.longest ?? []
+  const current = () => Math.max(0, Math.min(selected(), longest().length - 1))
+  const openTurn = (turn: LongTurn | undefined) => {
+    if (turn) props.api.ui.router.navigate({ type: "session", sessionID: turn.sessionID })
+  }
+  props.api.keymap.layer(() => ({
+    mode: MODE,
+    enabled: () => state().tab === "time",
+    commands: [
+      { id: "opcode-cost.turn.next", title: "Select next turn", bind: "j", run: () => setSelected(Math.min(current() + 1, longest().length - 1)) },
+      { id: "opcode-cost.turn.previous", title: "Select previous turn", bind: "k", run: () => setSelected(Math.max(current() - 1, 0)) },
+      { id: "opcode-cost.turn.open", title: "Open turn session", bind: "enter,return", run: () => openTurn(longest()[current()]) },
+    ],
+  }))
+  const tabHint = () => ({ key: "tab", label: state().tab === "cost" ? "time" : "cost", command: "opcode-cost.tab" })
+  const turnHint = { key: "j/k enter", label: "open turn", command: "opcode-cost.turn.open" }
+  const hints = () => [
+    ...wide() ? [
+      backHint, tabHint(), { key: "d", label: "date", command: "opcode-cost.date" }, { key: "p", label: "project", command: "opcode-cost.project" },
+      { key: "m", label: "model", command: "opcode-cost.model" }, { key: "x", label: "reset", command: "opcode-cost.reset" }, refreshHint,
+    ] : [backHint, tabHint(), { key: "d/p/m", label: "filters" }, refreshHint, { key: "↑/↓", label: "scroll" }],
+    ...state().tab === "time" ? [turnHint] : [],
+  ]
+  const footer = () => {
+    if (refreshWarning()) return `Refresh failed: ${refreshWarning()}; showing last loaded usage.`
+    if (state().tab === "time") return wide() ? "Root sessions only; subagent work counts in its parent's turn." : "Root sessions only."
+    return wide() ? "Provider-reported USD; no pricing is recalculated." : "Provider-reported USD; no recalculation."
+  }
+  const total = () => state().tab === "time" ? formatDuration(time()?.total.agent ?? 0) : formatMoney(cost()?.total.cost ?? 0)
   return (
     <box width="100%" height="100%" minHeight={0} flexDirection="column">
       <Page
@@ -97,6 +129,16 @@ function DashboardScreen(props: ScreenProps) {
         actions={<KeyHints items={hints()} />}
         filters={(
           <box width="100%" flexDirection="row" flexWrap="wrap" gap={1}>
+            <For each={TABS}>{(tab) => (
+              <box border borderColor={tab === state().tab ? palette.value : palette.border} paddingX={1} height={3}
+                onMouseDown={(event) => {
+                  if (event.button !== 0) return
+                  event.stopPropagation()
+                  if (tab !== state().tab) props.api.keymap.dispatch("opcode-cost.tab")
+                }}>
+                <text fg={tab === state().tab ? palette.value : palette.muted}>{tab === "cost" ? "Cost" : "Time"}</text>
+              </box>
+            )}</For>
             <FilterChip label="date" value={rangeLabel(state().range)} />
             <FilterChip label="project" value={shorten(projectLabel(), wide() ? 30 : 18)} />
             <FilterChip label="model" value={shorten(state().model ?? "all models", wide() ? 40 : 24)} />
@@ -104,12 +146,8 @@ function DashboardScreen(props: ScreenProps) {
         )}
         footer={(
           <box width="100%" flexDirection="row" justifyContent="space-between" gap={1}>
-            <text fg={refreshWarning() ? palette.warning : palette.muted}>
-              {refreshWarning()
-                ? shorten(`Refresh failed: ${refreshWarning()}; showing last loaded usage.`, Math.max(12, dimensions().width - formatMoney(data()?.total.cost ?? 0).length - 6))
-                : wide() ? "Provider-reported USD; no pricing is recalculated." : "Provider-reported USD; no recalculation."}
-            </text>
-            <text fg={palette.value}>{formatMoney(data()?.total.cost ?? 0)}</text>
+            <text fg={refreshWarning() ? palette.warning : palette.muted}>{shorten(footer(), Math.max(12, dimensions().width - total().length - 6))}</text>
+            <text fg={palette.value}>{total()}</text>
           </box>
         )}
       >
@@ -121,7 +159,8 @@ function DashboardScreen(props: ScreenProps) {
             <Show when={error()}>
               <Card grow minHeight={8}><CenterEmpty title="Unable to read ledger" description={error()} /></Card>
             </Show>
-            <Show when={data()} fallback={<Show when={!error()}><Card grow minHeight={8}><CenterEmpty title="Loading server ledger…" /></Card></Show>}>
+            <Show when={!read().value && !error()}><Card grow minHeight={8}><CenterEmpty title="Loading server ledger…" /></Card></Show>
+            <Show when={cost()}>
               {(dashboard) => (
                 <>
                   <box id="opcode-cost.totals" flexDirection="row" gap={1} flexShrink={0}>
@@ -138,10 +177,35 @@ function DashboardScreen(props: ScreenProps) {
                     </Card>
                   )}>
                     <box flexGrow={1} flexDirection={wide() ? "row" : "column"} gap={1}>
-                      <Show when={sections().models}><BreakdownPanel title="BY MODEL" rows={dashboard().models} width={panelWidth()} /></Show>
-                      <Show when={sections().projects}><BreakdownPanel title="BY PROJECT" rows={dashboard().projects} width={panelWidth()} /></Show>
-                      <TrendPanel rows={dashboard().daily} width={panelWidth()} />
+                      <Show when={sections().models}><BreakdownPanel title="BY MODEL" rows={dashboard().models.map(costRow)} width={panelWidth()} /></Show>
+                      <Show when={sections().projects}><BreakdownPanel title="BY PROJECT" rows={dashboard().projects.map(costRow)} width={panelWidth()} /></Show>
+                      <TrendPanel rows={dashboard().daily.map(costRow)} width={panelWidth()} />
                     </box>
+                  </Show>
+                </>
+              )}
+            </Show>
+            <Show when={time()}>
+              {(view) => (
+                <>
+                  <box id="opcode-cost.totals" flexDirection="row" gap={1} flexShrink={0}>
+                    <StatCard label="AGENT TIME" value={formatDuration(view().total.agent)} detail={`${formatCount(view().total.turns)} turns`} />
+                    <StatCard label="WAITING ON YOU" value={formatDuration(view().total.wait)} detail="at most 30m per wait" />
+                    <Show when={wide()}>
+                      <StatCard label="PARALLEL" value={formatDuration(view().total.parallel)} detail={`peak ${formatCount(view().total.peak)} sessions`} />
+                    </Show>
+                  </box>
+                  <Show when={view().total.turns > 0} fallback={(
+                    <Card grow minHeight={8}>
+                      <CenterEmpty title="No recorded turns" description="Press r to reconcile this project's history, or change the filters." />
+                    </Card>
+                  )}>
+                    <box flexDirection={wide() ? "row" : "column"} gap={1} flexShrink={0}>
+                      <Show when={sections().models}><BreakdownPanel title="BY MODEL" rows={view().models.map(timeRow)} width={panelWidth()} /></Show>
+                      <Show when={sections().projects}><BreakdownPanel title="BY PROJECT" rows={view().projects.map(timeRow)} width={panelWidth()} /></Show>
+                      <TrendPanel rows={view().daily.map(timeRow)} width={panelWidth()} />
+                    </box>
+                    <LongestPanel rows={view().longest} selected={current()} width={dimensions().width - 6} open={(index) => { setSelected(index); openTurn(longest()[index]) }} />
                   </Show>
                 </>
               )}
@@ -153,10 +217,22 @@ function DashboardScreen(props: ScreenProps) {
   )
 }
 
-function BreakdownPanel(props: { title: string; rows: Breakdown[]; width: number }) {
+/** One bar-chart row: `value` sizes the bar, `amount` labels it. */
+interface BarRow { id: string; label: string; value: number; amount: string; detail: string }
+
+const costRow = (row: Breakdown): BarRow => ({
+  id: row.id, label: row.label, value: row.cost, amount: formatMoney(row.cost),
+  detail: `${formatCount(row.messages)} msg  ${formatTokens(row.tokens)} tok`,
+})
+const timeRow = (row: TimeBreakdown): BarRow => ({
+  id: row.id, label: row.label, value: row.agent, amount: formatDuration(row.agent),
+  detail: `${formatCount(row.turns)} turns  ${formatDuration(row.wait)} wait`,
+})
+
+function BreakdownPanel(props: { title: string; rows: BarRow[]; width: number }) {
   const palette = usePalette()
   const { shorten } = useText()
-  const max = () => Math.max(0, ...props.rows.map((row) => row.cost))
+  const max = () => Math.max(0, ...props.rows.map((row) => row.value))
   const width = () => Math.min(20, Math.max(4, props.width - 26))
   return (
     <Card title={props.title} grow minHeight={8}>
@@ -164,10 +240,10 @@ function BreakdownPanel(props: { title: string; rows: Breakdown[]; width: number
         <For each={props.rows}>{(row) => (
           <box flexDirection="column" paddingBottom={1} flexShrink={0}>
             <box flexDirection="row" justifyContent="space-between" gap={1}>
-              <text fg={palette.text}>{shorten(row.label, Math.max(4, props.width - formatMoney(row.cost).length - 6))}</text>
-              <text fg={palette.value}>{formatMoney(row.cost)}</text>
+              <text fg={palette.text}>{shorten(row.label, Math.max(4, props.width - row.amount.length - 6))}</text>
+              <text fg={palette.value}>{row.amount}</text>
             </box>
-            <text fg={palette.muted}><CostBar value={row.cost} max={max()} width={width()} />  {formatCount(row.messages)} msg  {formatTokens(row.tokens)} tok</text>
+            <text fg={palette.muted}><Bar value={row.value} max={max()} width={width()} />  {row.detail}</text>
           </box>
         )}</For>
       </box>
@@ -175,17 +251,17 @@ function BreakdownPanel(props: { title: string; rows: Breakdown[]; width: number
   )
 }
 
-function TrendPanel(props: { rows: Breakdown[]; width: number }) {
+function TrendPanel(props: { rows: BarRow[]; width: number }) {
   const palette = usePalette()
-  const max = () => Math.max(0, ...props.rows.map((row) => row.cost))
+  const max = () => Math.max(0, ...props.rows.map((row) => row.value))
   return (
     <Card title="DAILY ACTIVITY" grow minHeight={8}>
       <box flexDirection="column">
         <For each={props.rows}>{(row) => (
           <box flexDirection="row" gap={1} flexShrink={0}>
             <text fg={palette.muted}>{row.label}</text>
-            <text><CostBar value={row.cost} max={max()} width={Math.min(12, Math.max(4, props.width - 24))} /></text>
-            <text fg={palette.value}>{formatMoney(row.cost)}</text>
+            <text><Bar value={row.value} max={max()} width={Math.min(12, Math.max(4, props.width - 24))} /></text>
+            <text fg={palette.value}>{row.amount}</text>
           </box>
         )}</For>
       </box>
@@ -193,7 +269,40 @@ function TrendPanel(props: { rows: Breakdown[]; width: number }) {
   )
 }
 
-function CostBar(props: { value: number; max: number; width: number }) {
+function LongestPanel(props: { rows: LongTurn[]; selected: number; width: number; open: (index: number) => void }) {
+  const palette = usePalette()
+  const { shorten } = useText()
+  return (
+    <Card title="LONGEST TURNS" minHeight={8}>
+      <box flexDirection="column">
+        <For each={props.rows}>{(row, index) => {
+          const active = () => index() === props.selected
+          const amount = () => formatDuration(row.duration)
+          return (
+            <box flexDirection="column" flexShrink={0} backgroundColor={active() ? palette.selectedBackground : undefined}
+              onMouseDown={(event) => {
+                if (event.button !== 0) return
+                event.stopPropagation()
+                props.open(index())
+              }}>
+              <box flexDirection="row" justifyContent="space-between" gap={1}>
+                <text wrapMode="none" fg={active() ? palette.selectedText : palette.text}>
+                  {active() ? "> " : "  "}{shorten(row.title, Math.max(4, props.width - amount().length - 8))}
+                </text>
+                <text wrapMode="none" fg={active() ? palette.selectedText : palette.value}>{amount()}</text>
+              </box>
+              <text wrapMode="none" fg={active() ? palette.selectedText : palette.muted}>
+                {"  "}{shorten(`${row.project}  ${row.model}  ${formatStart(row.start)}`, Math.max(4, props.width - 6))}
+              </text>
+            </box>
+          )
+        }}</For>
+      </box>
+    </Card>
+  )
+}
+
+function Bar(props: { value: number; max: number; width: number }) {
   const palette = usePalette()
   const filled = () => props.value > 0 && props.max > 0 ? Math.min(props.width, Math.max(1, Math.round(props.value / props.max * props.width))) : 0
   return <><span style={{ fg: palette.accent }}>{"#".repeat(filled())}</span><span style={{ fg: palette.track }}>{"-".repeat(props.width - filled())}</span></>
@@ -201,6 +310,20 @@ function CostBar(props: { value: number; max: number; width: number }) {
 
 function formatTokens(value: number) {
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(value)
+}
+
+function formatDuration(milliseconds: number) {
+  const seconds = Math.round(milliseconds / 1000)
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor(seconds % 3600 / 60)
+  if (hours) return `${hours}h ${String(minutes).padStart(2, "0")}m`
+  if (minutes) return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`
+  return `${seconds}s`
+}
+
+function formatStart(at: number) {
+  const date = new Date(at)
+  return `${localDay(at)} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`
 }
 
 export const createCostTui = (timing: Timers = timers) => Plugin.define({
@@ -223,7 +346,7 @@ export const createCostTui = (timing: Timers = timers) => Plugin.define({
     createComputed(on(() => {
       const route = api.ui.router.current()
       const params = screen.owns(route) && route.type === "plugin" ? route.data : undefined
-      return [screen.active(), params?.range, params?.projectID, params?.model, JSON.stringify(location())]
+      return [screen.active(), params?.tab, params?.range, params?.projectID, params?.model, JSON.stringify(location())]
     }, cancelSelection, { defer: true }))
     const tasks = new Set<Promise<void>>()
     let importing: { key: string; abort: AbortController; task: Promise<void> } | undefined
@@ -341,7 +464,11 @@ export const createCostTui = (timing: Timers = timers) => Plugin.define({
             if (selection.valid() && model !== undefined) update({ ...previous, model: model || undefined })
           } catch (error) { if (selection.valid()) api.ui.toast.show({ message: errorMessage(error), variant: "error" }) }
         } },
-        { id: "opcode-cost.reset", title: "Reset cost filters", bind: "x", run() { update({ range: "30d" }) } },
+        { id: "opcode-cost.reset", title: "Reset cost filters", bind: "x", run() { update({ range: "30d", tab: currentState().tab }) } },
+        { id: "opcode-cost.tab", title: "Switch cost/time tab", bind: "tab,shift+tab", run() {
+          const current = currentState()
+          update({ ...current, tab: current.tab === "cost" ? "time" : "cost" })
+        } },
         { id: "opcode-cost.refresh", title: "Reconcile history and refresh", bind: "r", async run() {
           if (controller.signal.aborted || !screen.active()) return
           setRevision((value) => value + 1)

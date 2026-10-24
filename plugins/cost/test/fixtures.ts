@@ -1,5 +1,8 @@
 import type { OpenCodeEvent, SessionInfo, SessionMessageAssistant } from "@opencode/client"
+import type { CostService } from "../src/client.js"
 import type { UsageRecord } from "../src/domain.js"
+import type { CostLedger } from "../src/ledger.js"
+import { timedSession } from "../src/messages.js"
 
 export const context = { sessionID: "session", projectID: "project", directory: "/work/main" }
 export const tokens = { input: 1, output: 2, reasoning: 3, cache: { read: 4, write: 5 } }
@@ -28,4 +31,23 @@ export function event(type: string, data: unknown, options: { created?: number; 
     id: "event", type, data, created: options.created ?? record.completedAt!,
     location: options.directory === null ? undefined : { directory: options.directory ?? context.directory },
   } as OpenCodeEvent
+}
+
+/** The server handlers' ledger effects, without RPC. */
+export function serviceFor(ledger: CostLedger, sessions = [session]): CostService {
+  return {
+    dashboard: async (filter) => ledger.dashboard(filter),
+    time: async (filter) => ledger.time(filter),
+    status: async () => ({ projectID: context.projectID, directory: context.directory, lastImport: ledger.lastImport(context.projectID) }),
+    importBatch: async (batch) => {
+      const actual = sessions.find((item) => item.id === batch.sessionID)!
+      ledger.importBatch(batch.records.map((record) => ({ ...record, sessionID: actual.id, projectID: actual.projectID, directory: actual.location.directory })))
+    },
+    importActivity: async (batch) => {
+      const actual = sessions.find((item) => item.id === batch.sessionID)!
+      const timed = timedSession(actual)
+      if (timed) ledger.recordActivity(timed, batch.activity)
+    },
+    completeImport: async () => { ledger.markImported(context.projectID, context.directory) },
+  }
 }
