@@ -79,6 +79,10 @@ test("the snapshot finds running subagents' roots in other locations and their r
   ui.push(event("session.status", { sessionID: "old-child", status: { type: "busy" } }))
   await ui.settle(() => ids(ui.inbox).length === 3)
   expect(ids(ui.inbox)[2]).toBe("old:working")
+
+  // The session you're in isn't listed, even when you're in one of its subagents.
+  ui.setRoute({ type: "session", sessionID: "child" })
+  expect(ids(ui.inbox)).toEqual(["unseen:finished", "old:working"])
 })
 
 test("notifications: one per new request or finish outside the current family", async () => {
@@ -86,7 +90,7 @@ test("notifications: one per new request or finish outside the current family", 
   using ui = fixture(sessions, { notify: true, running: ["current", "other"] })
   ui.setRoute({ type: "session", sessionID: "current" })
   ui.push(event("server.connected", {}))
-  await ui.settle(() => ui.inbox.rows().length === 2)
+  await ui.settle(() => ui.inbox.rows().length === 1)
   ui.push(
     event("permission.asked", { id: "per_1", sessionID: "current", action: "bash", resources: [] }),
     event("permission.asked", { id: "per_2", sessionID: "other", action: "bash", resources: [] }),

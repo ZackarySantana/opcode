@@ -14,20 +14,20 @@ const STATE_LABELS: Record<AgentState, string> = {
   "needs-you": "needs you", failed: "failed", finished: "finished", retrying: "retrying", working: "working",
 }
 
-const rowDetail = (row: InboxRow, current: boolean) =>
-  [projectName(row.directory), row.agents ? `${row.agents} ${row.agents === 1 ? "agent" : "agents"}` : "", current ? "current" : ""].filter(Boolean).join(" · ")
+const rowDetail = (row: InboxRow) =>
+  [projectName(row.directory), row.agents ? `${row.agents} ${row.agents === 1 ? "agent" : "agents"}` : ""].filter(Boolean).join(" · ")
 
-/** State, project, subagents, and whether it is the current session, as one line. */
-export const rowSummary = (row: InboxRow, current: boolean) => `${STATE_LABELS[row.state]} · ${rowDetail(row, current)}`
+/** State, project, and subagents, as one line. */
+export const rowSummary = (row: InboxRow) => `${STATE_LABELS[row.state]} · ${rowDetail(row)}`
 
-function rowItem(row: InboxRow, number: number, current: boolean, now: number, palette: Palette): Item {
+function rowItem(row: InboxRow, number: number, now: number, palette: Palette): Item {
   const [glyph, color] = ({
     "needs-you": ["●", palette.warning], failed: ["✗", palette.error], finished: ["✓", palette.success],
     retrying: ["↻", palette.warning], working: ["○", palette.value],
   } as const)[row.state]
   return {
     key: row.id, mark: { glyph: `${number} ${glyph}`, color, title: palette.text, strong: row.state === "needs-you" },
-    head: STATE_LABELS[row.state], detail: rowDetail(row, current), time: age(row.since, now), title: row.title,
+    head: STATE_LABELS[row.state], detail: rowDetail(row), time: age(row.since, now), title: row.title,
   }
 }
 
@@ -47,7 +47,7 @@ export function InboxSidebar(props: { inbox: Inbox; limit: number; command: stri
             <text minWidth={0} wrapMode="word" fg={palette.muted} {...back.handlers}>← {back.hovered() ? <u>Back to {entry().title}</u> : `Back to ${entry().title}`}</text>
           )}</Show>
           <For each={rows().slice(0, props.limit)}>{(row, index) => (
-            <SidebarItem item={rowItem(row, index() + 1, row.id === props.inbox.currentRoot(), now(), palette)} open={() => props.inbox.open(row.id)} />
+            <SidebarItem item={rowItem(row, index() + 1, now(), palette)} open={() => props.inbox.open(row.id)} />
           )}</For>
           <Show when={!rows().length}><text fg={palette.muted}>No active sessions</text></Show>
           <Show when={rows().length > props.limit}><More count={rows().length - props.limit} pointer={props.pointer} command={props.command} /></Show>

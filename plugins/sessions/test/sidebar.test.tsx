@@ -18,7 +18,7 @@ test("rows are numbered in order; clicking one opens it, the back row goes back,
   const [back, setBack] = createSignal<{ id: string; title: string }>()
   const inbox = {
     rows: () => [row("a", "working", 2), row("b", "needs-you"), row("c", "finished")],
-    currentRoot: () => "b", error: () => undefined, back,
+    error: () => undefined, back,
     open: (id: string) => { opened.push(id); setBack({ id: "a", title: "Title a" }) },
     goBack: () => { wentBack++; setBack(undefined); return true },
   } as unknown as Inbox
@@ -32,7 +32,7 @@ test("rows are numbered in order; clicking one opens it, the back row goes back,
   try {
     const frame = await view.waitForFrame((frame) => frame.includes("+1 more"))
     expect(frame).toContain("1 ○ working · a · 2 agents")
-    expect(frame).toContain("2 ● needs you · b · current")
+    expect(frame).toContain("2 ● needs you · b")
     expect(frame).toContain("3m")
     expect(frame).not.toContain("Title c")
     expect(frame).not.toContain("Back to")

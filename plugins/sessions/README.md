@@ -58,7 +58,7 @@ The **Agents** section at the top of the sidebar lists root sessions from every 
 | `↻` | retrying | The session or a subagent is retrying after an error |
 | `○` | working | The session or a subagent is running |
 
-Subagents are rolled up into their root session ("2 agents"); only the root needs to be seen for a finished run to drop out, and archived sessions never appear. The session you are in is listed too, marked **current**. Each row shows its project, the time since it finished or was last active, and its title. Five rows are shown; "+N more" opens the full list.
+Subagents are rolled up into their root session ("2 agents"); only the root needs to be seen for a finished run to drop out, and archived sessions never appear. The session you are in isn't listed. Each row shows its project, the time since it finished or was last active, and its title. Five rows are shown; "+N more" opens the full list.
 
 - Click a row, or run `/go <n>`, to open session n. `/go` alone, or **Go to active session** in the command palette, lists them all.
 - After the plugin takes you somewhere (a sidebar click, `/go`, the list, or opening a session from `/sessions`), a **Back to …** row appears above the list; click it, or run `/back`, `/previous`, or `/go back`. Going back again retraces each step. Switching sessions any other way, such as with tabs or going home, forgets the trail.

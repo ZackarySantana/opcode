@@ -47,7 +47,10 @@ export function createInbox(api: Context, options: InboxOptions) {
   const currentRoot = createMemo(() => { const id = currentSession(); return id && api.data.session.root(id) })
   const rows = createMemo<InboxRow[]>(() => {
     const active = new Map(activeRoots(state.projection).map((root) => [root.id, root]))
+    // The session you're in isn't listed: the list is where else you could go.
+    const here = currentRoot()
     return state.order.flatMap((id) => {
+      if (id === here) return []
       const root = active.get(id)
       const session = state.projection.sessions[id]
       return root && session ? [{ ...root, title: session.title, directory: session.directory }] : []
@@ -185,7 +188,6 @@ export function createInbox(api: Context, options: InboxOptions) {
   return {
     rows,
     error,
-    currentRoot,
     /** The session the back row returns to, while on the session this plugin last opened. */
     back: () => backEntry(history, currentSession()),
     /** Navigate, remembering the session it came from. */

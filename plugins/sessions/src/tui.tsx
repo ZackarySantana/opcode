@@ -26,8 +26,8 @@ export function registerInboxCommands(api: Context, inbox: Inbox, names: { go: r
   const list = async () => {
     const rows = inbox.rows()
     if (!rows.length) return api.ui.toast.show({ variant: "info", message: "No active sessions." })
-    const sessionID = await api.ui.dialog.select({ title: "Active sessions", current: inbox.currentRoot(), options: rows.map((row, index) => ({
-      title: `${index + 1}. ${row.title}`, description: rowSummary(row, row.id === inbox.currentRoot()), value: row.id,
+    const sessionID = await api.ui.dialog.select({ title: "Active sessions", options: rows.map((row, index) => ({
+      title: `${index + 1}. ${row.title}`, description: rowSummary(row), value: row.id,
     })) })
     if (sessionID) inbox.open(sessionID)
   }

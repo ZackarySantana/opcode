@@ -20,7 +20,7 @@ test("/go opens the sidebar's numbered row, goes back, lists without a number, a
   let listed = 0
   const inbox = {
     rows: () => [{ id: "first", state: "working", agents: 0, since: 0, title: "First", directory: "/a" }, { id: "second", state: "finished", agents: 0, since: 0, title: "Second", directory: "/b" }],
-    currentRoot: () => undefined, open: (id: string) => opened.push(id),
+    open: (id: string) => opened.push(id),
     // Only the first back succeeds.
     goBack: () => ++wentBack === 1,
   } as unknown as Inbox
