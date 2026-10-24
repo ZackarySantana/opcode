@@ -72,7 +72,9 @@ Turn scattered sessions into a readable picture of your usage. See recorded cost
 
 Remember the discussion but not where it happened? Search session titles, project paths, and indexed message text across your OpenCode projects, then preview the match before picking it up again.
 
-**Remember a phrase → find the session → get back to it.** Filter by project, include subagents when you need them, and see a matching message alongside the results. Same-directory sessions open directly; other directories offer a resume command to copy.
+**Remember a phrase → find the session → get back to it.** Filter by project, include subagents when you need them, and see a matching message alongside the results, then open it, whichever directory it belongs to.
+
+**Keep an eye on every running agent.** The top of the sidebar lists the sessions that are working, waiting on you, or finished since you last looked, across all your projects. Click one, or type `/go 2`, to jump there, and `/go back` to return.
 
 ![Sessions browser searching for cache discussions across projects with a selected message preview](docs/images/sessions-browser.png)
 

@@ -1,6 +1,6 @@
 # @lidtop/opencode-sessions
 
-Find the conversation, not just the project. Search recorded OpenCode sessions across projects, including message text, and get back to the one you need.
+Find the conversation, not just the project. Search recorded OpenCode sessions across projects, including message text, and get back to the one you need. The sidebar keeps every active agent in view, across projects.
 
 ![Sessions browser searching for cache discussions across projects with a selected message preview](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/sessions-browser.png)
 
@@ -44,7 +44,27 @@ Expressions use Unicode mode when valid, otherwise legacy syntax, and are limite
 
 On wide enough terminals, the preview shows the newest matching message centered on the match (up to 4,096 characters), the latest model, model count, indexed message count, recorded cost, and token counters. These are **indexed historical totals**, not current context use or billing totals.
 
-Sessions in the current directory open directly. For another directory, after confirmation, the browser copies a shell-quoted `opencode '<directory>' --session '<id>'` command to the clipboard (OSC 52); nothing is launched. The quoting is for POSIX shells, not PowerShell or cmd. For a remote server, run the command with that server's paths and the **same server connection**; it does not include credentials or connection flags.
+`enter` opens the session in this terminal, whichever directory it belongs to.
+
+## Active sessions
+
+The **Agents** section at the top of the sidebar lists root sessions from every project and location that need attention, numbered in the order they became active. The order doesn't change as their states do:
+
+| Mark | State | When |
+| --- | --- | --- |
+| `●` | needs you | A permission or question is waiting anywhere in the session or its subagents, or a retry needs you to act |
+| `✗` | failed | The run failed, and you haven't opened the session since |
+| `✓` | finished | The run finished, and you haven't opened the session since |
+| `↻` | retrying | The session or a subagent is retrying after an error |
+| `○` | working | The session or a subagent is running |
+
+Subagents are rolled up into their root session ("2 agents"); only the root needs to be seen for a finished run to drop out, and archived sessions never appear. The session you are in is listed too, marked **current**. Each row shows its project, the time since it finished or was last active, and its title. Five rows are shown; "+N more" opens the full list.
+
+- Click a row, or run `/go <n>`, to open session n. `/go` alone, or **Go to active session** in the command palette, lists them all.
+- After the plugin takes you somewhere (a sidebar click, `/go`, the list, or opening a session from `/sessions`), a **Back to …** row appears above the list; click it or run `/go back`. Going back again retraces each step. Switching sessions any other way, such as with tabs or going home, forgets the trail.
+- `/go` is skipped when another command already uses that name; then `/opcode-go` is used, and the palette entry always works.
+
+The list follows the connected server's live events and is rebuilt on every (re)connection; nothing is stored. A finished session outside the newest 100 root sessions appears only once it becomes active again.
 
 ## Indexing
 
@@ -56,7 +76,7 @@ The server indexes each loaded location and follows session lifecycle, usage, co
 
 ## Options
 
-Set a custom database path on the **server**:
+Set a custom database path on the **server** (`opencode.jsonc`):
 
 ```jsonc
 {
@@ -68,6 +88,21 @@ Set a custom database path on the **server**:
 ```
 
 - `database`: where the index is stored. Relative paths resolve from the server's OpenCode state directory; the terminal ignores this option and uses RPC. `:memory:` is useful for tests, not durable history. The default is `$XDG_STATE_HOME/opencode/opencode-sessions-all/sessions.sqlite` (or `~/.local/state/opencode/opencode-sessions-all/sessions.sqlite`).
+
+Configure the active-sessions sidebar on the **terminal**: terminal extensions receive options only from global `~/.config/opencode/cli.json`. Keep the server entry too; the terminal loads the plugin once, with these options.
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/v2/cli.json",
+  "plugins": [
+    { "package": "@lidtop/opencode-sessions", "options": { "inbox": { "rows": 8, "notify": true } } }
+  ]
+}
+```
+
+- `inbox.enabled` (default `true`): `false` removes the sidebar section and `/go`, and stops listening for session events.
+- `inbox.rows` (default `5`): rows shown before "+N more".
+- `inbox.notify` (default `false`): a desktop notification and sound while the terminal is unfocused, plus a toast, for each new permission or question and each finished or failed run, except in the session family you are in. They follow your OpenCode attention settings.
 
 ## Data and privacy
 
@@ -89,4 +124,4 @@ mise exec -- bun run typecheck
 mise run dev sessions
 ```
 
-The build bundles the private `@opcode/core` and `@opcode/ui` workspaces into the package; OpenCode, OpenTUI, and Solid stay external. The real-host RPC test needs an OpenCode binary on `PATH` or at `~/.opencode/bin/opencode`, and reports loudly when it is skipped.
+The build bundles the private `@opcode/core`, `@opcode/tabs`, and `@opcode/ui` workspaces into the package; OpenCode, OpenTUI, and Solid stay external. The real-host RPC test needs an OpenCode binary on `PATH` or at `~/.opencode/bin/opencode`, and reports loudly when it is skipped.

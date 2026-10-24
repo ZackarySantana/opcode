@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test"
-import type { Context, Destination, KeymapLayer, Route, ToastOptions } from "@opencode/plugin/tui/context"
+import type { Context, Destination, KeymapLayer, Route } from "@opencode/plugin/tui/context"
 import { createRoot, createSignal } from "solid-js"
 import { createScreen } from "@opcode/ui/screen"
 import { createBrowser } from "../src/browser"
-import { availableSlashNames, registerBrowserCommands } from "../src/tui"
+import { availableSlashNames, registerBrowserCommands, registerInboxCommands } from "../src/tui"
+import type { Inbox } from "../src/inbox-host"
 import type { SessionResult } from "../src/domain"
 import { record, remoteStub } from "./fixtures"
 import { BROWSER_ROUTE } from "../src/view"
@@ -14,33 +15,30 @@ function fixture() {
   const model = createBrowser({ session: { list: async () => ({ data: [], cursor: {} }) }, message: { list: async () => ({ data: [], cursor: {} }) } }, remoteStub({ search: async () => { await searchGate.current; return { rows, projects: [], truncated: false } } }))
   const [route, setRoute] = createSignal<Route>({ type: "session", sessionID: "origin" })
   const layers: KeymapLayer[] = []
-  const copied: string[] = []
-  const toasts: ToastOptions[] = []
-  const replies = { confirm: true, copy: true, query: undefined as string | undefined, project: undefined as string | undefined }
-  const dialogs = { confirm: async () => replies.confirm, prompt: async () => replies.query, select: async () => replies.project }
+  const opened: Array<{ sessionID: string; from: Route }> = []
+  const replies = { query: undefined as string | undefined, project: undefined as string | undefined }
+  const dialogs = { prompt: async () => replies.query, select: async () => replies.project }
   const api = {
     location: { directory: "/work/alpha" },
     data: { location: { command: { list: () => [] } } },
     keymap: { layer: (factory: () => KeymapLayer) => layers.push(factory()), commands: () => [] },
-    renderer: { copyToClipboardOSC52: (text: string) => { copied.push(text); return replies.copy } },
     ui: {
       router: { current: route, navigate: (next: Destination) => { setRoute(next.type === "plugin" && !("id" in next) ? { ...next, id: "opcode-sessions" } : next as Route) } },
       dialog: dialogs,
-      toast: { show: (toast: ToastOptions) => toasts.push(toast) },
     },
   } as unknown as Context
   const dispose = createRoot((dispose) => {
     const screen = createScreen(api, { id: "opcode-sessions", name: BROWSER_ROUTE, mode: BROWSER_ROUTE })
-    registerBrowserCommands(api, model, screen, () => true)
+    registerBrowserCommands(api, model, screen, () => true, (sessionID, from) => { opened.push({ sessionID, from }); api.ui.router.navigate({ type: "session", sessionID }) })
     return dispose
   })
-  return { api, model, searchGate, replies, dialogs, copied, toasts, layers, route,
+  return { api, model, searchGate, replies, dialogs, opened, layers, route,
     run: async (name: string) => { await layers.flatMap((layer) => layer.commands ?? []).find((command) => command.id === `opcode-sessions.${name}`)!.run() },
     async [Symbol.asyncDispose]() { dispose(); await model.dispose() },
   }
 }
 
-test("browser preserves return route, cancellation, local opening, and confirmed OSC52 copying", async () => {
+test("browser preserves return route and opens a session in any directory from the session it was opened over", async () => {
   await using ui = fixture()
   await ui.run("open"); await ui.model.load()
   await ui.run("open")
@@ -48,19 +46,9 @@ test("browser preserves return route, cancellation, local opening, and confirmed
   expect(ui.route()).toEqual({ type: "session", sessionID: "origin" })
   await ui.run("open"); await ui.model.load()
   await ui.run("down")
-  ui.replies.confirm = false
   await ui.run("select")
-  expect(ui.copied).toEqual([])
-  ui.replies.confirm = true
-  await ui.run("select")
-  expect(ui.copied).toEqual(["opencode '/work/sam'\\''s app' --session 's2'"])
-  expect(ui.toasts[0]?.variant).toBe("success")
-  ui.replies.copy = false
-  await ui.run("select")
-  expect(ui.toasts[1]?.variant).toBe("error")
-  await ui.run("up")
-  await ui.run("select")
-  expect(ui.route()).toEqual({ type: "session", sessionID: "s1" })
+  expect(ui.route()).toEqual({ type: "session", sessionID: "s2" })
+  expect(ui.opened).toEqual([{ sessionID: "s2", from: { type: "session", sessionID: "origin" } }])
   await ui.run("open"); await ui.model.load()
   await ui.model.filters({ query: "keep" })
   await ui.run("search")
@@ -101,7 +89,7 @@ test("pending search and project dialogs cannot mutate a later browser activatio
   expect(ui.model.state().projectID).toBeUndefined()
 })
 
-test("leaving the route invalidates confirmation and a newer dialog supersedes an older one", async () => {
+test("a newer dialog supersedes an older one", async () => {
   await using ui = fixture()
   await ui.run("open"); await ui.model.load()
   const query = Promise.withResolvers<string | undefined>()
@@ -112,19 +100,6 @@ test("leaving the route invalidates confirmation and a newer dialog supersedes a
   query.resolve("stale invocation")
   await oldSearch
   expect(ui.model.state().query).toBe("latest invocation")
-
-  await ui.run("down")
-  const confirmed = Promise.withResolvers<boolean>()
-  ui.dialogs.confirm = () => confirmed.promise
-  const copying = ui.run("select")
-  const browser = ui.route()
-  ui.api.ui.router.navigate({ type: "home" })
-  // Even leaving and returning externally must not revive the pending confirmation.
-  ui.api.ui.router.navigate(browser)
-  confirmed.resolve(true)
-  await copying
-  expect(ui.copied).toEqual([])
-  expect(ui.toasts).toEqual([])
 })
 
 test("a different plugin's same-name route never suppresses opening or steals the return route", async () => {
@@ -141,5 +116,32 @@ test("slash commands retain original names only when unoccupied", async () => {
   await using ui = fixture()
   expect(ui.layers[0]?.commands?.[0]?.slash).toEqual({ name: "sessions", aliases: ["sessions-all", "all-sessions", "opcode-sessions"] })
   const api = { ...ui.api, keymap: { ...ui.api.keymap, commands: () => [{ slash: { name: "sessions", aliases: ["sessions-all"] }, run() {} }] } } as Context
-  expect(availableSlashNames(api)).toEqual(["all-sessions", "opcode-sessions"])
+  expect(availableSlashNames(api, ["sessions", "sessions-all", "all-sessions"])).toEqual(["all-sessions"])
+})
+
+test("/go opens the sidebar's numbered row, goes back, lists without a number, and rejects other input", async () => {
+  const opened: string[] = []
+  const toasts: string[] = []
+  const layers: KeymapLayer[] = []
+  let wentBack = 0
+  let listed = 0
+  const inbox = {
+    rows: () => [{ id: "first", state: "working", agents: 0, since: 0, title: "First", directory: "/a" }, { id: "second", state: "finished", agents: 0, since: 0, title: "Second", directory: "/b" }],
+    currentRoot: () => undefined, open: (id: string) => opened.push(id), goBack: () => { wentBack++; return true },
+  } as unknown as Inbox
+  const api = {
+    keymap: { layer: (factory: () => KeymapLayer) => layers.push(factory()) },
+    ui: { toast: { show: (toast: { message: string }) => toasts.push(toast.message) }, dialog: { select: async () => { listed++; return "first" } } },
+  } as unknown as Context
+  registerInboxCommands(api, inbox, ["go"])
+  const go = layers[0]!.commands![0]!
+  expect(go.slash).toEqual({ name: "go", aliases: [], arguments: true })
+  await go.run("2")
+  await go.run(" Back ")
+  await go.run("")
+  await go.run("3")
+  expect(opened).toEqual(["second", "first"])
+  expect(wentBack).toBe(1)
+  expect(listed).toBe(1)
+  expect(toasts).toEqual(["No active session 3. Use /go to list them."])
 })

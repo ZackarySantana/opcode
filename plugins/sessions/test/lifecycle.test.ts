@@ -66,7 +66,7 @@ test("TUI setup defers sync to the first browser opening, pins it to one connect
   let unregistered = false
   const layers: KeymapLayer[] = []
   const api = {
-    location: { directory: "/connected/A" }, get client() { return connected },
+    options: { inbox: { enabled: false } }, location: { directory: "/connected/A" }, get client() { return connected },
     data: { location: { command: { list: () => [] } } },
     keymap: { layer: (factory: () => KeymapLayer) => { layers.push(factory()) }, commands: () => [] },
     ui: { router: {

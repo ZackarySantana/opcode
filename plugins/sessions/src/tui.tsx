@@ -1,22 +1,26 @@
 /** @jsxImportSource @opentui/solid */
 import { Plugin } from "@opencode/plugin/tui"
 import { createScreen, type Screen } from "@opcode/ui/screen"
-import type { Context } from "@opencode/plugin/tui/context"
+import type { Context, Route } from "@opencode/plugin/tui/context"
 import { createBrowser, type BrowserModel } from "./browser"
-import { resumeCommand } from "./domain"
+import { createInbox, inboxOptions, type Inbox } from "./inbox-host"
 import { sessionsRemote } from "./rpc"
+import { InboxSidebar, rowSummary } from "./sidebar"
 import { BROWSER_MODE, BROWSER_ROUTE, SessionsView } from "./view"
 
 const PLUGIN_ID = "opcode-sessions"
 
-export function availableSlashNames(api: Pick<Context, "keymap" | "data" | "location">) {
+/** Names already used by other commands are left alone; the first free one becomes the primary slash name. */
+export function availableSlashNames(api: Pick<Context, "keymap" | "data" | "location">, candidates: readonly string[]) {
   const occupied = new Set(api.keymap.commands().flatMap((command) => command.slash ? [command.slash.name, ...(command.slash.aliases ?? [])] : []))
   for (const command of api.data.location.command.list(api.location) ?? []) occupied.add(command.name)
-  return ["sessions", "sessions-all", "all-sessions", "opcode-sessions"].filter((name) => !occupied.has(name))
+  return candidates.filter((name) => !occupied.has(name))
 }
 
-export function registerBrowserCommands(api: Context, model: BrowserModel, screen: Screen, alive: () => boolean) {
-  const names = availableSlashNames(api)
+const slash = (names: readonly string[], extra?: { arguments: true }) => names[0] ? { slash: { name: names[0], aliases: names.slice(1), ...extra } } : {}
+
+export function registerBrowserCommands(api: Context, model: BrowserModel, screen: Screen, alive: () => boolean, open: (sessionID: string, from: Route) => void) {
+  const names = availableSlashNames(api, ["sessions", "sessions-all", "all-sessions", "opcode-sessions"])
   const invalidate = screen.invalidate
   const active = () => alive() && screen.active()
   const invocation = () => {
@@ -25,7 +29,7 @@ export function registerBrowserCommands(api: Context, model: BrowserModel, scree
   }
   api.keymap.layer(() => ({ mode: "global", commands: [{
     id: "opcode-sessions.open", title: "All sessions", description: "Search recorded sessions across projects", group: "Session", palette: true,
-    ...(names[0] ? { slash: { name: names[0], aliases: names.slice(1) } } : {}),
+    ...slash(names),
     run() {
       if (!alive()) return
       if (screen.owns()) return
@@ -55,22 +59,46 @@ export function registerBrowserCommands(api: Context, model: BrowserModel, scree
       ] })
       if (current() && project !== undefined) await model.filters({ projectID: project || undefined })
     } },
-    { id: "opcode-sessions.select", title: "Open session", bind: "enter,return", async run() {
+    { id: "opcode-sessions.select", title: "Open session", bind: "enter,return", run() {
       if (!active()) return
       const value = model.state()
       const row = value.rows[value.selected]
       // Rows stay valid while a re-query runs; filter changes clear them first.
       if (!row) return
-      const location = api.location ?? api.data.location.default()
-      if (row.directory === location.directory) { invalidate(); api.ui.router.navigate({ type: "session", sessionID: row.id }); return }
-      const current = invocation()
-      const confirmed = await api.ui.dialog.confirm({ title: "Copy session start command?", message: "Run this POSIX-shell command in a new terminal connected to the same OpenCode server. Remote paths belong to that server." })
-      if (!current() || !confirmed) return
-      const copied = api.renderer.copyToClipboardOSC52(resumeCommand(row.directory, row.id))
-      api.ui.toast.show({ variant: copied ? "success" : "error", message: copied ? "Session command copied. Use the same server connection." : "Your terminal could not copy the session command." })
+      invalidate()
+      open(row.id, screen.previous())
     } },
   ])
   return invalidate
+}
+
+export const GO_COMMAND = "opcode-sessions.go"
+
+/** `/go <n>` opens active session n, `/go back` returns, and plain `/go` (or the palette) lists them. */
+export function registerInboxCommands(api: Context, inbox: Inbox, names: readonly string[]) {
+  const list = async () => {
+    const rows = inbox.rows()
+    if (!rows.length) return api.ui.toast.show({ variant: "info", message: "No active sessions." })
+    const sessionID = await api.ui.dialog.select({ title: "Active sessions", current: inbox.currentRoot(), options: rows.map((row, index) => ({
+      title: `${index + 1}. ${row.title}`, description: rowSummary(row, row.id === inbox.currentRoot()), value: row.id,
+    })) })
+    if (sessionID) inbox.open(sessionID)
+  }
+  api.keymap.layer(() => ({ mode: "global", commands: [{
+    id: GO_COMMAND, title: "Go to active session", description: "Open an active session by number, or go back", group: "Opcode", palette: true,
+    ...slash(names, { arguments: true }),
+    async run(input) {
+      const argument = input?.trim() ?? ""
+      if (!argument) return list()
+      if (argument.toLowerCase() === "back") {
+        if (!inbox.goBack()) api.ui.toast.show({ variant: "info", message: "Nothing to go back to." })
+        return
+      }
+      const row = /^\d+$/.test(argument) ? inbox.rows()[Number(argument) - 1] : undefined
+      if (row) inbox.open(row.id)
+      else api.ui.toast.show({ variant: "warning", message: `No active session ${argument}. Use /${names[0] ?? "go"} to list them.` })
+    },
+  }] }))
 }
 
 export default Plugin.define({
@@ -81,21 +109,36 @@ export default Plugin.define({
     const client = api.client
     const model = createBrowser(client, sessionsRemote(client, location.directory))
     const screen = createScreen(api, { id: PLUGIN_ID, name: BROWSER_ROUTE, mode: BROWSER_MODE })
+    const options = inboxOptions(api.options.inbox)
+    // Disabled: no slot, no listeners, and the browser navigates without a back trail.
+    const inbox = options && createInbox(api, options)
     let active = true
     let invalidate = () => {}
+    let unregisterSidebar = () => {}
     const unregister = api.ui.router.register({ name: BROWSER_ROUTE, render: () => <SessionsView model={model} screen={screen} currentSession={() => { const route = screen.previous(); return route.type === "session" ? route.sessionID : undefined }} /> })
-    try { invalidate = registerBrowserCommands(api, model, screen, () => active) } catch (error) {
+    const dispose = () => {
       active = false
       invalidate()
+      unregisterSidebar()
+      inbox?.dispose()
       unregister()
+    }
+    try {
+      invalidate = registerBrowserCommands(api, model, screen, () => active, inbox ? inbox.open : (sessionID) => api.ui.router.navigate({ type: "session", sessionID }))
+      if (inbox) {
+        const names = availableSlashNames(api, ["go", "opcode-go"])
+        registerInboxCommands(api, inbox, names)
+        // At the very top of the sidebar, above other plugins' sections.
+        unregisterSidebar = api.ui.slot({ prepend: "sidebar.content", render: () => <InboxSidebar inbox={inbox} limit={options.rows} command={GO_COMMAND} pointer={names[0] && `/${names[0]}`} /> })
+      }
+    } catch (error) {
+      dispose()
       void model.dispose()
       throw error
     }
     return async () => {
-      active = false
-      invalidate()
+      dispose()
       screen.dispose()
-      unregister()
       await model.dispose()
     }
   },
