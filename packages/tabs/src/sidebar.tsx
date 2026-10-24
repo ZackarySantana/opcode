@@ -7,13 +7,16 @@ import { createSignal, onCleanup, Show } from "solid-js"
 import { refreshStatus } from "./format"
 import type { Item } from "./list"
 
-/** Left click runs the action; hovered lets the line underline what the click opens. */
+/**
+ * Left click runs the action on release, so a dialog it opens isn't dismissed by that same release landing on its
+ * backdrop; hovered lets the line underline what the click opens.
+ */
 export function useClick(run: () => void) {
   const [hovered, setHovered] = createSignal(false)
   return {
     hovered,
     handlers: {
-      onMouseDown: (event: MouseEvent) => { if (event.button !== 0) return; event.stopPropagation(); run() },
+      onMouseUp: (event: MouseEvent) => { if (event.button !== 0) return; event.stopPropagation(); run() },
       onMouseOver: () => setHovered(true),
       onMouseOut: () => setHovered(false),
     },
