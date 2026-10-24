@@ -6,12 +6,11 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "so
 import { Page, Card, FilterChip, KeyHints, CenterEmpty, usePalette, useText } from "@opcode/ui"
 import { useInputScope, type Screen } from "@opcode/ui/screen"
 import { formatCount, formatMoney } from "@opcode/core"
-import { viewport } from "./domain"
+import { projectName, viewport } from "./domain"
 import type { BrowserModel } from "./browser"
 
 export const BROWSER_ROUTE = "opcode-sessions.browser"
 export const BROWSER_MODE = "opcode-sessions.browser"
-const projectName = (directory: string) => directory.split(/[\\/]/).filter(Boolean).at(-1) || directory
 function updatedAge(timestamp: number) {
   const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000))
   if (minutes < 1) return "now"

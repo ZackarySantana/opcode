@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { messageRecord, resumeCommand, sessionRecord, viewport } from "../src/domain"
+import { messageRecord, sessionRecord, viewport } from "../src/domain"
 import { validateBatch } from "../src/rpc"
 import { assistant, message, session, user } from "./fixtures"
 
@@ -19,10 +19,6 @@ test("viewport follows keyboard selection, resize, and shrinking results", () =>
   expect(viewport(25, 100, 5, 16)).toEqual({ selected: 25, start: 21, size: 5 })
   expect(viewport(25, 3, 10, 16)).toEqual({ selected: 2, start: 0, size: 10 })
   expect(viewport(0, 0, 0)).toEqual({ selected: 0, start: 0, size: 1 })
-})
-
-test("resume commands quote both arguments for POSIX shells", () => {
-  expect(resumeCommand("/work/sam's app", "id'1")).toBe("opencode '/work/sam'\\''s app' --session 'id'\\''1'")
 })
 
 test("history batches reject excessive sizes and invalid metrics rather than truncating", () => {

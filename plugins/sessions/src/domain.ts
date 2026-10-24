@@ -78,7 +78,4 @@ export function viewport(selected: number, count: number, capacity: number, prev
   return { selected: selection, start: selection >= start + size ? selection - size + 1 : start, size }
 }
 
-export function resumeCommand(directory: string, sessionID: string) {
-  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
-  return `opencode ${quote(directory)} --session ${quote(sessionID)}`
-}
+export const projectName = (directory: string) => directory.split(/[\\/]/).filter(Boolean).at(-1) || directory
