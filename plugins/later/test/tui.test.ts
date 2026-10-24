@@ -103,6 +103,8 @@ test("the dialog adds, reorders, completes, deletes, and restores from its tabs,
     await h.dispatch("opcode-later.move.up")
     expect(items()).toEqual(["second", "first"])
     await h.dispatch("opcode-later.complete")
+    // History lists newest first, and completions within one millisecond tie on random ids.
+    for (const completed = Date.now(); Date.now() === completed;) await Bun.sleep(1)
     await h.dispatch("opcode-later.complete")
     expect(items()).toEqual([])
 
