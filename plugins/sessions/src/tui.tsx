@@ -18,9 +18,11 @@ export function availableSlashNames(api: Pick<Context, "keymap" | "data" | "loca
 const slash = (names: readonly string[], extra?: { arguments: true }) => names[0] ? { slash: { name: names[0], aliases: names.slice(1), ...extra } } : {}
 
 export const GO_COMMAND = "opcode-sessions.go"
+/** Other plugins dispatch this with a session ID to navigate as the sidebar does, recording the back trail. */
+export const NAVIGATE_COMMAND = "opcode-sessions.navigate"
 
-/** `/go <n>` opens active session n, `/go back` returns, and plain `/go` (or the palette) lists them. */
-export function registerInboxCommands(api: Context, inbox: Inbox, names: readonly string[]) {
+/** `/go <n>` opens active session n, `/go back` (or `/back`) returns, and plain `/go` (or the palette) lists them. */
+export function registerInboxCommands(api: Context, inbox: Inbox, names: { go: readonly string[]; back: readonly string[] }) {
   const list = async () => {
     const rows = inbox.rows()
     if (!rows.length) return api.ui.toast.show({ variant: "info", message: "No active sessions." })
@@ -29,20 +31,24 @@ export function registerInboxCommands(api: Context, inbox: Inbox, names: readonl
     })) })
     if (sessionID) inbox.open(sessionID)
   }
+  const back = () => {
+    if (!inbox.goBack()) api.ui.toast.show({ variant: "info", message: "Nothing to go back to." })
+  }
   api.keymap.layer(() => ({ mode: "global", commands: [{
     id: GO_COMMAND, title: "Go to active session", description: "Open an active session by number, or go back", group: "Opcode", palette: true,
-    ...slash(names, { arguments: true }),
+    ...slash(names.go, { arguments: true }),
     async run(input) {
       const argument = input?.trim() ?? ""
       if (!argument) return list()
-      if (argument.toLowerCase() === "back") {
-        if (!inbox.goBack()) api.ui.toast.show({ variant: "info", message: "Nothing to go back to." })
-        return
-      }
+      if (argument.toLowerCase() === "back") return back()
       const row = /^\d+$/.test(argument) ? inbox.rows()[Number(argument) - 1] : undefined
       if (row) inbox.open(row.id)
-      else api.ui.toast.show({ variant: "warning", message: `No active session ${argument}. Use ${names[0] ? `/${names[0]}` : "Go to active session"} to list them.` })
+      else api.ui.toast.show({ variant: "warning", message: `No active session ${argument}. Use ${names.go[0] ? `/${names.go[0]}` : "Go to active session"} to list them.` })
     },
+  }, {
+    id: "opcode-sessions.back", title: "Go back", description: "Return to the session the plugin last navigated from", group: "Opcode", palette: true,
+    ...slash(names.back),
+    run: back,
   }] }))
 }
 
@@ -74,12 +80,15 @@ export default Plugin.define({
           void model.activate()
           api.ui.dialog.show(() => <ThemeSurface name="dialog"><SessionsDialog model={model} open={open} /></ThemeSurface>, () => { opened = false })
           opened = true
-          api.ui.dialog.set({ size: "large", centered: true })
+          api.ui.dialog.set({ size: "xlarge", centered: true })
         },
+      }, {
+        id: NAVIGATE_COMMAND,
+        run(input) { if (input) open(input) },
       }] }))
       if (inbox) {
         const go = availableSlashNames(api, ["go"])
-        registerInboxCommands(api, inbox, go)
+        registerInboxCommands(api, inbox, { go, back: availableSlashNames(api, ["back", "previous"]) })
         // At the very top of the sidebar, above other plugins' sections.
         unregisterSidebar = api.ui.slot({ prepend: "sidebar.content", render: () => <InboxSidebar inbox={inbox} limit={options.rows} command={GO_COMMAND} pointer={go[0] && `/${go[0]}`} /> })
       }

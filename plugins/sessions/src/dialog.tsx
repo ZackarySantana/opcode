@@ -54,8 +54,8 @@ function SessionList(props: Props & { pick(): void }) {
   const project = () => state().projects.find((project) => project.id === state().projectID)
   // The status line and a gap sit above the rows.
   const height = () => tab.height() - 2
-  // A large dialog is about 88 cells wide.
-  const showPreview = () => tab.width() >= 72 && height() >= 10
+  // An xlarge dialog is about 116 cells wide; titles keep most of it, and narrower dialogs drop the preview first.
+  const showPreview = () => tab.width() >= 80 && height() >= 10
   const previewWidth = () => Math.max(32, Math.floor(tab.width() * 0.4))
   const listWidth = () => tab.width() - (showPreview() ? previewWidth() + 1 : 0)
   const previewText = () => previewWidth() - 4

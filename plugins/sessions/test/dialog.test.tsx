@@ -15,8 +15,8 @@ function row(index: number, overrides: Partial<SessionResult> = {}): SessionResu
   return { ...record(`row-${index}`), updatedAt: Date.now() - 3_600_000, snippet: `Preview ${index}`, providerID: "test", modelID: `model-${index}`, messageCount: 1, modelCount: 1, cost: 1.11, input: 111, output: 22, reasoning: 0, cacheRead: 0, cacheWrite: 0, ...overrides }
 }
 
-// A large dialog is about 88 cells wide.
-async function render(search: (input: SearchInput) => SearchOutput | Promise<SearchOutput>, size = { width: 88, height: 40 }) {
+// An xlarge dialog is about 116 cells wide.
+async function render(search: (input: SearchInput) => SearchOutput | Promise<SearchOutput>, size = { width: 116, height: 40 }) {
   const model = createBrowser({ session: { list: async () => ({ data: [], cursor: {} }) }, message: { list: async () => ({ data: [], cursor: {} }) } }, remoteStub({ search: async (input) => search(input) }))
   // Layers leave with their owner, as in the host, so a stale command from an unmounted list or picker can't run.
   const layers = new Set<() => KeymapLayer>()
