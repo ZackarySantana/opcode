@@ -1,5 +1,5 @@
 import { Rpc } from "@opencode/plugin/rpc"
-import { ACTIVITY_KINDS, DATE_RANGES, IMPORT_BATCH_SIZE, MAX_COST, MAX_ID_LENGTH, MAX_MODEL_FILTER_LENGTH, MAX_TIME, MAX_TOKENS } from "./domain.js"
+import { ACTIVITY_KINDS, DATE_RANGES, IMPORT_BATCH_SIZE, MAX_COST, MAX_ID_LENGTH, MAX_TIME, MAX_TOKENS } from "./domain.js"
 
 const id = { type: "string", minLength: 1, maxLength: MAX_ID_LENGTH } as const
 const number = { type: "number", minimum: 0, maximum: MAX_TOKENS } as const
@@ -21,18 +21,6 @@ const breakdown = {
     type: "object", additionalProperties: false,
     properties: { id: { type: "string" }, label: { type: "string" }, cost: { type: "number" }, messages: number, tokens: { type: "number" } },
     required: ["id", "label", "cost", "messages", "tokens"],
-  },
-} as const
-const options = {
-  type: "array", items: {
-    type: "object", additionalProperties: false, properties: { id: { type: "string" }, label: { type: "string" } }, required: ["id", "label"],
-  },
-} as const
-const projectOptions = {
-  type: "array", items: {
-    type: "object", additionalProperties: false,
-    properties: { id: { type: "string" }, label: { type: "string" }, directory: { type: "string" } },
-    required: ["id", "label", "directory"],
   },
 } as const
 const activity = {
@@ -70,7 +58,7 @@ const timeDashboard = {
 } as const
 const filter = {
   type: "object", additionalProperties: false, required: ["range"],
-  properties: { range: { type: "string", enum: DATE_RANGES }, projectID: id, model: { type: "string", maxLength: MAX_MODEL_FILTER_LENGTH } },
+  properties: { range: { type: "string", enum: DATE_RANGES } },
 } as const
 const dashboard = {
   type: "object", additionalProperties: false,
@@ -83,9 +71,9 @@ const dashboard = {
       },
       required: ["cost", "messages", "tokens", "input", "output", "reasoning", "cacheRead", "cacheWrite"],
     },
-    projects: breakdown, models: breakdown, daily: breakdown, projectOptions, modelOptions: options,
+    projects: breakdown, models: breakdown, daily: breakdown,
   },
-  required: ["total", "projects", "models", "daily", "projectOptions", "modelOptions"],
+  required: ["total", "projects", "models", "daily"],
 } as const
 
 export const CostRpc = Rpc.define({

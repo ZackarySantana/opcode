@@ -40,7 +40,7 @@ test("imports paginated history, other worktrees, compactions, and rescans despi
     expect(calls).toContainEqual({ project: context.projectID, cursor: "sessions-next", limit: 100 })
     expect(calls).toContainEqual({ sessionID: "other", cursor: "messages-next", limit: 100 })
     expect(calls).toContainEqual({ sessionID: "other", type: "compaction", limit: 100 })
-    expect(ledger.dashboard({ range: "all" }).total).toMatchObject({ cost: 2.5, messages: 6 })
+    expect(ledger.dashboard("all").total).toMatchObject({ cost: 2.5, messages: 6 })
   } finally { ledger.close() }
 })
 
@@ -68,12 +68,12 @@ for (const forkFirst of [false, true]) {
     try {
       await importProject(client, service, new AbortController().signal)
       expect(ledger.lastImport(context.projectID)).toBeNumber()
-      const initial = ledger.dashboard({ range: "all" })
+      const initial = ledger.dashboard("all")
       expect(initial.total).toMatchObject({ cost: 1.75, messages: 3, tokens: 45 })
       retry = true
       await importProject(client, service, new AbortController().signal)
       await importProject(client, service, new AbortController().signal)
-      expect(ledger.dashboard({ range: "all" })).toEqual(initial)
+      expect(ledger.dashboard("all")).toEqual(initial)
       expect(ledger.lastImport(context.projectID)).toBeNumber()
     } finally { ledger.close() }
   })
@@ -92,11 +92,11 @@ test("failed partial imports retry without duplicate usage or false completion",
   try {
     await expect(importProject(client, serviceFor(ledger), new AbortController().signal)).rejects.toThrow("offline")
     expect(ledger.lastImport(context.projectID)).toBeNull()
-    expect(ledger.dashboard({ range: "all" }).total.messages).toBe(1)
+    expect(ledger.dashboard("all").total.messages).toBe(1)
     fail = false
     await importProject(client, serviceFor(ledger), new AbortController().signal)
     expect(ledger.lastImport(context.projectID)).toBeNumber()
-    expect(ledger.dashboard({ range: "all" }).total.messages).toBe(1)
+    expect(ledger.dashboard("all").total.messages).toBe(1)
   } finally { ledger.close() }
 })
 

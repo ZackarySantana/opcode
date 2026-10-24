@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { TimeDashboard } from "../src/domain.js"
-import { createTuiHarness, dashboard } from "./tui-harness.js"
+import { createTuiHarness, dashboard, timeDashboard } from "./tui-harness.js"
 
 test("/cost opens a large centered dialog; esc closes it and stops its reads, and reopening starts over", async () => {
   const harness = await createTuiHarness()
@@ -12,7 +12,7 @@ test("/cost opens a large centered dialog; esc closes it and stops its reads, an
     for (let step = 0; step < 3; step++) harness.run("up")
     harness.run("activate") // "All time"
     await harness.scene.waitFor(() => harness.queries.at(-1)!.filter.range === "all")
-    harness.queries.at(-1)!.resolve(dashboard())
+    harness.respond()
     await harness.frame((text) => text.includes("TOTAL COST"))
     harness.emitUsage()
     harness.settle()
@@ -28,7 +28,7 @@ test("/cost opens a large centered dialog; esc closes it and stops its reads, an
 
     harness.open()
     await harness.scene.waitFor(() => harness.queries.at(-1) !== pending)
-    expect(harness.queries.at(-1)!.filter).toEqual({ range: "30d", projectID: undefined, model: undefined })
+    expect(harness.queries.at(-1)!.filter).toEqual({ range: "30d" })
   } finally { await harness.cleanup() }
 })
 
@@ -59,9 +59,11 @@ test("a priced view shows cost with tokens; a $0 view hides cost and sizes every
     harness.open()
     const priced = dashboard(2)
     priced.models.push({ id: "free/model", label: "free/model", cost: 0, messages: 2, tokens: 300 })
-    harness.queries.at(-1)!.resolve(priced)
+    harness.respond(priced)
+    await harness.frame((text) => text.includes("TOTAL COST"))
+    harness.run("next") // Models
     let frame = await harness.frame((text) => text.includes("free/model"))
-    for (const text of ["TOTAL COST", "ALL TOKENS", "$2.00  15 tok", "$0.00  300 tok"]) expect(frame).toContain(text)
+    for (const text of ["$2.00  15 tok", "$0.00  300 tok"]) expect(frame).toContain(text)
     // Bars follow cost, so the free model's stays empty.
     expect(barUnder(frame, "free/model")).not.toContain("#")
 
@@ -70,98 +72,35 @@ test("a priced view shows cost with tokens; a $0 view hides cost and sizes every
     const count = harness.queries.length
     harness.setLocation({ directory: "/subscription" })
     await harness.scene.waitFor(() => harness.queries.length > count)
-    harness.queries.at(-1)!.resolve(free)
-    frame = await harness.frame((text) => text.includes("300 tok") && !text.includes("TOTAL COST"))
-    expect(frame).not.toContain("$")
+    harness.respond(free)
+    frame = await harness.frame((text) => text.includes("300 tok") && !text.includes("$"))
     expect(barUnder(frame, "free/model")).toContain("#")
+    harness.run("previous")
+    frame = await harness.frame((text) => text.includes("ALL TOKENS"))
+    expect(frame).not.toContain("TOTAL COST")
   } finally { await harness.cleanup() }
 })
 
-test("pickers set filters that both tabs share, shown before the search box; x resets them", async () => {
+test("the date range applies to every tab and shows before the search box", async () => {
   const harness = await createTuiHarness()
   try {
     harness.open()
-    harness.queries.at(-1)!.resolve(dashboard())
-    await harness.frame((text) => text.includes("BY PROJECT"))
-
+    harness.respond()
+    await harness.frame((text) => text.includes("last 30 days ›"))
     harness.run("date")
     // The picker opens on the current range, the last one.
     await harness.frame((text) => text.includes("> Last 30 days") && text.includes("All time"))
     harness.run("up")
     harness.run("activate")
-    await harness.scene.waitFor(() => harness.queries.at(-1)!.filter.range === "7d")
-    harness.queries.at(-1)!.resolve(dashboard())
+    await harness.scene.waitFor(() => harness.queries.at(-1)!.filter.range === "7d" && harness.times.at(-1)!.filter.range === "7d")
+    harness.respond()
     await harness.frame((text) => text.includes("last 7 days ›"))
-
-    harness.run("project")
-    const options = harness.queries.at(-1)!
-    expect(options.filter).toEqual({ range: "7d", projectID: undefined, model: undefined })
-    const data = dashboard()
-    data.projectOptions = [
-      { id: "opaque-project-a", label: "main", directory: "/remote/a/main" },
-      { id: "opaque-project-b", label: "main", directory: "/remote/b/main" },
-    ]
-    options.resolve(data)
-    await harness.frame((text) => text.includes("/remote/a/main") && text.includes("/remote/b/main"))
-    harness.run("down")
-    harness.run("down")
-    harness.run("activate")
-    await harness.scene.waitFor(() => harness.queries.at(-1)!.filter.projectID === "opaque-project-b")
-    harness.queries.at(-1)!.resolve(dashboard())
-    const frame = await harness.frame((text) => text.includes("last 7 days · main ›"))
-    expect(frame).not.toContain("BY PROJECT")
-
     harness.run("next")
-    await harness.scene.waitFor(() => harness.times.length > 0)
-    expect(harness.times.at(-1)!.filter).toEqual({ range: "7d", projectID: "opaque-project-b", model: undefined })
-    harness.run("model")
-    harness.queries.at(-1)!.resolve(dashboard())
-    await harness.frame((text) => text.includes("All models"))
-    harness.run("down")
-    harness.run("activate")
-    await harness.scene.waitFor(() => harness.times.at(-1)!.filter.model === "provider/model")
-
-    harness.run("reset")
-    await harness.scene.waitFor(() => harness.times.at(-1)!.filter.range === "30d")
-    expect(harness.times.at(-1)!.filter).toEqual({ range: "30d", projectID: undefined, model: undefined })
+    await harness.frame((text) => text.includes("last 7 days ›") && text.includes("provider/model"))
   } finally { await harness.cleanup() }
 })
 
-test("esc while project options load goes back to the tab, aborting the request, and never closes the dialog", async () => {
-  const harness = await createTuiHarness()
-  try {
-    harness.open()
-    harness.queries.at(-1)!.resolve(dashboard())
-    await harness.frame((text) => text.includes("TOTAL COST"))
-    harness.run("project")
-    await harness.frame((text) => text.includes("Loading projects"))
-    const options = harness.queries.at(-1)!
-    harness.run("close")
-    await harness.frame((text) => text.includes("TOTAL COST"))
-    expect(options.signal.aborted).toBe(true)
-    expect(harness.isOpen()).toBe(true)
-    options.resolve(dashboard())
-    await harness.scene.flush()
-    expect(harness.scene.captureCharFrame()).not.toContain("All projects")
-  } finally { await harness.cleanup() }
-})
-
-test("the search box narrows the breakdowns", async () => {
-  const harness = await createTuiHarness()
-  try {
-    harness.open()
-    const data = dashboard()
-    data.models.push({ id: "other/model", label: "other/model", cost: 1, messages: 1, tokens: 5 })
-    harness.queries.at(-1)!.resolve(data)
-    await harness.frame((text) => text.includes("other/model"))
-    harness.run("search")
-    await harness.scene.mockInput.typeText("other")
-    const frame = await harness.frame((text) => !text.includes("provider/model"))
-    expect(frame).toContain("other/model")
-  } finally { await harness.cleanup() }
-})
-
-test("the Time tab shows turn timing, and opening a searched-for turn closes the dialog for its session", async () => {
+test("time joins the breakdowns; ↑/↓ select turns one at a time, and enter opens a searched-for turn's session", async () => {
   const harness = await createTuiHarness({ width: 144, height: 48 })
   const row = (id: string, label: string, agent: number) => ({ id, label, agent, wait: 300_000, turns: 2 })
   const time: TimeDashboard = {
@@ -176,18 +115,24 @@ test("the Time tab shows turn timing, and opening a searched-for turn closes the
   }
   try {
     harness.open()
+    harness.respond(dashboard(), time)
+    let frame = await harness.frame((text) => text.includes("AGENT TIME"))
+    for (const text of ["1h 30m", "15m 00s"]) expect(frame).toContain(text)
     harness.run("next")
-    await harness.scene.waitFor(() => harness.times.length > 0)
-    harness.times.at(-1)!.resolve(time)
-    const frame = await harness.frame((text) => text.includes("> Remote refactor"))
-    for (const text of ["1h 30m", "15m 00s", "Fix login"]) expect(frame).toContain(text)
-    // Enter opens the selected turn among those the search left.
+    harness.run("next") // Projects
+    await harness.frame((text) => text.includes("1 msg") && text.includes("1h 30m agent"))
+
+    harness.run("next")
+    harness.run("next") // Turns
+    await harness.frame((text) => text.includes("> Remote refactor") && text.includes("  Fix login"))
+    harness.run("down")
+    await harness.frame((text) => text.includes("> Fix login") && text.includes("  Remote refactor"))
     harness.run("search")
-    await harness.scene.mockInput.typeText("login")
-    await harness.frame((text) => text.includes("> Fix login") && !text.includes("Remote refactor"))
+    await harness.scene.mockInput.typeText("remote")
+    await harness.frame((text) => text.includes("> Remote refactor") && !text.includes("Fix login"))
     harness.scene.mockInput.pressEnter() // The box submits.
     await harness.scene.waitFor(() => !harness.isOpen())
-    expect(harness.navigations).toEqual([{ type: "session", sessionID: "here" }])
+    expect(harness.navigations).toEqual([{ type: "session", sessionID: "elsewhere" }])
   } finally { await harness.cleanup() }
 })
 
@@ -195,7 +140,7 @@ test("background refreshes keep cards mounted, coalesce, and keep the last usage
   const harness = await createTuiHarness()
   try {
     harness.open()
-    harness.queries.at(-1)!.resolve(dashboard(2))
+    harness.respond(dashboard(2))
     await harness.frame((text) => text.includes("$2.00"))
     const totals = harness.scene.renderer.root.findDescendantById("opcode-cost.totals")
     expect(totals).toBeDefined()
@@ -211,29 +156,31 @@ test("background refreshes keep cards mounted, coalesce, and keep the last usage
 
     harness.tick()
     harness.settle()
-    harness.queries.at(-1)!.resolve(dashboard(4))
+    harness.respond(dashboard(4))
     await harness.frame((text) => text.includes("$4.00") && !text.includes("Refresh failed"))
     expect(harness.scene.renderer.root.findDescendantById("opcode-cost.totals")).toBe(totals)
   } finally { await harness.cleanup() }
 })
 
-test("a new filter or location drops loaded usage, ignores the old query's late result, and fails honestly", async () => {
+test("a new range or location drops loaded usage, ignores the old read's late result, and fails honestly", async () => {
   const harness = await createTuiHarness()
   try {
     harness.open()
-    harness.queries.at(-1)!.resolve(dashboard(2, "Alpha"))
+    harness.run("next")
+    harness.run("next") // Projects
+    harness.respond(dashboard(2, "Alpha"))
     await harness.frame((text) => text.includes("Alpha"))
     harness.emitUsage()
     harness.settle()
-    const old = harness.queries.at(-1)!
+    const old = { usage: harness.queries.at(-1)!, time: harness.times.at(-1)! }
 
     harness.setLocation({ directory: "/another/location" })
-    expect(old.signal.aborted).toBe(true)
+    expect(old.usage.signal.aborted).toBe(true)
     let frame = await harness.frame((text) => text.includes("Loading server ledger"))
     expect(frame).not.toContain("Alpha")
-    old.resolve(dashboard(99, "Stale"))
-    const next = harness.queries.at(-1)!
-    next.reject(new Error("server unavailable"))
+    old.usage.resolve(dashboard(99, "Stale"))
+    old.time.resolve(timeDashboard())
+    harness.queries.at(-1)!.reject(new Error("server unavailable"))
     frame = await harness.frame((text) => text.includes("Unable to read ledger") && text.includes("server unavailable"))
     expect(frame).not.toContain("Stale")
     expect(frame).not.toContain("Refresh failed")
@@ -242,7 +189,7 @@ test("a new filter or location drops loaded usage, ignores the old query's late 
     for (let step = 0; step < 3; step++) harness.run("up")
     harness.run("activate")
     await harness.scene.waitFor(() => harness.queries.at(-1)!.filter.range === "all")
-    harness.queries.at(-1)!.resolve(dashboard(7, "Beta"))
+    harness.respond(dashboard(7, "Beta"))
     frame = await harness.frame((text) => text.includes("Beta"))
     expect(frame).not.toContain("Unable to read ledger")
   } finally { await harness.cleanup() }
@@ -253,7 +200,7 @@ test("import failures belong to their location; switching cancels the old import
   const failure = "History import failed: offline. Press r to retry."
   try {
     harness.open()
-    harness.queries.at(-1)!.resolve(dashboard())
+    harness.respond()
     await harness.frame((text) => text.includes("TOTAL COST"))
     // A transport that ignores cancellation, failing only after the location changed.
     const late = Promise.withResolvers<never>()
@@ -279,7 +226,7 @@ test("import failures belong to their location; switching cancels the old import
     harness.api.client.session.list = () => history.promise
     harness.run("refresh")
     harness.settle()
-    harness.queries.at(-1)!.resolve(dashboard())
+    harness.respond()
     const before = harness.queries.length
     // The settled import rereads the open view, so imported history appears.
     history.resolve({ data: [], cursor: {} })

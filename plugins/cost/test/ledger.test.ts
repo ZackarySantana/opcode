@@ -44,7 +44,7 @@ test("revisions are idempotent, persist on reopen, and survive session deletion 
   ledger.markImported(record.projectID, record.directory)
   ledger.close()
   const reopened = open(path)
-  expect(reopened.dashboard({ range: "all" }).total).toMatchObject({ cost: 0.75, messages: 1, output: 20, tokens: 33 })
+  expect(reopened.dashboard("all").total).toMatchObject({ cost: 0.75, messages: 1, output: 20, tokens: 33 })
   expect(reopened.lastImport(record.projectID)).toBeNumber()
 })
 
@@ -54,7 +54,7 @@ test("live usage takes precedence over history; equal versions correct, older ve
   ledger.recordLive({ ...record, cost: 10 }, 10)
   ledger.recordLive({ ...record, cost: 0 }, 9)
   ledger.importBatch([{ ...record, cost: 1, completedAt: record.completedAt! + 100 }])
-  expect(ledger.dashboard({ range: "all" }).total.cost).toBe(10)
+  expect(ledger.dashboard("all").total.cost).toBe(10)
 })
 
 test("later historical completions replace history, but equal completions do not", () => {
@@ -62,7 +62,7 @@ test("later historical completions replace history, but equal completions do not
   ledger.importBatch([record])
   ledger.importBatch([{ ...record, cost: 2, completedAt: record.completedAt! + 100 }])
   ledger.importBatch([{ ...record, cost: 0, completedAt: record.completedAt! + 100 }])
-  expect(ledger.dashboard({ range: "all" }).total.cost).toBe(2)
+  expect(ledger.dashboard("all").total.cost).toBe(2)
 })
 
 test("live precedence persists across separate connections and a reopen", () => {
@@ -76,9 +76,9 @@ test("live precedence persists across separate connections and a reopen", () => 
   const reopened = open(path)
   reopened.importBatch([{ ...record, cost: 99, completedAt: record.completedAt! + 1_000 }])
   reopened.recordLive({ ...record, cost: 0 }, 9)
-  expect(reopened.dashboard({ range: "all" }).total.cost).toBe(9)
+  expect(reopened.dashboard("all").total.cost).toBe(9)
   reopened.recordLive({ ...record, cost: 11 }, 10)
-  expect(reopened.dashboard({ range: "all" }).total.cost).toBe(11)
+  expect(reopened.dashboard("all").total.cost).toBe(11)
 })
 
 test("live completion without usage keeps recorded usage but starts a new row from its record", () => {
@@ -86,7 +86,7 @@ test("live completion without usage keeps recorded usage but starts a new row fr
   ledger.recordLive({ ...record, cost: 0.3 }, 10)
   ledger.recordLive({ ...record, cost: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, completedAt: record.completedAt! + 1 }, 11, { usage: false })
   ledger.recordLive({ ...record, messageID: "new", cost: 0 }, 11, { usage: false })
-  expect(ledger.dashboard({ range: "all" }).total).toMatchObject({ cost: 0.3, messages: 2, tokens: 30 })
+  expect(ledger.dashboard("all").total).toMatchObject({ cost: 0.3, messages: 2, tokens: 30 })
 })
 
 test("history can complete partial history but cannot regress completed records", () => {
@@ -94,7 +94,7 @@ test("history can complete partial history but cannot regress completed records"
   ledger.importBatch([{ ...record, completedAt: undefined, cost: 0 }])
   ledger.importBatch([record, record])
   ledger.importBatch([{ ...record, completedAt: undefined, cost: 0 }, { ...record, completedAt: record.completedAt! - 1, cost: 0 }])
-  expect(ledger.dashboard({ range: "all" }).total).toMatchObject({ cost: 0.5, messages: 1, tokens: 15 })
+  expect(ledger.dashboard("all").total).toMatchObject({ cost: 0.5, messages: 1, tokens: 15 })
 })
 
 test("cross-session message IDs are skipped without changing usage/attribution or rejecting other records", () => {
@@ -107,14 +107,14 @@ test("cross-session message IDs are skipped without changing usage/attribution o
       completedAt: record.completedAt! + 1_000, cost: 99, input: 999 },
     { ...record, messageID: "after", cost: 2 },
   ])
-  expect(ledger.dashboard({ range: "all" })).toMatchObject({
+  expect(ledger.dashboard("all")).toMatchObject({
     total: { cost: 3.5, messages: 3, tokens: 45 },
-    projectOptions: [{ id: record.projectID, label: "main" }],
-    modelOptions: [{ id: "provider/model", label: "provider/model" }],
+    projects: [{ id: record.projectID, label: "main" }],
+    models: [{ id: "provider/model", label: "provider/model" }],
   })
   ledger.recordLive({ ...record, cost: 9 }, 10)
   ledger.importBatch([{ ...record, sessionID: "fork", completedAt: record.completedAt! + 2_000, cost: 0 }])
-  expect(ledger.dashboard({ range: "all" }).total.cost).toBe(12)
+  expect(ledger.dashboard("all").total.cost).toBe(12)
 })
 
 test("database write failures still roll back the entire import batch", () => {
@@ -123,7 +123,7 @@ test("database write failures still roll back the entire import batch", () => {
   expect(() => ledger.importBatch([
     { ...record, messageID: "new" }, { ...record, messageID: "invalid", directory: null as unknown as string },
   ])).toThrow("NOT NULL")
-  expect(ledger.dashboard({ range: "all" }).total.messages).toBe(1)
+  expect(ledger.dashboard("all").total.messages).toBe(1)
 })
 
 test("session moves reattribute history and protected live usage without rejecting other batch records", () => {
@@ -136,64 +136,55 @@ test("session moves reattribute history and protected live usage without rejecti
     { ...record, ...moved, cost: 0 },
     { ...record, ...moved, messageID: "historical", cost: 0 },
   ])
-  expect(ledger.dashboard({ range: "all", projectID: record.projectID }).total.messages).toBe(0)
-  expect(ledger.dashboard({ range: "all", projectID: moved.projectID })).toMatchObject({
-    total: { messages: 3, cost: 10.5 }, projectOptions: [{ id: moved.projectID, label: "destination" }],
-  })
+  expect(ledger.dashboard("all").projects).toMatchObject([{ id: moved.projectID, label: "destination", messages: 3, cost: 10.5 }])
 })
 
-test("local-calendar boundaries and combined date/project/model filters", () => {
+test("date ranges start at local midnights", () => {
   const ledger = open()
   const now = new Date(2026, 6, 10, 18).getTime()
   expect(rangeStart("today", now)).toBe(new Date(2026, 6, 10).getTime())
   expect(rangeStart("7d", now)).toBe(new Date(2026, 6, 4).getTime())
   expect(rangeStart("30d", now)).toBe(new Date(2026, 5, 11).getTime())
-  for (const [id, createdAt, projectID, modelID, cost] of [
-    ["today", new Date(2026, 6, 10).getTime(), "a", "one", 1],
-    ["week", new Date(2026, 6, 4).getTime(), "a", "two", 2],
-    ["before-week", new Date(2026, 6, 4).getTime() - 1, "b", "one", 4],
-    ["month", new Date(2026, 5, 11).getTime(), "b", "one", 8],
-    ["before-month", new Date(2026, 5, 11).getTime() - 1, "b", "one", 16],
-  ] as const) ledger.importBatch([{ ...record, messageID: id, createdAt, projectID, modelID, cost }])
-  expect(ledger.dashboard({ range: "today" }, now).total.cost).toBe(1)
-  expect(ledger.dashboard({ range: "7d" }, now).total.cost).toBe(3)
-  expect(ledger.dashboard({ range: "30d" }, now).total.cost).toBe(15)
-  expect(ledger.dashboard({ range: "all", projectID: "a", model: "provider/two" }, now).total.cost).toBe(2)
-  const empty = ledger.dashboard({ range: "all", projectID: "missing" }, now)
-  expect(empty.total).toMatchObject({ cost: 0, messages: 0, tokens: 0 })
-  expect(empty.projectOptions).toHaveLength(2)
+  for (const [id, createdAt, cost] of [
+    ["today", new Date(2026, 6, 10).getTime(), 1],
+    ["week", new Date(2026, 6, 4).getTime(), 2],
+    ["before-week", new Date(2026, 6, 4).getTime() - 1, 4],
+    ["month", new Date(2026, 5, 11).getTime(), 8],
+    ["before-month", new Date(2026, 5, 11).getTime() - 1, 16],
+  ] as const) ledger.importBatch([{ ...record, messageID: id, createdAt, cost }])
+  expect(ledger.dashboard("today", now).total.cost).toBe(1)
+  expect(ledger.dashboard("7d", now).total.cost).toBe(3)
+  expect(ledger.dashboard("30d", now).total.cost).toBe(15)
 })
 
-test("breakdowns are bounded and ranked by cost then tokens, daily activity shows the newest 14 dates first, and totals remain complete", () => {
+test("breakdowns list every project, model, and date, ranked by cost then tokens", () => {
   const ledger = open()
   for (let index = 1; index <= 20; index++) ledger.importBatch([{
     ...record, messageID: `m${index}`, projectID: `p${index}`, directory: `/work/p${index}`, modelID: `model${index}`,
     createdAt: new Date(2026, 6, index).getTime(), cost: index,
   }])
-  const dashboard = ledger.dashboard({ range: "all" })
+  const dashboard = ledger.dashboard("all")
   expect(dashboard.total).toMatchObject({ cost: 210, messages: 20, tokens: 300 })
-  expect(dashboard.projects).toHaveLength(8)
+  expect(dashboard.projects).toHaveLength(20)
   expect(dashboard.models[0]?.id).toBe("provider/model20")
-  expect(dashboard.daily).toHaveLength(14)
-  expect(dashboard.daily.map((day) => day.id)).toEqual(Array.from({ length: 14 }, (_, index) => `2026-07-${String(20 - index).padStart(2, "0")}`))
+  expect(dashboard.daily).toHaveLength(20)
   const free = open()
-  for (let index = 1; index <= 9; index++) free.importBatch([{ ...record, messageID: `f${index}`, modelID: `model${index}`, cost: 0, input: index }])
-  expect(free.dashboard({ range: "all" }).models.map((model) => model.id)).not.toContain("provider/model1")
+  free.importBatch([{ ...record, messageID: "small", cost: 0, input: 1 }, { ...record, messageID: "large", variant: "high", cost: 0, input: 100 }])
+  // Variants split models, as on the time side.
+  expect(free.dashboard("all").models.map((model) => model.id)).toEqual(["provider/model (high)", "provider/model"])
 })
 
-test("project options label by the most recently used directory, show paths, and retain project-wide worktree filtering", () => {
+test("projects are named after their most recently used directory and include their worktrees", () => {
   const ledger = open()
   ledger.importBatch([
-    { ...record, messageID: "worktree", projectID: "project-a", directory: "/worktrees/feature/main", createdAt: record.createdAt + 1 },
+    { ...record, messageID: "worktree", projectID: "project-a", directory: "/worktrees/feature", createdAt: record.createdAt + 1 },
     { ...record, messageID: "other-project", projectID: "project-b", directory: "/projects/b/main" },
     { ...record, messageID: "main", projectID: "project-a", directory: "/projects/a/main" },
   ])
-  const dashboard = ledger.dashboard({ range: "all", projectID: "project-a" })
-  expect(dashboard.projectOptions).toEqual([
-    { id: "project-a", label: "main", directory: "/worktrees/feature/main" },
-    { id: "project-b", label: "main", directory: "/projects/b/main" },
+  expect(ledger.dashboard("all").projects).toMatchObject([
+    { id: "project-a", label: "feature", messages: 2, cost: 1 },
+    { id: "project-b", label: "main", messages: 1 },
   ])
-  expect(dashboard.total).toMatchObject({ messages: 2, cost: 1 })
 })
 
 test("daily buckets follow local midnights across a DST change", () => {
@@ -208,7 +199,7 @@ test("daily buckets follow local midnights across a DST change", () => {
       ["end", new Date(2026, 2, 8, 23, 59).getTime(), 4],
       ["after", new Date(2026, 2, 9, 0, 0).getTime(), 8],
     ] as const) ledger.importBatch([{ ...record, messageID: id, createdAt, cost }])
-    expect(ledger.dashboard({ range: "all" }).daily.map(({ id, cost }) => [id, cost])).toEqual([
+    expect(ledger.dashboard("all").daily.map(({ id, cost }) => [id, cost])).toEqual([
       ["2026-03-09", 8], ["2026-03-08", 6], ["2026-03-07", 1],
     ])
   } finally {

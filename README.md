@@ -61,7 +61,7 @@ Long session? Get a clearer picture before deciding what to trim or carry forwar
 
 Turn scattered sessions into a readable picture of your usage. See recorded costs and tokens across projects and models, with daily activity to show how things change over time.
 
-**Start with the total → narrow by date, project, or model.** Costs come from OpenCode's provider-reported records, not a separate pricing calculator. Use them to understand your usage, but check your provider's invoice for billing.
+**Start with the totals → see them by model, project, day, or longest turn.** Costs come from OpenCode's provider-reported records, not a separate pricing calculator. Use them to understand your usage, but check your provider's invoice for billing.
 
 ![Cost dashboard with usage totals, model and project breakdowns, and daily activity ordered newest first](docs/images/cost-dashboard.png)
 

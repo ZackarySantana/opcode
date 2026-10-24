@@ -2,7 +2,7 @@ import { errorMessage } from "@opcode/core"
 import { consumeLive } from "@opcode/core/live"
 import type { SessionInfo } from "@opencode/client"
 import { Plugin } from "@opencode/plugin"
-import { parseActivityBatch, parseFilter, parseImportBatch } from "./domain.js"
+import { parseActivityBatch, parseImportBatch, parseRange } from "./domain.js"
 import { CostLedger, databasePath } from "./ledger.js"
 import { createLiveCollector } from "./live.js"
 import { timedSession } from "./messages.js"
@@ -46,8 +46,8 @@ export default Plugin.define({
     const live = createLiveCollector(ctx, ledger)
     try {
       await ctx.rpc.register(CostRpc, {
-        dashboard: (input, call) => guarded(call, () => run(call.signal, async () => ledger.dashboard(parseFilter(input)))),
-        time: (input, call) => guarded(call, () => run(call.signal, async () => ledger.time(parseFilter(input)))),
+        dashboard: (input, call) => guarded(call, () => run(call.signal, async () => ledger.dashboard(parseRange(input)))),
+        time: (input, call) => guarded(call, () => run(call.signal, async () => ledger.time(parseRange(input)))),
         status: (_input, call) => guarded(call, () => run(call.signal, async () => ({
           projectID: ctx.location.project.id, directory: ctx.location.directory,
           lastImport: ledger.lastImport(ctx.location.project.id),

@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite"
 import { basename, join } from "node:path"
 import { openDatabase, resolveStatePath, stateDirectory } from "@opcode/core/state"
 import {
-  localDay, rangeStart, type Activity, type ActivityKind, type Breakdown, type Dashboard, type DashboardFilter, type TimeDashboard,
+  localDay, rangeStart, type Activity, type ActivityKind, type Breakdown, type Dashboard, type DateRange, type TimeDashboard,
   type TimedSession, type Totals, type UsageRecord,
 } from "./domain.js"
 import { deriveTurns, summarizeTime, type TimelineEvent, type TimedTurn } from "./time.js"
@@ -21,8 +21,6 @@ const schema = `
     cache_read_tokens INTEGER NOT NULL, cache_write_tokens INTEGER NOT NULL, recorded_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS usage_created_at ON usage(created_at);
-  CREATE INDEX IF NOT EXISTS usage_project_id ON usage(project_id);
-  CREATE INDEX IF NOT EXISTS usage_model ON usage(provider_id, model_id);
   CREATE TABLE IF NOT EXISTS backfill (project_id TEXT PRIMARY KEY, directory TEXT NOT NULL, completed_at INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS opcode_cost_live (message_id TEXT PRIMARY KEY, version INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS session (
@@ -49,9 +47,10 @@ const historical = `WHERE NOT EXISTS (SELECT 1 FROM opcode_cost_live WHERE messa
   AND excluded.completed_at IS NOT NULL AND (usage.completed_at IS NULL OR usage.completed_at < excluded.completed_at)`
 const sums = `COALESCE(SUM(cost), 0) AS cost, COUNT(*) AS messages,
   COALESCE(SUM(input_tokens + output_tokens + reasoning_tokens + cache_read_tokens + cache_write_tokens), 0) AS tokens`
-const filtered = "created_at >= $since AND ($projectID IS NULL OR project_id = $projectID) AND ($model IS NULL OR provider_id || '/' || model_id = $model)"
+/** `provider/model (variant)`, the same for usage and turns, so their breakdowns join by model. */
+const model = "provider_id || '/' || model_id || COALESCE(' (' || NULLIF(variant, '') || ')', '')"
 
-type Filter = { since: number; projectID: string | null; model: string | null }
+type Since = { since: number }
 type Sums = Pick<Breakdown, "cost" | "messages" | "tokens">
 
 export class CostLedger {
@@ -119,59 +118,54 @@ export class CostLedger {
       DO UPDATE SET directory=excluded.directory, completed_at=excluded.completed_at`).run(projectID, directory, Date.now())
   }
 
-  dashboard(filter: DashboardFilter, now = Date.now()): Dashboard {
-    const since = rangeStart(filter.range, now)
-    const params: Filter = { since, projectID: filter.projectID ?? null, model: filter.model ?? null }
-    const total = this.db.query<Totals, Filter>(`SELECT ${sums}, COALESCE(SUM(input_tokens), 0) AS input,
+  dashboard(range: DateRange, now = Date.now()): Dashboard {
+    const params: Since = { since: rangeStart(range, now) }
+    const total = this.db.query<Totals, Since>(`SELECT ${sums}, COALESCE(SUM(input_tokens), 0) AS input,
       COALESCE(SUM(output_tokens), 0) AS output, COALESCE(SUM(reasoning_tokens), 0) AS reasoning,
       COALESCE(SUM(cache_read_tokens), 0) AS cacheRead, COALESCE(SUM(cache_write_tokens), 0) AS cacheWrite
-      FROM usage WHERE ${filtered}`).get(params)!
-    const projectOptions = this.projectOptions(since)
-    const labels = new Map(projectOptions.map((option) => [option.id, option.label]))
-    const group = (key: string) => this.db.query<Sums & { id: string }, Filter>(`SELECT ${key} AS id, ${sums}
-      FROM usage WHERE ${filtered} GROUP BY 1`).all(params)
-    // Tokens break ties, so a view with no cost (subscriptions) keeps its biggest users.
-    const ranked = (rows: Breakdown[]) => rows.sort((a, b) => b.cost - a.cost || b.tokens - a.tokens || a.label.localeCompare(b.label)).slice(0, 8)
+      FROM usage WHERE created_at >= $since`).get(params)!
+    const labels = this.projectLabels(params.since)
+    const group = (key: string) => this.db.query<Sums & { id: string }, Since>(`SELECT ${key} AS id, ${sums}
+      FROM usage WHERE created_at >= $since GROUP BY 1`).all(params)
+    // Tokens break ties, so a view with no cost (subscriptions) ranks its biggest users first.
+    const ranked = (rows: Breakdown[]) => rows.sort((a, b) => b.cost - a.cost || b.tokens - a.tokens || a.label.localeCompare(b.label))
     return {
       total,
       projects: ranked(group("project_id").map((row) => ({ ...row, label: labels.get(row.id) ?? row.id }))),
-      models: ranked(group("provider_id || '/' || model_id").map((row) => ({ ...row, label: row.id }))),
+      models: ranked(group(model).map((row) => ({ ...row, label: row.id }))),
       daily: this.daily(params),
-      projectOptions,
-      modelOptions: this.db.query<{ id: string }, [number]>("SELECT DISTINCT provider_id || '/' || model_id AS id FROM usage WHERE created_at >= ?")
-        .all(since).map(({ id }) => id).sort().map((id) => ({ id, label: id })),
     }
   }
 
   /** Turns of root sessions active since the range start. Whole session timelines are read, so a turn's state is known at the boundary. */
-  time(filter: DashboardFilter, now = Date.now()): TimeDashboard {
-    const since = rangeStart(filter.range, now)
-    const params = { since, projectID: filter.projectID ?? null }
-    const timed = `timed AS (SELECT * FROM session WHERE ($projectID IS NULL OR project_id = $projectID) AND session_id IN (
+  time(range: DateRange, now = Date.now()): TimeDashboard {
+    const since = rangeStart(range, now)
+    const params: Since = { since }
+    const timed = `timed AS (SELECT * FROM session WHERE session_id IN (
       SELECT session_id FROM activity WHERE at >= $since UNION SELECT session_id FROM usage WHERE created_at >= $since))`
     const sessions = this.db.query<{ sessionID: string; projectID: string; directory: string; title: string | null }, typeof params>(`WITH ${timed}
       SELECT session_id AS sessionID, project_id AS projectID, directory, title FROM timed`).all(params)
-    type Row = { sessionID: string; kind: ActivityKind | "step"; at: number; end: number | null; model: string | null; variant: string | null; output: number }
+    type Row = { sessionID: string; kind: ActivityKind | "step"; at: number; end: number | null; model: string | null; output: number }
     // Ties put idle first: a prompt delivered as the session goes idle starts the next turn. Fork-inherited history predates the fork.
     const rows = this.db.query<Row, typeof params>(`WITH ${timed}
-      SELECT session_id AS sessionID, kind, at, NULL AS end, NULL AS model, NULL AS variant, 0 AS output, kind = 'prompt' AS rank
+      SELECT session_id AS sessionID, kind, at, NULL AS end, NULL AS model, 0 AS output, kind = 'prompt' AS rank
         FROM activity JOIN timed USING (session_id) WHERE at >= timed.created_at
-      UNION ALL SELECT session_id, 'step', usage.created_at, completed_at, provider_id || '/' || model_id, variant, output_tokens + reasoning_tokens, 2
+      UNION ALL SELECT session_id, 'step', usage.created_at, completed_at, ${model}, output_tokens + reasoning_tokens, 2
         FROM usage JOIN timed USING (session_id) WHERE usage.created_at >= timed.created_at
       ORDER BY sessionID, at, rank`).all(params)
     const timelines = new Map<string, TimelineEvent[]>()
     for (const row of rows) {
       const events = timelines.get(row.sessionID) ?? []
       events.push(row.kind === "step"
-        ? { kind: "step", at: row.at, end: Math.max(row.at, row.end ?? row.at), model: row.model!, variant: row.variant ?? undefined, output: row.output }
+        ? { kind: "step", at: row.at, end: Math.max(row.at, row.end ?? row.at), model: row.model!, output: row.output }
         : { kind: row.kind, at: row.at })
       timelines.set(row.sessionID, events)
     }
-    const labels = new Map(this.projectOptions(since).map((option) => [option.id, option.label]))
+    const labels = this.projectLabels(since)
     const turns: TimedTurn[] = []
     for (const session of sessions) {
       for (const turn of deriveTurns(session.sessionID, timelines.get(session.sessionID) ?? [])) {
-        if (turn.start < since || (filter.model && turn.model !== filter.model)) continue
+        if (turn.start < since) continue
         turns.push({
           ...turn, title: session.title ?? undefined, projectID: session.projectID, directory: session.directory,
           project: labels.get(session.projectID) ?? (basename(session.directory) || session.directory),
@@ -181,26 +175,24 @@ export class CostLedger {
     return summarizeTime(turns)
   }
 
-  /** Options ignore entity filters. SQLite takes a bare column from the MAX() row: the latest-used directory labels a project. */
-  private projectOptions(since: number) {
-    return this.db.query<{ id: string; directory: string }, [number]>(`SELECT project_id AS id, directory, MAX(created_at)
-      FROM usage WHERE created_at >= ? GROUP BY project_id`).all(since)
-      .map(({ id, directory }) => ({ id, label: basename(directory) || directory, directory }))
-      .sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id))
+  /** SQLite takes a bare column from the MAX() row: the latest-used directory labels a project. */
+  private projectLabels(since: number) {
+    return new Map(this.db.query<{ id: string; directory: string }, [number]>(`SELECT project_id AS id, directory, MAX(created_at)
+      FROM usage WHERE created_at >= ? GROUP BY project_id`).all(since).map(({ id, directory }) => [id, basename(directory) || directory]))
   }
 
   /**
-   * The newest 14 local dates with usage. Day boundaries come from the same JS local calendar as
+   * Local dates with usage, newest first. Day boundaries come from the same JS local calendar as
    * rangeStart (DST-aware), rather than SQLite/libc's potentially different timezone.
    */
-  private daily(params: Filter) {
-    const latest = this.db.query<{ at: number | null }, Filter & { before: number }>(`SELECT MAX(created_at) AS at FROM usage
-      WHERE ${filtered} AND created_at < $before`)
-    const day = this.db.query<Sums, Filter & { start: number; end: number }>(`SELECT ${sums} FROM usage
-      WHERE ${filtered} AND created_at >= $start AND created_at < $end`)
+  private daily(params: Since) {
+    const latest = this.db.query<{ at: number | null }, Since & { before: number }>(`SELECT MAX(created_at) AS at FROM usage
+      WHERE created_at >= $since AND created_at < $before`)
+    const day = this.db.query<Sums, { start: number; end: number }>(`SELECT ${sums} FROM usage
+      WHERE created_at >= $start AND created_at < $end`)
     const days: Breakdown[] = []
     let before = Number.MAX_SAFE_INTEGER
-    while (days.length < 14) {
+    for (;;) {
       const at = latest.get({ ...params, before })?.at
       if (at === null || at === undefined) break
       const date = new Date(at)
@@ -208,7 +200,7 @@ export class CostLedger {
       const start = date.getTime()
       const id = localDay(start)
       date.setDate(date.getDate() + 1)
-      days.push({ id, label: id, ...day.get({ ...params, start, end: date.getTime() })! })
+      days.push({ id, label: id, ...day.get({ start, end: date.getTime() })! })
       before = start
     }
     return days
