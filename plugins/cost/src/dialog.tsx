@@ -218,7 +218,7 @@ function Board(props: {
       {props.header}
       <Show when={props.empty} fallback={
         <scrollbox ref={props.ref} id={tab.command("content")} flexGrow={1} minHeight={0}>
-          <box flexDirection="column" flexShrink={0} minWidth={0}>{props.children}</box>
+          <box flexDirection="column" flexShrink={0} minWidth={0} gap={1}>{props.children}</box>
         </scrollbox>
       }>
         {(empty) => <CenterEmpty title={empty().title} description={empty().description} />}
@@ -254,11 +254,18 @@ function Overview(props: { ledger: Ledger }) {
   ]
   const size = () => tab.width() >= WIDE ? 4 : 2
   const rows = () => groups().flatMap((group) => Array.from({ length: Math.ceil(group.length / size()) }, (_, row) => group.slice(row * size(), (row + 1) * size())))
+  // Cards share their row's width explicitly: sized by their text, they'd push past the dialog's edge. One column is
+  // left for the scrollbar.
+  const cardWidth = (count: number, index: number) => {
+    const room = tab.width() - 1 - (count - 1)
+    const width = Math.floor(room / count)
+    return index === count - 1 ? room - width * (count - 1) : width
+  }
   return (
     <box id={tab.command("totals")} flexDirection="column" gap={1} flexShrink={0}>
       <Index each={rows()}>{(row) => (
         <box flexDirection="row" gap={1} flexShrink={0}>
-          <Index each={row()}>{(card) => <StatCard compact label={card().label} value={card().value} detail={card().detail} />}</Index>
+          <Index each={row()}>{(card, index) => <box width={cardWidth(row().length, index)}><StatCard compact label={card().label} value={card().value} detail={card().detail} /></box>}</Index>
         </box>
       )}</Index>
       <Show when={usage().messages === 0 && time().turns === 0}>
