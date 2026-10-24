@@ -1,31 +1,40 @@
 import { errorMessage } from "@opcode/core"
 import { pasteIntoPrompt } from "@opcode/ui/paste"
-import { createScreen, type Screen } from "@opcode/ui/screen"
+import { snapshotRoute } from "@opcode/ui/screen"
 import type { Context } from "@opencode/plugin/tui/context"
+import type { JSX } from "@opentui/solid/jsx-runtime"
 import { createSignal } from "solid-js"
-import { AUTHORING_LEAD, authoringGuide, authoringRequest, authoringSession, PLUGIN_ID, type Authoring } from "./domain"
+import { AUTHORING_LEAD, authoringGuide, authoringRequest, authoringSession, type Authoring } from "./domain"
 import type { SnippetsRemote } from "./rpc"
 import type { SnippetEntry } from "./service"
 
-export const LIST_ROUTE = "opcode-snippets.list"
-export const LIST_MODE = "opcode-snippets.list"
-
-export interface BrowserState {
+interface BrowserState {
   rows: SnippetEntry[]
-  selected: number
   loading: boolean
   error?: string
 }
 
-/** /snippets: list, preview, insert, delete, and open authoring sessions. Snippet data stays on the server. */
-export function createBrowser(api: Context, remote: SnippetsRemote) {
-  const screen: Screen = createScreen(api, { id: PLUGIN_ID, name: LIST_ROUTE, mode: LIST_MODE })
-  const [state, setState] = createSignal<BrowserState>({ rows: [], selected: 0, loading: false })
+/** /snippets: a dialog to list, preview, insert, and delete snippets, and to open authoring sessions. Snippet data stays on the server. */
+export function createBrowser(api: Context, remote: SnippetsRemote, render: () => JSX.Element) {
+  const [state, setState] = createSignal<BrowserState>({ rows: [], loading: false })
+  // The outlined snippet's key, kept here so it survives the list being replaced by a confirmation.
+  const focus = createSignal<string>()
   const lifetime = new AbortController()
   let request: AbortController | undefined
+  let opened = false
   const toast = (message: string, variant: "error" | "warning" | "success" | "info") => api.ui.toast.show({ title: "Snippets", message, variant })
   const location = () => api.location ?? api.data.location.default()
-  const selected = () => state().rows[state().selected]
+
+  function show() {
+    if (lifetime.signal.aborted) return
+    api.ui.dialog.show(render, () => { opened = false })
+    opened = true
+    api.ui.dialog.set({ size: "large", centered: true })
+  }
+
+  function close() {
+    if (opened) api.ui.dialog.clear()
+  }
 
   async function load() {
     request?.abort()
@@ -33,11 +42,7 @@ export function createBrowser(api: Context, remote: SnippetsRemote) {
     setState((value) => ({ ...value, loading: true }))
     try {
       const rows = await remote.list(AbortSignal.any([current.signal, lifetime.signal]))
-      if (current !== request) return
-      const name = selected()?.name
-      const scope = selected()?.scope
-      const index = rows.findIndex((row) => row.name === name && row.scope === scope)
-      setState({ rows, selected: Math.max(0, Math.min(index >= 0 ? index : state().selected, rows.length - 1)), loading: false })
+      if (current === request) setState({ rows, loading: false })
     } catch (error) {
       if (current === request && !lifetime.signal.aborted) setState((value) => ({ ...value, loading: false, error: errorMessage(error) }))
     }
@@ -48,13 +53,13 @@ export function createBrowser(api: Context, remote: SnippetsRemote) {
    * instructions; without one, the instructions wait in the prompt for the user's message.
    */
   async function author(target: Authoring, request = "") {
+    close()
     try {
       // Without a model, the server picks its own default rather than the one selected in the prompt.
       const chosen = api.ui.model.current()
       const model = chosen && { id: chosen.modelID, providerID: chosen.providerID, variant: chosen.variant }
       const session = await api.client.session.create({ location: location(), model, ...authoringSession(target) })
       if (lifetime.signal.aborted) return
-      screen.invalidate()
       const destination = { type: "session", sessionID: session.id } as const
       const ask = request.trim()
       if (ask) {
@@ -70,54 +75,49 @@ export function createBrowser(api: Context, remote: SnippetsRemote) {
   }
 
   function open() {
-    if (screen.owns()) return
-    screen.open()
+    show()
     void load()
   }
 
   return {
-    screen, state, selected, load, author, open,
+    state, focus, load, author,
+    shown: () => opened,
     /** `/snippets new [what it should do]` starts authoring; anything else opens the list. */
     async command(input = "") {
       const [, verb, request] = /^\s*(?:\/\S+)?\s*(\S*)\s*([\s\S]*)$/.exec(input) ?? []
       if (verb === "new") await author({}, request)
       else open()
     },
-    move(delta: number) {
-      setState((value) => ({ ...value, selected: Math.max(0, Math.min(value.selected + delta, value.rows.length - 1)) }))
-    },
-    async insert() {
-      const row = selected()
-      if (!row) return
+    /** Closes the dialog, then types `#name ` into the prompt under it. */
+    async insert(row: SnippetEntry) {
       if (row.overridden || row.conflict) {
         toast(row.overridden ? `#${row.name} inserts the project snippet with the same name.` : `Another skill named ${row.name} replaces this snippet.`, "warning")
         return
       }
-      const back = screen.previous()
-      if (back.type === "plugin") { toast("Open /snippets from home or a session to insert into its prompt.", "warning"); return }
-      const result = await pasteIntoPrompt(api, back, `#${row.name} `, () => !lifetime.signal.aborted, () => true, { signal: lifetime.signal })
+      const destination = snapshotRoute(api.ui.router.current())
+      if (destination.type === "plugin") { toast("Open /snippets from home or a session to insert into its prompt.", "warning"); return }
+      close()
+      const result = await pasteIntoPrompt(api, destination, `#${row.name} `, () => !lifetime.signal.aborted, () => true, { signal: lifetime.signal })
       if (result === "unavailable") toast("The prompt is not ready. Open /snippets and try again.", "error")
     },
-    async edit() {
-      const row = selected()
-      if (row) await author({ name: row.name, scope: row.scope })
-    },
-    async remove() {
-      const row = selected()
-      if (!row) return
-      const valid = screen.interaction()
+    async remove(row: SnippetEntry) {
       const confirmed = await api.ui.dialog.confirm({ title: `Delete #${row.name}?`, message: `This deletes ${row.path}.` })
-      if (!confirmed || !valid()) return
-      try {
-        const removed = await remote.remove({ name: row.name, scope: row.scope })
-        toast(removed ? `Deleted #${row.name}.` : `#${row.name} was already gone.`, removed ? "success" : "info")
-      } catch (error) { toast(errorMessage(error), "error") }
+      // The confirmation replaced the list. An answer brings the list back, reloaded, since skill updates aren't followed
+      // while it is closed; a dialog that replaced the confirmation stays.
+      if (confirmed === undefined || lifetime.signal.aborted) return
+      show()
+      if (confirmed) {
+        try {
+          const removed = await remote.remove({ name: row.name, scope: row.scope })
+          toast(removed ? `Deleted #${row.name}.` : `#${row.name} was already gone.`, removed ? "success" : "info")
+        } catch (error) { toast(errorMessage(error), "error") }
+      }
       await load()
     },
     dispose() {
+      close()
       lifetime.abort()
       request?.abort()
-      screen.dispose()
     },
   }
 }

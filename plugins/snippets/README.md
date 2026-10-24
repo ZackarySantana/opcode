@@ -32,17 +32,18 @@ Snippets are not shown to the model as skills it may load on its own. Only the o
 
 ### Manage
 
-Run `/snippets` or select **Snippets** in the command palette.
+Run `/snippets` or select **Snippets** in the command palette. It opens a dialog listing project snippets, then global ones, each with a preview of its text.
 
 | Key | Action |
 | --- | --- |
 | `↑` / `↓`, `j` / `k` | Move selection |
-| `enter` | Return to the prompt you came from and insert `#name ` (nothing is submitted) |
+| `enter` | Close the dialog and insert `#name ` into the prompt under it (nothing is submitted). Over another plugin's page there is no prompt, so the dialog stays open |
 | `n` | Write a new snippet in a new chat |
 | `e` | Edit the selected snippet in a new chat |
 | `d` | Delete the selected snippet's file, after confirmation |
+| `/` | Search names, aliases, descriptions, and text |
 | `r` | Refresh |
-| `esc` | Go back |
+| `esc` | Leave the search, clear it, then close the dialog |
 
 The list marks a global snippet **overridden** when a project snippet has the same name, and **skill conflict** when another skill already uses its name. A conflicting snippet is not inserted by `@name` or `#name`; rename it.
 
@@ -90,4 +91,4 @@ mise exec -- bun run typecheck
 mise run dev snippets
 ```
 
-The build bundles the private `@opcode/core` and `@opcode/ui` workspaces into the package; OpenCode, OpenTUI, and Solid stay external.
+The build bundles the private `@opcode/core`, `@opcode/tabs`, and `@opcode/ui` workspaces into the package; OpenCode, OpenTUI, and Solid stay external.
