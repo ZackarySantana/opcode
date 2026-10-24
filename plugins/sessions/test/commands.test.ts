@@ -114,7 +114,7 @@ test("a different plugin's same-name route never suppresses opening or steals th
 
 test("slash commands retain original names only when unoccupied", async () => {
   await using ui = fixture()
-  expect(ui.layers[0]?.commands?.[0]?.slash).toEqual({ name: "sessions", aliases: ["sessions-all", "all-sessions", "opcode-sessions"] })
+  expect(ui.layers[0]?.commands?.[0]?.slash).toEqual({ name: "sessions", aliases: ["sessions-all", "all-sessions"] })
   const api = { ...ui.api, keymap: { ...ui.api.keymap, commands: () => [{ slash: { name: "sessions", aliases: ["sessions-all"] }, run() {} }] } } as Context
   expect(availableSlashNames(api, ["sessions", "sessions-all", "all-sessions"])).toEqual(["all-sessions"])
 })
@@ -144,4 +144,9 @@ test("/go opens the sidebar's numbered row, goes back, lists without a number, a
   expect(wentBack).toBe(1)
   expect(listed).toBe(1)
   expect(toasts).toEqual(["No active session 3. Use /go to list them."])
+  registerInboxCommands(api, inbox, [])
+  const unnamed = layers[1]!.commands![0]!
+  expect(unnamed.slash).toBeUndefined()
+  await unnamed.run("3")
+  expect(toasts.at(-1)).toBe("No active session 3. Use Go to active session to list them.")
 })

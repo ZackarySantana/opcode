@@ -131,7 +131,7 @@ try {
   await Bun.sleep(150)
   await key("\x1b", "Ask anything")
   console.log("Cost: real filter/dialog cancellation/Escape keys passed")
-  await open("opcode-sessions", "No matching sessions")
+  await open("sessions-all", "No matching sessions")
   await key("/", "Search sessions")
   terminal.write("\x1b")
   await Bun.sleep(150)
@@ -158,7 +158,7 @@ try {
   await key("\x1b[Z", "LARGEST RETAINED CONTRIBUTORS")
   await key("\x1b", "Opcode keyboard smoke", "Current context")
   console.log("Context: real Tab/Shift+Tab switching passed inside a native dialog")
-  await open("opcode-sessions", "[current] Opcode keyboard smoke")
+  await open("sessions-all", "[current] Opcode keyboard smoke")
   await key("\x1b", "Opcode keyboard smoke", "All sessions")
   console.log("Sessions: a real root session loads through the validated search RPC")
 } catch (error) {

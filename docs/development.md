@@ -14,7 +14,7 @@ preview just one:
 mise run dev cost
 ```
 
-Try `/context`, `/cost`, `/later`, `/feed`, `/ghpr`, `/snippets`, and `/opcode-sessions` (avoids the
+Try `/context`, `/cost`, `/later`, `/feed`, `/ghpr`, `/snippets`, and `/sessions-all` (avoids the
 built-in `/sessions` command). Relaunch after editing code to rebuild.
 
 Preview plugin databases persist in `.release/dev/data`, separate from the

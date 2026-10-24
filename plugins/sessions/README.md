@@ -25,7 +25,7 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 
 ## Use
 
-Run `/sessions` or select **All sessions** in the command palette. `/sessions-all`, `/all-sessions`, and `/opcode-sessions` are aliases: names already used by other commands are left alone, and the first free name becomes the primary command. The palette entry works even if every name is taken.
+Run `/sessions` or select **All sessions** in the command palette. `/sessions-all` and `/all-sessions` are aliases: names already used by other commands are left alone, and the first free name becomes the primary command. The palette entry works even if every name is taken.
 
 | Key | Action |
 | --- | --- |
@@ -62,7 +62,7 @@ Subagents are rolled up into their root session ("2 agents"); only the root need
 
 - Click a row, or run `/go <n>`, to open session n. `/go` alone, or **Go to active session** in the command palette, lists them all.
 - After the plugin takes you somewhere (a sidebar click, `/go`, the list, or opening a session from `/sessions`), a **Back to …** row appears above the list; click it or run `/go back`. Going back again retraces each step. Switching sessions any other way, such as with tabs or going home, forgets the trail.
-- `/go` is skipped when another command already uses that name; then `/opcode-go` is used, and the palette entry always works.
+- `/go` is skipped when another command already uses that name; the palette entry always works.
 
 The list follows the connected server's live events and is rebuilt on every (re)connection; nothing is stored. A finished session outside the newest 100 root sessions appears only once it becomes active again.
 

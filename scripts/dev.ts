@@ -215,7 +215,7 @@ export async function dev(arguments_: string[], root = repositoryRoot, environme
   const suspended = published.files.length
     ? `Took ${packages.join(", ")} out of ${published.files.join(", ")} until OpenCode exits; other OpenCode windows lose them meanwhile.`
     : "Global config files are unchanged."
-  console.log(`\nOpcode preview: ${selected.join(", ")}\nPlugin databases: ${preview.data}\nUsing your normal OpenCode login/session database. ${suspended}\nTry /context, /cost, /later, /feed, /ghpr, /snippets, or /opcode-sessions.\n`)
+  console.log(`\nOpcode preview: ${selected.join(", ")}\nPlugin databases: ${preview.data}\nUsing your normal OpenCode login/session database. ${suspended}\nTry /context, /cost, /later, /feed, /ghpr, /snippets, or /sessions-all.\n`)
   try { return await attached([executable, "--standalone"], root, preview.environment) }
   finally {
     for (const warning of await published.restore()) console.warn(warning)
