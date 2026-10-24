@@ -210,7 +210,7 @@ void [value, result, invalidValue, invalidResult]
     expect(existsSync(join(root, "plugins/context/src/index.ts"))).toBe(true)
   })
 
-  test("all four real packages pack with resolvable exports and self-contained private code/types", async () => {
+  test("every real package packs with resolvable exports and self-contained private code/types", async () => {
     for (const id of pluginIDs) {
       const { manifest } = await packAndInspect(await buildPlugin(repositoryRoot, id, await temp(`opcode-stage-${id}-`)))
       expect(manifest.name).toBe(`@lidtop/opencode-${id}`)
@@ -270,7 +270,7 @@ describe("independent release policy", () => {
     const { git, commit } = await repository(root)
     await writeFile(join(root, "packages/core/src/index.ts"), 'export const updated = true\n')
     await commit()
-    await expect(checkReleasePolicy(root, "baseline")).rejects.toThrow("@lidtop/opencode-context, @lidtop/opencode-cost, @lidtop/opencode-feed, @lidtop/opencode-gh-pr-status, @lidtop/opencode-later, @lidtop/opencode-sessions, @lidtop/opencode-snippets")
+    await expect(checkReleasePolicy(root, "baseline")).rejects.toThrow(pluginIDs.map(publicPackageName).sort().join(", "))
     await writeFile(join(root, ".changeset/fix.md"), `---\n${pluginIDs.map((id) => `"${publicPackageName(id)}": patch`).join("\n")}\n---\nUpdate shared behavior.\n`)
     await commit()
     await expect(checkReleasePolicy(root, "baseline")).resolves.toBeUndefined()
@@ -288,7 +288,7 @@ describe("independent release policy", () => {
     }
     await writeFile(join(root, "package.json"), JSON.stringify(manifest))
     await commit()
-    await expect(checkReleasePolicy(root, "before-host-upgrade")).rejects.toThrow("@lidtop/opencode-context, @lidtop/opencode-cost, @lidtop/opencode-feed, @lidtop/opencode-gh-pr-status, @lidtop/opencode-later, @lidtop/opencode-sessions, @lidtop/opencode-snippets")
+    await expect(checkReleasePolicy(root, "before-host-upgrade")).rejects.toThrow(pluginIDs.map(publicPackageName).sort().join(", "))
   }, 30_000)
 
   test("a private workspace only some plugins bundle requires releases of just those plugins", async () => {
@@ -327,6 +327,7 @@ describe("independent release policy", () => {
       { id: "feed" },
       { id: "gh-pr-status" },
       { id: "snippets" },
+      { id: "media" },
     ] as const
     for (const plugin of plugins) {
       const { id, ...manifest } = plugin

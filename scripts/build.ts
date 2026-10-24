@@ -3,14 +3,14 @@ import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { join, relative } from "node:path"
 import ts from "typescript"
-import { inside, packageName, pluginIDs, privateWorkspaces, publicManifest, relativeModule, repositoryRoot, stagedManifest, workspaceSource } from "./packaging"
+import { inside, packageName, pluginEntries, pluginIDs, privateWorkspaces, publicManifest, relativeModule, repositoryRoot, stagedManifest, workspaceSource } from "./packaging"
 
 /** Stages into `.release/opcode-<id>` by default, or into a new empty directory elsewhere. */
 export async function buildPlugin(root: string, id: typeof pluginIDs[number], destination = join(root, ".release", `opcode-${id}`)) {
   const directory = join(root, "plugins", id)
   const manifest = await publicManifest(root, id)
   const workspaceMap = await privateWorkspaces(root)
-  const entries = ["index.ts", "tui.tsx", ...(existsSync(join(directory, "src/rpc.ts")) ? ["rpc.ts"] : [])]
+  const entries = pluginEntries(directory)
   const entrypoints = entries.map((entry) => join(directory, "src", entry))
   // Only remove generated stages under .release, never a caller-supplied or source tree.
   const releaseRoot = join(root, ".release")
@@ -62,7 +62,8 @@ export async function buildPlugin(root: string, id: typeof pluginIDs[number], de
     if (existsSync(join(directory, file))) await cp(join(directory, file), join(destination, file))
   }
   if (!existsSync(join(destination, "README.md"))) {
-    await writeFile(join(destination, "README.md"), `# ${manifest.name}\n\n${manifest.description ?? "An OpenCode V2 plugin."}\n\nInstall by adding \`${manifest.name}\` to \`plugins\` in your OpenCode configuration. The terminal extension is exported as \`${manifest.name}/tui\`.\n`)
+    const terminal = entries.includes("tui.tsx") ? ` The terminal extension is exported as \`${manifest.name}/tui\`.` : ""
+    await writeFile(join(destination, "README.md"), `# ${manifest.name}\n\n${manifest.description ?? "An OpenCode V2 plugin."}\n\nInstall by adding \`${manifest.name}\` to \`plugins\` in your OpenCode configuration.${terminal}\n`)
   }
   return destination
 }

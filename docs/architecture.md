@@ -11,6 +11,7 @@
 | Feed | Subscriptions, settings, and an interpreted timeline of feed items | Client-local SQLite, feed fetching | Status/Upcoming/Releases/Subscribe/Settings dialog, feed picker, sidebar |
 | GH PR Status | Pull requests classified by what waits on you, settings, and a saved team filter | Client-local SQLite, `gh` GraphQL and REST calls | Mine/Reviewing/Teams/Settings dialog, team picker, sidebar |
 | Snippets | Global and project snippet files, precedence, and `@name` mentions | Server-owned files, skill registration, prompt/context hooks, authoring tools, RPC | Dialog with previews, prompt paste bridge, authoring sessions |
+| Media | Project-relative output paths, image naming, PCM-to-WAV framing | OpenRouter media API with the `openrouter` integration credential; agent tools | None: server-only agent tools |
 
 Later is deliberately not an execution engine: starting an item pastes it into
 the existing prompt, without submission. Its server side only registers agent
@@ -23,7 +24,10 @@ sensitive. Snippets registers each snippet as a user-only skill
 (`autoinvoke: false`), so `@name` uses the host's attachment path, and a prompt
 hook attaches `@name` text that was pasted rather than picked from completion;
 its writing tools exist only in sessions it marks for authoring, and every write
-asks for permission.
+asks for permission. Media reads the `openrouter` integration credential for each
+call rather than going through the provider, so a policy that denies the
+OpenRouter provider leaves its tools working; it checks the tool/model and `edit`
+permissions before spending anything, and writes only inside the project.
 
 ## Shared code
 
@@ -87,7 +91,7 @@ Private workspace source is bundled into each package. Host runtimes and all
 third-party dependencies stay external.
 
 The public npm packages are `@lidtop/opencode-context`, `@lidtop/opencode-cost`,
-`@lidtop/opencode-later`, `@lidtop/opencode-sessions`, `@lidtop/opencode-feed`, `@lidtop/opencode-gh-pr-status`, and `@lidtop/opencode-snippets`. Each has its own version
+`@lidtop/opencode-later`, `@lidtop/opencode-sessions`, `@lidtop/opencode-feed`, `@lidtop/opencode-gh-pr-status`, `@lidtop/opencode-snippets`, and `@lidtop/opencode-media`. Each has its own version
 and changeset history; they are not a permanent lockstep group. The npm scope does not rename runtime plugin, command,
 or RPC IDs, nor existing database paths. Shared-source or
 catalog updates require releases of affected consumers, not a forced permanent

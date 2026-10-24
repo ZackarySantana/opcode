@@ -1,0 +1,35 @@
+{
+  "name": "@lidtop/opencode-media",
+  "version": "0.0.0",
+  "description": "OpenCode agent tools that generate speech, sound, and images with your OpenRouter key",
+  "keywords": [
+    "opencode",
+    "opencode-plugin"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "author": "ZackarySantana",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZackarySantana/opcode.git",
+    "directory": "plugins/media"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "opencode": "^2.1.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@opcode/core": "workspace:*",
+    "@opencode/plugin": "catalog:"
+  }
+}
