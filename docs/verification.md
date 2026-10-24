@@ -69,7 +69,9 @@ your only copy of a production ledger or session index.
   against the same ledger. Repeated import must not double totals.
 - Later: add multiline Unicode items, reorder, edit, complete, restore, delete;
   make a second client modify the selected item. Paste an item into both home and
-  session prompts: it must not submit. Cancel dialogs and unload mid-action.
+  session prompts: it must not submit. Cancel dialogs and unload mid-action. Ask
+  the agent to list, add, complete, and delete items: the dialog and sidebar
+  update, and deleting asks first.
 - Sessions: search title/path/message text, try invalid regex, toggle children,
   navigate beyond a screen, inspect a preview, and refresh after deletion. Open a
   session in another directory from the browser. Run agents in two projects:

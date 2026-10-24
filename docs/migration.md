@@ -41,5 +41,5 @@ Before switching your daily setup, exercise commands in OpenCode 2.1.1 or a
 compatible V2 release; check narrow terminal layouts, Escape/keyboard handling,
 theme changes, plugin reload cleanup, and remote-client behavior. Cost requires
 its server entrypoint on the connected server, as do Sessions and Context's tool
-inventory. Later remains client-local even
-when the connected server is remote.
+inventory. Later's list remains client-local even
+when the connected server is remote; its agent tools then edit a list on the server's machine.

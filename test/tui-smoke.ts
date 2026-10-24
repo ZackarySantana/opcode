@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { prepareDev } from "../scripts/dev"
 import { repositoryRoot, pluginIDs } from "../scripts/packaging"
 import { Terminal as HeadlessTerminal } from "@xterm/headless"
+import { Database } from "bun:sqlite"
 
 const executable = Bun.which("opencode")
 if (!executable) throw new Error("OpenCode V2 is required for the interactive smoke check")
@@ -109,22 +110,36 @@ try {
   shutdown.signal.throwIfAborted()
   child = Bun.spawn([executable, "--standalone"], { cwd: join(root, "project"), env: preview.environment, terminal })
   await requireText("Ask anything", 0)
-  await open("later", "No items for later")
+  await open("later", "Nothing saved for later")
   if (!await Bun.file(join(preview.data, "later.sqlite")).exists()) throw new Error("Later ignored its CLI-side preview database option")
   if (await Bun.file(join(root, "state/opencode/opencode-later/later.sqlite")).exists()) throw new Error("Later opened its legacy database instead of the preview")
   await key("a", "Add for later")
-  await key("\x1b", "No items for later")
+  await key("\x1b", "Nothing saved for later")
   await key("a", "Add for later")
   terminal.write("Opcode keyboard regression fixture")
-  await key("\r", "1 active")
-  await key("h", "history shown")
+  await key("\r", "ACTIVE")
+  await key("a", "Add for later")
+  terminal.write("Second smoke item")
+  await key("\r", "Second smoke item")
+  // The new item is outlined: shift+k must move it up rather than act as the vi key k.
+  terminal.write("K")
+  const order = () => {
+    const database = new Database(join(preview.data, "later.sqlite"), { readonly: true })
+    try { return database.query<{ message: string }, []>("SELECT message FROM items WHERE completed_at IS NULL ORDER BY position").all().map((row) => row.message) }
+    finally { database.close() }
+  }
+  for (const deadline = Date.now() + 8_000; order()[0] !== "Second smoke item";) {
+    if (Date.now() > deadline) throw new Error(`Keyboard smoke: K did not move the item up: ${order().join(", ")}`)
+    await Bun.sleep(25)
+  }
+  await key("\t", "No completed items")
   await key("\x1b", "Ask anything")
-  await open("later", "global list")
+  await open("later", "Opcode keyboard regression fixture")
   const pasted = output.length
   await key("\r", "Pasted into the prompt")
-  await requireText("Opcode keyboard regression fixture", pasted)
+  await requireText("Second smoke item", pasted)
   await key("\x03", "Ask anything")
-  console.log("Later: real Add/cancel/history/Escape/paste keys and separate database passed")
+  console.log("Later: real Add/cancel/reorder/History/Escape/paste keys and separate database passed")
   await open("cost", "ALL TOKENS")
   await key("d", "Last 7 days")
   await key("\x1b", "ALL TOKENS")

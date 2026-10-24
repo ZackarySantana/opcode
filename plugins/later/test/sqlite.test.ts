@@ -214,3 +214,12 @@ test("keeps the legacy state path and resolves custom paths relative to state, n
   expect(databasePath(":memory:", "/state")).toBe(":memory:")
   for (const option of [undefined, null, 12, "  "]) expect(databasePath(option, "/state")).toBe("/state/opencode-later/later.sqlite")
 })
+
+test("sidebar item count defaults to five, persists a choice, and ignores values outside the choices", () => {
+  const { first, second } = disk()
+  expect(first.settings()).toEqual({ sidebarItems: 5 })
+  first.saveSettings({ sidebarItems: 10 })
+  expect(second.settings()).toEqual({ sidebarItems: 10 })
+  first.saveSettings({ sidebarItems: 7 })
+  expect(second.settings()).toEqual({ sidebarItems: 5 })
+})

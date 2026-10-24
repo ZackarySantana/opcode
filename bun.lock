@@ -109,6 +109,7 @@
       "version": "0.2.3",
       "dependencies": {
         "@opcode/core": "workspace:*",
+        "@opcode/tabs": "workspace:*",
         "@opcode/ui": "workspace:*",
         "@opencode/client": "catalog:",
         "@opencode/plugin": "catalog:",

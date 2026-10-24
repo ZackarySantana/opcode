@@ -5,7 +5,7 @@ import { useDialogCommands } from "@opcode/ui/screen"
 import { usePlugin } from "@opencode/plugin/tui"
 import { useTerminalDimensions } from "@opentui/solid"
 import type { JSX } from "@opentui/solid/jsx-runtime"
-import { createContext, createSignal, For, onCleanup, Show, useContext, type Accessor } from "solid-js"
+import { createContext, createSignal, For, onCleanup, Show, useContext, type Accessor, type Signal } from "solid-js"
 
 /** What the shared keys mean on the current tab, or in a picker shown over it. */
 export interface TabHandlers {
@@ -58,11 +58,18 @@ export function useTab(): TabContext {
  * Tab pills, one search box shared by every tab, and the tab's content. Commands are `<prefix>.<name>`:
  * close, next, previous, down, up, adjust.next, adjust.previous, activate, pick, search, and refresh.
  */
-export function TabbedDialog(props: { prefix: string; tabs: readonly Tab[]; refreshing: boolean; refresh(): void }) {
+export function TabbedDialog(props: {
+  prefix: string
+  tabs: readonly Tab[]
+  refreshing: boolean
+  refresh(): void
+  /** The open tab's index, owned by the caller so it survives the dialog being shown again. */
+  tab?: Signal<number>
+}) {
   const api = usePlugin()
   const palette = usePalette()
   const dimensions = useTerminalDimensions()
-  const [tab, setTab] = createSignal(0)
+  const [tab, setTab] = props.tab ?? createSignal(0)
   const [typing, setTyping] = createSignal(false)
   const [query, setQuery] = createSignal("")
   const [width, setWidth] = createSignal(80)

@@ -1,61 +1,35 @@
 /** @jsxImportSource @opentui/solid */
 
+import { ThemeSurface } from "@opcode/ui"
 import { Plugin } from "@opencode/plugin/tui"
-import { createSignal } from "solid-js"
-import { LaterController, MANAGER_ROUTE } from "./host"
+import { LaterDialog } from "./dialog"
+import { LaterController, PREFIX } from "./host"
+import { Sidebar } from "./sidebar"
 import { databasePath, LaterDatabase } from "./sqlite"
-import { Manager, Sidebar } from "./view"
 
 export default Plugin.define({
-  id: "opcode-later",
+  id: PREFIX,
   setup(api) {
     const database = new LaterDatabase(databasePath(api.options.database))
-    let controller: LaterController | undefined
-    let timer: ReturnType<typeof setInterval> | undefined
-    let unregisterRoute: (() => void) | undefined
-    let unregisterSidebar: (() => void) | undefined
-    let disposed = false
-    const cleanup = () => {
-      if (disposed) return
-      disposed = true
-      clearInterval(timer)
-      try { controller?.dispose() } finally {
-        try { unregisterSidebar?.() } finally {
-          try { unregisterRoute?.() } finally { database.close() }
-        }
-      }
-    }
+    let later: LaterController
     try {
-      const [version, update] = createSignal(0)
-      const host = new LaterController(api, database, () => update((value) => value + 1))
-      controller = host
-      const view = () => { version(); return host.model.view() }
-      unregisterRoute = api.ui.router.register({ name: MANAGER_ROUTE, render: () => <Manager view={view} screen={host.screen} /> })
-      // After the slot: below its appended sections, such as Pull requests. Later and Feed keep their config order.
-      unregisterSidebar = api.ui.slot({ after: "sidebar.content", render: () => <Sidebar view={view} /> })
-      api.keymap.layer(() => ({
-        mode: "global",
-        commands: [{ ...host.command("open", "Later"), description: "Manage the client-local Later list", group: "Plugin", palette: true, slash: { name: "later" } }],
-      }))
-      host.screen.commands(() => [
-        host.command("close", "Back", "escape"),
-        host.command("add", "Add", "a"),
-        host.command("edit", "Edit", "e"),
-        host.command("complete", "Complete or restore", "space"),
-        host.command("paste", "Paste and complete (without submitting)", "return"),
-        host.command("delete", "Delete permanently", "d"),
-        host.command("up", "Previous item", "up,k"),
-        host.command("down", "Next item", "down,j"),
-        host.command("moveUp", "Move up", "shift+k"),
-        host.command("moveDown", "Move down", "shift+j"),
-        host.command("history", "Toggle completed history", "h"),
-        host.command("refresh", "Refresh", "r"),
-      ])
-      timer = setInterval(() => host.poll(), 350)
-      return cleanup
+      later = new LaterController(api, database, (later) => <ThemeSurface name="dialog"><LaterDialog later={later} /></ThemeSurface>)
     } catch (error) {
-      cleanup()
+      database.close()
       throw error
+    }
+    // After the slot: below its appended sections, such as Pull requests. Later and Feed keep their config order.
+    const unregisterSidebar = api.ui.slot({ after: "sidebar.content", render: () => <Sidebar later={later} /> })
+    api.keymap.layer(() => ({ mode: "global", commands: [{
+      id: `${PREFIX}.open`, title: "Later", group: "Opcode", palette: true,
+      description: "Prompts saved to return to", slash: { name: "later" },
+      run: () => later.open(),
+    }] }))
+    const timer = setInterval(() => later.poll(), 350)
+    return () => {
+      clearInterval(timer)
+      later.dispose()
+      try { unregisterSidebar() } finally { database.close() }
     }
   },
 })

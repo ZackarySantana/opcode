@@ -19,7 +19,7 @@
 
 “After this, we should…” doesn't have to become a distraction. Keep a shared Later list across your local projects and sessions, with your next ideas visible in the sidebar.
 
-**Capture → organize → bring it back when you're ready.** Reorder what matters, keep completed history, and put an item into your prompt when it's time. Nothing runs automatically. You review the prompt and decide when to submit it.
+**Capture → organize → bring it back when you're ready.** Reorder what matters, keep completed history, and put an item into your prompt when it's time. Nothing runs automatically. You review the prompt and decide when to submit it. The agent can add and complete items for you, and asks before deleting one.
 
 <table>
   <tr>

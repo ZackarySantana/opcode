@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite"
 import { join } from "node:path"
 import { openDatabase, resolveStatePath, stateDirectory } from "@opcode/core/state"
-import { messageText, sameItem, type LaterItem, type LaterSnapshot } from "./domain"
+import { defaultSettings, messageText, sameItem, sidebarItemChoices, type LaterItem, type LaterSnapshot, type Settings } from "./domain"
 
 /** Intentionally retain opencode-later's location and SQL schema. */
 export function databasePath(option?: unknown, state = stateDirectory()): string {
@@ -32,6 +32,10 @@ export class LaterDatabase {
         revision INTEGER NOT NULL
       );
       INSERT OR IGNORE INTO metadata (id, revision) VALUES (1, 0);
+      CREATE TABLE IF NOT EXISTS settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        sidebar_items INTEGER NOT NULL
+      );
     `))
   }
 
@@ -120,6 +124,16 @@ export class LaterDatabase {
       this.renumber(active)
       return true
     })
+  }
+
+  settings(): Settings {
+    const row = this.db.query<{ sidebarItems: number }, []>("SELECT sidebar_items AS sidebarItems FROM settings WHERE id = 1").get()
+    return row && sidebarItemChoices.includes(row.sidebarItems) ? { sidebarItems: row.sidebarItems } : defaultSettings
+  }
+
+  saveSettings(settings: Settings): void {
+    this.db.query("INSERT INTO settings (id, sidebar_items) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET sidebar_items = excluded.sidebar_items")
+      .run(settings.sidebarItems)
   }
 
   private active(): LaterItem[] {
