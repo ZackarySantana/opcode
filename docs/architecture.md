@@ -51,12 +51,10 @@ with neutral accent/interactive aliases intentionally remains monochrome.
 returns to a home or session prompt, waits for its paste command, and pastes
 through OpenTUI without submitting.
 
-`@opcode/ui/screen` shares route ownership, immutable return-route snapshots,
-open/update/back navigation, stale-interaction guards, mounted input modes, and
-stable keymap registration for full-screen routes; no plugin opens one now.
-Context and the dialog plugins (Cost, Feed, GH PR Status, Later, Sessions,
-Snippets) use the shared component-owned dialog commands: native dialogs already
-own the `modal` input mode, so plugins must not push a competing route mode.
+`@opcode/ui/screen` shares immutable route snapshots and component-owned dialog
+commands. Context and the dialog plugins (Cost, Feed, GH PR Status, Later,
+Sessions, Snippets) register commands with it: native dialogs already own the
+`modal` input mode, so plugins must not push a competing route mode.
 Tab pills and actionable keyboard hints invoke the same commands/state
 transitions from mouse input. The host's `router.current()`
 is a live store proxy, never a safe value to save directly as a return destination.
