@@ -52,15 +52,10 @@ export function More(props: { count: number; noun?: string; pointer?: string; co
   return <text minWidth={0} wrapMode="word" fg={palette.muted} {...click.handlers}>{click.hovered() ? <u>{label()}</u> : label()}</text>
 }
 
-/** Ticks every second on its own, so the countdown moves without re-deriving anything else. */
-export function RefreshLine(props: { refreshing: boolean; next: number | undefined }) {
-  const palette = usePalette()
+/** The time to the next refresh, for a section title. Ticks every second on its own, so nothing else re-derives. */
+export function useRefreshCountdown(refreshing: () => boolean, next: () => number | undefined) {
   const [now, setNow] = createSignal(Date.now())
   const timer = setInterval(() => setNow(Date.now()), 1_000)
   onCleanup(() => clearInterval(timer))
-  return (
-    <Show when={refreshStatus(props.refreshing, props.next, now())}>
-      {(status) => <text wrapMode="none" fg={palette.muted}>{status()}</text>}
-    </Show>
-  )
+  return () => refreshStatus(refreshing(), next(), now())
 }

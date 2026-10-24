@@ -42,17 +42,18 @@ export function InboxSidebar(props: { inbox: Inbox; limit: number; command: stri
   return (
     <box paddingBottom={1}>
       <Section title="Agents">
-        <box flexDirection="column" minWidth={0} gap={1}>
-          <Show when={props.inbox.back()}>{(entry) => (
-            <text minWidth={0} wrapMode="word" fg={palette.muted} {...back.handlers}>← {back.hovered() ? <u>Back to {entry().title}</u> : `Back to ${entry().title}`}</text>
-          )}</Show>
-          <For each={rows().slice(0, props.limit)}>{(row, index) => (
-            <SidebarItem item={rowItem(row, index() + 1, now(), palette)} open={() => props.inbox.open(row.id)} />
-          )}</For>
-          <Show when={!rows().length}><text fg={palette.muted}>No active sessions</text></Show>
-          <Show when={rows().length > props.limit}><More count={rows().length - props.limit} pointer={props.pointer} command={props.command} /></Show>
-          <Show when={props.inbox.error()}>{(error) => <text minWidth={0} wrapMode="word" fg={palette.error}>! {error()}</text>}</Show>
-        </box>
+        <Show when={props.inbox.back() || rows().length || props.inbox.error()}>
+          <box flexDirection="column" minWidth={0} gap={1}>
+            <Show when={props.inbox.back()}>{(entry) => (
+              <text minWidth={0} wrapMode="word" fg={palette.muted} {...back.handlers}>← {back.hovered() ? <u>Back to {entry().title}</u> : `Back to ${entry().title}`}</text>
+            )}</Show>
+            <For each={rows().slice(0, props.limit)}>{(row, index) => (
+              <SidebarItem item={rowItem(row, index() + 1, now(), palette)} open={() => props.inbox.open(row.id)} />
+            )}</For>
+            <Show when={rows().length > props.limit}><More count={rows().length - props.limit} pointer={props.pointer} command={props.command} /></Show>
+            <Show when={props.inbox.error()}>{(error) => <text minWidth={0} wrapMode="word" fg={palette.error}>! {error()}</text>}</Show>
+          </box>
+        </Show>
       </Section>
     </box>
   )

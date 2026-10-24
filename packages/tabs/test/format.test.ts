@@ -25,12 +25,12 @@ test("ages are compact", () => {
   expect(age(undefined, now)).toBe("")
 })
 
-test("the refresh line counts down to the second", () => {
+test("the refresh countdown counts down to the second", () => {
   const now = Date.parse("2026-10-21T12:00:00Z")
-  expect(refreshStatus(true, now + 5 * 60_000, now)).toBe("Refreshing…")
-  expect(refreshStatus(false, now + 4 * 60_000 + 5_500, now)).toBe("Next refresh in 4m 06s")
-  expect(refreshStatus(false, now + 60 * 60_000, now)).toBe("Next refresh in 60m 00s")
-  expect(refreshStatus(false, now + 30_000, now)).toBe("Next refresh in 30s")
-  expect(refreshStatus(false, now - 1_000, now)).toBe("Next refresh in 0s")
+  expect(refreshStatus(true, now + 5 * 60_000, now)).toBe("refreshing…")
+  expect(refreshStatus(false, now + 4 * 60_000 + 5_500, now)).toBe("4m 06s")
+  expect(refreshStatus(false, now + 60 * 60_000, now)).toBe("60m 00s")
+  expect(refreshStatus(false, now + 30_000, now)).toBe("30s")
+  expect(refreshStatus(false, now - 1_000, now)).toBe("0s")
   expect(refreshStatus(false, undefined, now)).toBeUndefined()
 })

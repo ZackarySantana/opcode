@@ -20,9 +20,9 @@ export function relative(time: number, now = Date.now()): string {
 
 /** The sidebar's refresh line, counting down to the second. */
 export function refreshStatus(refreshing: boolean, next: number | undefined, now = Date.now()): string | undefined {
-  if (refreshing) return "Refreshing…"
+  if (refreshing) return "refreshing…"
   if (next === undefined) return undefined
   const seconds = Math.max(0, Math.ceil((next - now) / 1000))
   // Seconds keep two digits past a minute so the line doesn't shift as it counts.
-  return `Next refresh in ${seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`}`
+  return `${seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`}`
 }

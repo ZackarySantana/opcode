@@ -50,7 +50,7 @@ A pull request **waits on you** when:
 
 Statuses are colored by urgency: red for your pull requests that are blocked, yellow for review requests (**Review requested** for you, **Team: web** for your team), green for approved, the theme's highlight for pull requests waiting on someone else, and gray for drafts and pull requests you've approved or commented on.
 
-The sidebar lists only what waits on you: review requests for you first, then your teams' (narrowed to the team chosen on the Teams tab), then your own pull requests that need you. Each shows how long ago your review was requested, or for your own, how long ago it opened. It lists five by default, then a count of the rest and a pointer to `/ghpr`, and ends with a countdown to the next refresh. Click a pull request there to open it in your browser, or the "+N more" line to open `/ghpr`.
+The sidebar lists only what waits on you: review requests for you first, then your teams' (narrowed to the team chosen on the Teams tab), then your own pull requests that need you. Each shows how long ago your review was requested, or for your own, how long ago it opened. It lists five by default, then a count of the rest and a pointer to `/ghpr`; with nothing waiting it's just the title. Beside the title, a countdown shows the time to the next refresh. Click a pull request there to open it in your browser, or the "+N more" line to open `/ghpr`.
 
 Links open in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-open` (Linux); on WSL it tries `wslview`, `xdg-open`, then PowerShell.
 

@@ -62,7 +62,13 @@ test("operational status pages stay out of the sidebar", async () => {
   const { feeds, view, dispose } = await mount("<rss><channel><title>Quiet</title></channel></rss>")
   try {
     feeds.subscribe("https://quiet.test/rss", "status")
-    expect(await view.waitForFrame((frame) => frame.includes("Nothing in the last 12 hours"))).not.toContain("Quiet")
+    for (const deadline = Date.now() + 2000; feeds.timeline("sidebar").pending && Date.now() < deadline;) await Bun.sleep(5)
+    expect(feeds.timeline("sidebar").pending).toBe(0)
+    await view.flush()
+    // Once fetched, the quiet page isn't listed: the section is just its title.
+    const frame = view.captureCharFrame()
+    expect(frame).toContain("Feeds")
+    expect(frame).not.toContain("Quiet")
   } finally {
     await dispose()
   }

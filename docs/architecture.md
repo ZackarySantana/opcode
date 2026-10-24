@@ -64,7 +64,7 @@ Persistence, domain actions, and their cancellable I/O remain plugin-specific.
 `@opcode/tabs` holds what Feed, GH PR Status, and Later share: the tabbed dialog with one
 search box and Escape that undoes one step at a time, grouped item cards that
 open on enter or click, the picker, the Settings tab, sidebar items with "+N
-more" and refresh countdown lines, the refresh schedule, and the browser
+more" lines, the refresh countdown beside a section title, the refresh schedule, and the browser
 launcher. Sessions uses its dialog, picker, and sidebar items too, Cost its tabbed
 dialog and picker, and Snippets its tabbed dialog and item cards. Native prompts
 replace a custom dialog, so Later passes its own tab and focus signals, and Snippets
