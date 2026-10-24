@@ -2,9 +2,10 @@ import { errorMessage } from "@opcode/core"
 import { consumeLive } from "@opcode/core/live"
 import type { SessionInfo } from "@opencode/client"
 import { Plugin } from "@opencode/plugin"
-import { parseFilter, parseImportBatch } from "./domain.js"
+import { parseActivityBatch, parseFilter, parseImportBatch } from "./domain.js"
 import { CostLedger, databasePath } from "./ledger.js"
 import { createLiveCollector } from "./live.js"
+import { timedSession } from "./messages.js"
 import { CostRpc } from "./rpc.js"
 
 /** An import sends a session's batches consecutively; reuse its authorization briefly rather than per batch. */
@@ -35,23 +36,34 @@ export default Plugin.define({
       authorized = { session, at: Date.now() }
       return session
     }
+    /** Identity and directory come from the connected server, never from an importing terminal. */
+    const authorizeImport = async (sessionID: string, signal: AbortSignal) => {
+      const session = await authorize(sessionID, signal)
+      signal.throwIfAborted()
+      if (session.projectID !== ctx.location.project.id) throw new Error("Cannot import a session from another project")
+      return session
+    }
     const live = createLiveCollector(ctx, ledger)
     try {
       await ctx.rpc.register(CostRpc, {
         dashboard: (input, call) => guarded(call, () => run(call.signal, async () => ledger.dashboard(parseFilter(input)))),
+        time: (input, call) => guarded(call, () => run(call.signal, async () => ledger.time(parseFilter(input)))),
         status: (_input, call) => guarded(call, () => run(call.signal, async () => ({
           projectID: ctx.location.project.id, directory: ctx.location.directory,
           lastImport: ledger.lastImport(ctx.location.project.id),
         }))),
         importBatch: (input, call) => guarded(call, () => run(call.signal, async (signal) => {
           const batch = parseImportBatch(input)
-          // Identity and directory come from the connected server, never from an importing terminal.
-          const session = await authorize(batch.sessionID, signal)
-          signal.throwIfAborted()
-          if (session.projectID !== ctx.location.project.id) throw new Error("Cannot import a session from another project")
+          const session = await authorizeImport(batch.sessionID, signal)
           ledger.importBatch(batch.records.map((record) => ({
             ...record, sessionID: session.id, projectID: session.projectID, directory: session.location.directory,
           })))
+          return {}
+        })),
+        importActivity: (input, call) => guarded(call, () => run(call.signal, async (signal) => {
+          const batch = parseActivityBatch(input)
+          const timed = timedSession(await authorizeImport(batch.sessionID, signal))
+          if (timed) ledger.recordActivity(timed, batch.activity)
           return {}
         })),
         completeImport: (_input, call) => guarded(call, () => run(call.signal, async () => {

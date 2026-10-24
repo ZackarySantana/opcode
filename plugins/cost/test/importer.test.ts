@@ -3,19 +3,7 @@ import type { OpenCodeClient } from "@opencode/client"
 import type { CostService } from "../src/client.js"
 import { importProject } from "../src/importer.js"
 import { CostLedger } from "../src/ledger.js"
-import { context, message, session } from "./fixtures.js"
-
-function serviceFor(ledger: CostLedger, sessions = [session]): CostService {
-  return {
-    dashboard: async (filter) => ledger.dashboard(filter),
-    status: async () => ({ projectID: context.projectID, directory: context.directory, lastImport: ledger.lastImport(context.projectID) }),
-    importBatch: async (batch) => {
-      const actual = sessions.find((item) => item.id === batch.sessionID)!
-      ledger.importBatch(batch.records.map((record) => ({ ...record, sessionID: actual.id, projectID: actual.projectID, directory: actual.location.directory })))
-    },
-    completeImport: async () => { ledger.markImported(context.projectID, context.directory) },
-  }
-}
+import { context, message, serviceFor, session } from "./fixtures.js"
 
 test("imports paginated history, other worktrees, compactions, and rescans despite old markers", async () => {
   const ledger = new CostLedger(":memory:")
@@ -37,7 +25,7 @@ test("imports paginated history, other worktrees, compactions, and rescans despi
         { id: `${input.sessionID}-summary`, type: "compaction", status: "completed", model: message.model,
           time: { created: message.time.created }, cost: 0.25, tokens: message.tokens },
         // Defensive: a server may ignore the type filter.
-        { type: "compaction", status: "running" }, { type: "user" },
+        { type: "compaction", status: "running" }, { type: "user", time: { created: message.time.created } },
       ], cursor: {} }
       return input.cursor
         ? { data: [{ ...message, id: `${input.sessionID}-old` }], cursor: {} }

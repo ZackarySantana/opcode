@@ -1,5 +1,5 @@
 import { Rpc } from "@opencode/plugin/rpc"
-import { DATE_RANGES, IMPORT_BATCH_SIZE, MAX_COST, MAX_ID_LENGTH, MAX_MODEL_FILTER_LENGTH, MAX_TIME, MAX_TOKENS } from "./domain.js"
+import { ACTIVITY_KINDS, DATE_RANGES, IMPORT_BATCH_SIZE, MAX_COST, MAX_ID_LENGTH, MAX_MODEL_FILTER_LENGTH, MAX_TIME, MAX_TOKENS } from "./domain.js"
 
 const id = { type: "string", minLength: 1, maxLength: MAX_ID_LENGTH } as const
 const number = { type: "number", minimum: 0, maximum: MAX_TOKENS } as const
@@ -11,7 +11,7 @@ const errors = { failed: empty }
 const usage = {
   type: "object", additionalProperties: false,
   properties: {
-    messageID: id, providerID: id, modelID: id, createdAt: time, completedAt: time,
+    messageID: id, providerID: id, modelID: id, variant: id, createdAt: time, completedAt: time,
     cost, input: number, output: number, reasoning: number, cacheRead: number, cacheWrite: number,
   },
   required: ["messageID", "providerID", "modelID", "createdAt", "cost", "input", "output", "reasoning", "cacheRead", "cacheWrite"],
@@ -35,6 +35,43 @@ const projectOptions = {
     required: ["id", "label", "directory"],
   },
 } as const
+const activity = {
+  type: "object", additionalProperties: false,
+  properties: { kind: { type: "string", enum: ACTIVITY_KINDS }, at: time }, required: ["kind", "at"],
+} as const
+const timeBreakdown = {
+  type: "array", items: {
+    type: "object", additionalProperties: false,
+    properties: { id: { type: "string" }, label: { type: "string" }, agent: { type: "number" }, wait: { type: "number" }, turns: { type: "number" } },
+    required: ["id", "label", "agent", "wait", "turns"],
+  },
+} as const
+const timeDashboard = {
+  type: "object", additionalProperties: false,
+  properties: {
+    total: {
+      type: "object", additionalProperties: false,
+      properties: { agent: { type: "number" }, turns: { type: "number" }, wait: { type: "number" }, parallel: { type: "number" }, peak: { type: "number" } },
+      required: ["agent", "turns", "wait", "parallel", "peak"],
+    },
+    projects: timeBreakdown, models: timeBreakdown, daily: timeBreakdown,
+    longest: {
+      type: "array", items: {
+        type: "object", additionalProperties: false,
+        properties: {
+          sessionID: { type: "string" }, title: { type: "string" }, project: { type: "string" }, directory: { type: "string" },
+          model: { type: "string" }, start: { type: "number" }, duration: { type: "number" },
+        },
+        required: ["sessionID", "title", "project", "directory", "model", "start", "duration"],
+      },
+    },
+  },
+  required: ["total", "projects", "models", "daily", "longest"],
+} as const
+const filter = {
+  type: "object", additionalProperties: false, required: ["range"],
+  properties: { range: { type: "string", enum: DATE_RANGES }, projectID: id, model: { type: "string", maxLength: MAX_MODEL_FILTER_LENGTH } },
+} as const
 const dashboard = {
   type: "object", additionalProperties: false,
   properties: {
@@ -54,14 +91,8 @@ const dashboard = {
 export const CostRpc = Rpc.define({
   id: "opcode-cost",
   methods: {
-    dashboard: {
-      input: {
-        type: "object", additionalProperties: false, required: ["range"],
-        properties: { range: { type: "string", enum: DATE_RANGES }, projectID: id, model: { type: "string", maxLength: MAX_MODEL_FILTER_LENGTH } },
-      },
-      output: dashboard,
-      errors,
-    },
+    dashboard: { input: filter, output: dashboard, errors },
+    time: { input: filter, output: timeDashboard, errors },
     status: {
       input: empty,
       output: {
@@ -75,6 +106,14 @@ export const CostRpc = Rpc.define({
       input: {
         type: "object", additionalProperties: false, required: ["sessionID", "records"],
         properties: { sessionID: id, records: { type: "array", minItems: 1, maxItems: IMPORT_BATCH_SIZE, items: usage } },
+      },
+      output: empty,
+      errors,
+    },
+    importActivity: {
+      input: {
+        type: "object", additionalProperties: false, required: ["sessionID", "activity"],
+        properties: { sessionID: id, activity: { type: "array", minItems: 1, maxItems: IMPORT_BATCH_SIZE, items: activity } },
       },
       output: empty,
       errors,

@@ -1,7 +1,11 @@
 import type { Database } from "bun:sqlite"
 import { basename, join } from "node:path"
 import { openDatabase, resolveStatePath, stateDirectory } from "@opcode/core/state"
-import { rangeStart, type Breakdown, type Dashboard, type DashboardFilter, type Totals, type UsageRecord } from "./domain.js"
+import {
+  localDay, rangeStart, type Activity, type ActivityKind, type Breakdown, type Dashboard, type DashboardFilter, type TimeDashboard,
+  type TimedSession, type Totals, type UsageRecord,
+} from "./domain.js"
+import { deriveTurns, summarizeTime, type TimelineEvent, type TimedTurn } from "./time.js"
 
 // Deliberately retain opencode-cost's path, including after the package rename.
 export function databasePath(configured?: unknown, state = stateDirectory()) {
@@ -11,7 +15,7 @@ export function databasePath(configured?: unknown, state = stateDirectory()) {
 const schema = `
   CREATE TABLE IF NOT EXISTS usage (
     message_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, project_id TEXT NOT NULL,
-    directory TEXT NOT NULL, provider_id TEXT NOT NULL, model_id TEXT NOT NULL,
+    directory TEXT NOT NULL, provider_id TEXT NOT NULL, model_id TEXT NOT NULL, variant TEXT,
     created_at INTEGER NOT NULL, completed_at INTEGER, cost REAL NOT NULL,
     input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, reasoning_tokens INTEGER NOT NULL,
     cache_read_tokens INTEGER NOT NULL, cache_write_tokens INTEGER NOT NULL, recorded_at INTEGER NOT NULL
@@ -21,15 +25,23 @@ const schema = `
   CREATE INDEX IF NOT EXISTS usage_model ON usage(provider_id, model_id);
   CREATE TABLE IF NOT EXISTS backfill (project_id TEXT PRIMARY KEY, directory TEXT NOT NULL, completed_at INTEGER NOT NULL);
   CREATE TABLE IF NOT EXISTS opcode_cost_live (message_id TEXT PRIMARY KEY, version INTEGER NOT NULL);
+  CREATE TABLE IF NOT EXISTS session (
+    session_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, directory TEXT NOT NULL, title TEXT, created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS activity (
+    session_id TEXT NOT NULL, at INTEGER NOT NULL, kind TEXT NOT NULL, PRIMARY KEY (session_id, at, kind)
+  ) WITHOUT ROWID;
+  CREATE INDEX IF NOT EXISTS activity_at ON activity(at);
+  CREATE INDEX IF NOT EXISTS usage_session ON usage(session_id, created_at);
 `
 
 const insert = `INSERT INTO usage (
-  message_id, session_id, project_id, directory, provider_id, model_id, created_at, completed_at,
+  message_id, session_id, project_id, directory, provider_id, model_id, variant, created_at, completed_at,
   cost, input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens, recorded_at
-) VALUES ($messageID, $sessionID, $projectID, $directory, $providerID, $modelID, $createdAt, $completedAt,
+) VALUES ($messageID, $sessionID, $projectID, $directory, $providerID, $modelID, $variant, $createdAt, $completedAt,
   $cost, $input, $output, $reasoning, $cacheRead, $cacheWrite, $recordedAt)`
 const identity = `session_id=excluded.session_id, project_id=excluded.project_id, directory=excluded.directory,
-  provider_id=excluded.provider_id, model_id=excluded.model_id, created_at=excluded.created_at,
+  provider_id=excluded.provider_id, model_id=excluded.model_id, variant=excluded.variant, created_at=excluded.created_at,
   completed_at=excluded.completed_at, recorded_at=excluded.recorded_at`
 const usage = `cost=excluded.cost, input_tokens=excluded.input_tokens, output_tokens=excluded.output_tokens,
   reasoning_tokens=excluded.reasoning_tokens, cache_read_tokens=excluded.cache_read_tokens, cache_write_tokens=excluded.cache_write_tokens`
@@ -80,8 +92,22 @@ export class CostLedger {
 
   private write(record: UsageRecord, update: string) {
     this.db.query(`${insert} ON CONFLICT(message_id) DO UPDATE SET ${update}`).run({
-      ...record, completedAt: record.completedAt ?? null, recordedAt: Date.now(),
+      ...record, variant: record.variant ?? null, completedAt: record.completedAt ?? null, recordedAt: Date.now(),
     })
+  }
+
+  /**
+   * Live collection and history import write identical markers (history stores each marker's event time),
+   * so the key makes repeats idempotent without relying on message IDs.
+   */
+  recordActivity(session: TimedSession, activity: Activity[]) {
+    this.db.transaction(() => {
+      this.db.query(`INSERT INTO session VALUES ($sessionID, $projectID, $directory, $title, $createdAt) ON CONFLICT(session_id)
+        DO UPDATE SET project_id=excluded.project_id, directory=excluded.directory, title=excluded.title`)
+        .run({ ...session, title: session.title ?? null })
+      const insert = this.db.query("INSERT OR IGNORE INTO activity VALUES (?, ?, ?)")
+      for (const item of activity) insert.run(session.sessionID, item.at, item.kind)
+    }).immediate()
   }
 
   lastImport(projectID: string) {
@@ -100,11 +126,7 @@ export class CostLedger {
       COALESCE(SUM(output_tokens), 0) AS output, COALESCE(SUM(reasoning_tokens), 0) AS reasoning,
       COALESCE(SUM(cache_read_tokens), 0) AS cacheRead, COALESCE(SUM(cache_write_tokens), 0) AS cacheWrite
       FROM usage WHERE ${filtered}`).get(params)!
-    // Options ignore entity filters. SQLite takes a bare column from the MAX() row: the latest-used directory labels a project.
-    const projectOptions = this.db.query<{ id: string; directory: string }, [number]>(`SELECT project_id AS id, directory, MAX(created_at)
-      FROM usage WHERE created_at >= ? GROUP BY project_id`).all(since)
-      .map(({ id, directory }) => ({ id, label: basename(directory) || directory, directory }))
-      .sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id))
+    const projectOptions = this.projectOptions(since)
     const labels = new Map(projectOptions.map((option) => [option.id, option.label]))
     const group = (key: string) => this.db.query<Sums & { id: string }, Filter>(`SELECT ${key} AS id, ${sums}
       FROM usage WHERE ${filtered} GROUP BY 1`).all(params)
@@ -118,6 +140,52 @@ export class CostLedger {
       modelOptions: this.db.query<{ id: string }, [number]>("SELECT DISTINCT provider_id || '/' || model_id AS id FROM usage WHERE created_at >= ?")
         .all(since).map(({ id }) => id).sort().map((id) => ({ id, label: id })),
     }
+  }
+
+  /** Turns of root sessions active since the range start. Whole session timelines are read, so a turn's state is known at the boundary. */
+  time(filter: DashboardFilter, now = Date.now()): TimeDashboard {
+    const since = rangeStart(filter.range, now)
+    const params = { since, projectID: filter.projectID ?? null }
+    const timed = `timed AS (SELECT * FROM session WHERE ($projectID IS NULL OR project_id = $projectID) AND session_id IN (
+      SELECT session_id FROM activity WHERE at >= $since UNION SELECT session_id FROM usage WHERE created_at >= $since))`
+    const sessions = this.db.query<{ sessionID: string; projectID: string; directory: string; title: string | null }, typeof params>(`WITH ${timed}
+      SELECT session_id AS sessionID, project_id AS projectID, directory, title FROM timed`).all(params)
+    type Row = { sessionID: string; kind: ActivityKind | "step"; at: number; end: number | null; model: string | null; variant: string | null; output: number }
+    // Ties put idle first: a prompt delivered as the session goes idle starts the next turn. Fork-inherited history predates the fork.
+    const rows = this.db.query<Row, typeof params>(`WITH ${timed}
+      SELECT session_id AS sessionID, kind, at, NULL AS end, NULL AS model, NULL AS variant, 0 AS output, kind = 'prompt' AS rank
+        FROM activity JOIN timed USING (session_id) WHERE at >= timed.created_at
+      UNION ALL SELECT session_id, 'step', usage.created_at, completed_at, provider_id || '/' || model_id, variant, output_tokens + reasoning_tokens, 2
+        FROM usage JOIN timed USING (session_id) WHERE usage.created_at >= timed.created_at
+      ORDER BY sessionID, at, rank`).all(params)
+    const timelines = new Map<string, TimelineEvent[]>()
+    for (const row of rows) {
+      const events = timelines.get(row.sessionID) ?? []
+      events.push(row.kind === "step"
+        ? { kind: "step", at: row.at, end: Math.max(row.at, row.end ?? row.at), model: row.model!, variant: row.variant ?? undefined, output: row.output }
+        : { kind: row.kind, at: row.at })
+      timelines.set(row.sessionID, events)
+    }
+    const labels = new Map(this.projectOptions(since).map((option) => [option.id, option.label]))
+    const turns: TimedTurn[] = []
+    for (const session of sessions) {
+      for (const turn of deriveTurns(session.sessionID, timelines.get(session.sessionID) ?? [])) {
+        if (turn.start < since || (filter.model && turn.model !== filter.model)) continue
+        turns.push({
+          ...turn, title: session.title ?? undefined, projectID: session.projectID, directory: session.directory,
+          project: labels.get(session.projectID) ?? (basename(session.directory) || session.directory),
+        })
+      }
+    }
+    return summarizeTime(turns)
+  }
+
+  /** Options ignore entity filters. SQLite takes a bare column from the MAX() row: the latest-used directory labels a project. */
+  private projectOptions(since: number) {
+    return this.db.query<{ id: string; directory: string }, [number]>(`SELECT project_id AS id, directory, MAX(created_at)
+      FROM usage WHERE created_at >= ? GROUP BY project_id`).all(since)
+      .map(({ id, directory }) => ({ id, label: basename(directory) || directory, directory }))
+      .sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id))
   }
 
   /**
@@ -137,7 +205,7 @@ export class CostLedger {
       const date = new Date(at)
       date.setHours(0, 0, 0, 0)
       const start = date.getTime()
-      const id = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+      const id = localDay(start)
       date.setDate(date.getDate() + 1)
       days.push({ id, label: id, ...day.get({ ...params, start, end: date.getTime() })! })
       before = start

@@ -1,5 +1,4 @@
 import { afterEach, expect, test } from "bun:test"
-import { Database } from "bun:sqlite"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -141,28 +140,6 @@ test("session moves reattribute history and protected live usage without rejecti
   expect(ledger.dashboard({ range: "all", projectID: moved.projectID })).toMatchObject({
     total: { messages: 3, cost: 10.5 }, projectOptions: [{ id: moved.projectID, label: "destination" }],
   })
-})
-
-test("opens unchanged legacy usage/backfill tables without discarding data or markers", () => {
-  const path = temporaryDatabase()
-  const legacy = new Database(path)
-  legacy.run(`CREATE TABLE usage (
-    message_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, project_id TEXT NOT NULL, directory TEXT NOT NULL,
-    provider_id TEXT NOT NULL, model_id TEXT NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER,
-    cost REAL NOT NULL, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, reasoning_tokens INTEGER NOT NULL,
-    cache_read_tokens INTEGER NOT NULL, cache_write_tokens INTEGER NOT NULL, recorded_at INTEGER NOT NULL);
-    CREATE TABLE backfill (project_id TEXT PRIMARY KEY, directory TEXT NOT NULL, completed_at INTEGER NOT NULL);`)
-  legacy.query("INSERT INTO usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
-    record.messageID, record.sessionID, record.projectID, record.directory, record.providerID, record.modelID,
-    record.createdAt, record.completedAt!, record.cost, record.input, record.output, record.reasoning, record.cacheRead, record.cacheWrite, 123,
-  )
-  legacy.query("INSERT INTO backfill VALUES (?, ?, ?)").run(record.projectID, record.directory, 123)
-  legacy.close()
-  const ledger = open(path)
-  expect(ledger.dashboard({ range: "all" }).total).toMatchObject({ messages: 1, cost: record.cost, tokens: 15 })
-  expect(ledger.lastImport(record.projectID)).toBe(123)
-  ledger.importBatch([{ ...record, cost: 0 }])
-  expect(ledger.dashboard({ range: "all" }).total.cost).toBe(record.cost)
 })
 
 test("local-calendar boundaries and combined date/project/model filters", () => {

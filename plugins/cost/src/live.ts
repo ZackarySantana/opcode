@@ -1,17 +1,27 @@
 import type { OpenCodeEvent, SessionMessageAssistant } from "@opencode/client"
 import type { Plugin } from "@opencode/plugin"
-import { isUsageMessage, usageFromMessage } from "./messages.js"
+import type { ActivityKind } from "./domain.js"
+import { isUsageMessage, timedSession, usageFromMessage } from "./messages.js"
 import type { CostLedger } from "./ledger.js"
 
 type Host = { location: { directory: string }; session: Pick<Plugin.Context["session"], "get" | "context"> }
 
-/** Steps that never end must not grow memory without bound. */
-const MAX_STARTED = 256
+/** Steps that never end, and prompts never delivered, must not grow memory without bound. */
+const MAX_PENDING = 256
 
 export function createLiveCollector(host: Host, ledger: CostLedger) {
   const started = new Map<string, SessionMessageAssistant>()
+  // Delivery events do not say what was delivered; only user prompts end a wait. A prompt enqueued before
+  // activation or a reconnect is missed live and recovered by the next import.
+  const prompts = new Set<string>()
+  const activity = async (sessionID: string, kind: ActivityKind, at: number, signal: AbortSignal) => {
+    const session = await host.session.get({ sessionID }, { signal })
+    const timed = timedSession(session)
+    signal.throwIfAborted()
+    if (timed && session.location.directory === host.location.directory) ledger.recordActivity(timed, [{ kind, at }])
+  }
   return {
-    clear: () => started.clear(),
+    clear: () => { started.clear(); prompts.clear() },
     /** Host reads may overlap other work; each ledger write runs synchronously after a final abort check. */
     async handle(event: OpenCodeEvent, signal: AbortSignal) {
       signal.throwIfAborted()
@@ -26,7 +36,22 @@ export function createLiveCollector(host: Host, ledger: CostLedger) {
           id, type: "assistant", agent: event.data.agent, model: event.data.model,
           time: { created: event.data.started }, content: [],
         })
-        if (started.size > MAX_STARTED) started.delete(started.keys().next().value!)
+        if (started.size > MAX_PENDING) started.delete(started.keys().next().value!)
+        return
+      }
+      if (event.type === "session.inbox.enqueued") {
+        if (event.data.item.type === "user") prompts.add(event.data.inboxID)
+        if (prompts.size > MAX_PENDING) prompts.delete(prompts.values().next().value!)
+        return
+      }
+      if (event.type === "session.inbox.delivered") {
+        if (prompts.delete(event.data.inboxID)) await activity(event.data.sessionID, "prompt", event.created, signal)
+        return
+      }
+      // History has an idle message for each of these except a shutdown interruption, which live still records
+      // so that work resumed after a restart does not extend the interrupted turn across the downtime.
+      if (event.type === "session.execution.succeeded" || event.type === "session.execution.failed" || event.type === "session.execution.interrupted") {
+        await activity(event.data.sessionID, "idle", event.created, signal)
         return
       }
       if (event.type === "session.compaction.ended") {

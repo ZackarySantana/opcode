@@ -1,4 +1,4 @@
-import type { Dashboard, DashboardFilter } from "../src/domain.js"
+import type { Dashboard, DashboardFilter, TimeDashboard } from "../src/domain.js"
 import type { Destination, DialogSelectOptions, KeymapLayer, Page, Route } from "@opencode/plugin/tui/context"
 import { createRoot, createSignal } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
@@ -27,6 +27,7 @@ export async function createTuiHarness(initial: Route = { type: "home" }, mutabl
   }
   const [location, setLocation] = createSignal({ directory: "/remote/project" })
   const queries: Array<ReturnType<typeof Promise.withResolvers<Dashboard>> & { filter: DashboardFilter; signal: AbortSignal }> = []
+  const times: Array<ReturnType<typeof Promise.withResolvers<TimeDashboard>> & { filter: DashboardFilter }> = []
   const dialogs: Array<ReturnType<typeof Promise.withResolvers<string | undefined>> & { options: DialogSelectOptions<string> }> = []
   const navigations: Destination[] = []
   const layers: KeymapLayer[] = []
@@ -58,6 +59,11 @@ export async function createTuiHarness(initial: Route = { type: "home" }, mutabl
           const request = { ...Promise.withResolvers<Dashboard>(), filter, signal: options.signal }
           queries.push(request)
           return request.promise // Deliberately ignores abort: callers must reject stale responses themselves.
+        },
+        time: (filter: DashboardFilter) => {
+          const request = { ...Promise.withResolvers<TimeDashboard>(), filter }
+          times.push(request)
+          return request.promise
         },
       }),
       session: { list: async () => ({ data: [], cursor: {} }) },
@@ -107,7 +113,7 @@ export async function createTuiHarness(initial: Route = { type: "home" }, mutabl
   // Finish the mocked startup import before callers start controlling dashboard requests.
   await Bun.sleep(0)
   return {
-    api, queries, dialogs, navigations, layers, usageListeners, toasts, route, setRoute, setLocation, run, cleanup,
+    api, queries, times, dialogs, navigations, layers, usageListeners, toasts, route, setRoute, setLocation, run, cleanup,
     page: () => page, modes: () => modes, unregistered: () => unregistered,
     emitUsage: () => { for (const callback of usageListeners) callback() },
     intervals, debounces,
