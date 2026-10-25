@@ -1,6 +1,6 @@
 {
   "name": "@lidtop/opencode-context",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Inspect OpenCode session context usage",
   "keywords": [
     "opencode",

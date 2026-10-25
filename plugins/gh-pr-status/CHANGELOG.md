@@ -1,5 +1,11 @@
 # @lidtop/opencode-gh-pr-status
 
+## 0.2.1
+
+### Patch Changes
+
+- e5df44d: The README opens with a short demo video.
+
 ## 0.2.0
 
 ### Minor Changes

@@ -1,6 +1,6 @@
 {
   "name": "@lidtop/opencode-feed",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Follow RSS and Atom feeds in the OpenCode sidebar",
   "keywords": [
     "opencode",

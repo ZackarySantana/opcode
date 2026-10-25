@@ -1,6 +1,6 @@
 {
   "name": "@lidtop/opencode-later",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Save, organize, and paste deferred OpenCode prompts",
   "keywords": [
     "opencode",
