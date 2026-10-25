@@ -2,6 +2,10 @@
 
 Know what's down before you debug. Follow the status pages and release feeds you depend on, with what's in progress in the sidebar and the full picture one command away.
 
+[![Watch the Feed demo: an in-progress incident in the sidebar, then the Status, Upcoming, Releases, and Subscribe tabs](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/feed-demo.jpg)](https://github.com/user-attachments/assets/52f67075-8fe5-4f3a-8e83-599213e15e60)
+
+*The 48-second demo uses sample status feeds, so its incidents are illustrative.*
+
 ![Feed Status tab with in-progress Claude and OpenAI incidents and operational status pages grayed out at the top](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/feed-status.png)
 
 ## Install

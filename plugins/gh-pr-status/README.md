@@ -2,6 +2,10 @@
 
 Never leave a review waiting. See the GitHub pull requests that need you in the sidebar, with your pull requests, your reviews, and your teams' review requests one command away.
 
+[![Watch the GH PR Status demo: pull requests waiting on you in the sidebar, the /ghpr tabs, and review comments sent to the agent](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/gh-pr-status-demo.jpg)](https://github.com/user-attachments/assets/8ccd999c-d742-4e8a-ac69-7ed7096f4fed)
+
+*The 55-second demo uses sample pull requests and a scripted agent reply.*
+
 ## Install
 
 Requires OpenCode **2.1.3 or newer in the 2.x line**, and the [GitHub CLI](https://cli.github.com/) signed in with `gh auth login`.

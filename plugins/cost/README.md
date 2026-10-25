@@ -2,6 +2,10 @@
 
 See where your usage and time go: recorded costs and tokens across projects and models, with daily activity over time, plus how long agents worked, how long they waited on you, and how much ran in parallel. Costs come from OpenCode's provider-reported records, not a separate pricing table.
 
+[![Watch the Cost demo: a month of cost, tokens, and agent time by model, project, day, and longest turn](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/cost-demo.jpg)](https://github.com/user-attachments/assets/5bb36ebf-b44d-41e9-8d1c-3b442618cb3b)
+
+*The 36-second demo uses a sample month of usage.*
+
 ![Cost dashboard with usage totals, model and project breakdowns, and daily activity ordered newest first](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/cost-dashboard.png)
 
 ## Install

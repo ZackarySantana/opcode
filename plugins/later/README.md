@@ -2,6 +2,10 @@
 
 Save the next idea without interrupting the current one. Keep a shared Later list across your local projects and sessions, visible in the sidebar, and paste an item into your prompt when it's time. Nothing runs automatically.
 
+[![Watch the Later demo: an idea saved for later by the agent, then reordered and pasted back into the prompt](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/later-demo.jpg)](https://github.com/user-attachments/assets/6c145b7c-be82-4ebe-a735-9e40ba2706d9)
+
+*The 36-second demo uses sample data.*
+
 ![Later list alongside an OpenCode session, keeping follow-up ideas visible in the sidebar](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/later-sidebar.png)
 
 ![Later manager with four active items, a selected follow-up, and completed history](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/later-manager.png)

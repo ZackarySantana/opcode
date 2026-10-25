@@ -2,6 +2,10 @@
 
 See what's taking up space in your current OpenCode session: recorded token usage, estimated context utilization, cache efficiency, and the largest visible contributors. The report never calls a model.
 
+[![Watch the Context demo: a session's limit, utilization, cache efficiency, and the test log taking up most of its context](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/context-demo.jpg)](https://github.com/user-attachments/assets/9fe6207a-63a4-4779-8eea-929bb9e0065e)
+
+*The 35-second demo uses a sample session.*
+
 ![Context overview with recorded token usage, estimated utilization, cache efficiency, and session activity](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/context-overview.png)
 
 ![Context Content tab ranking retained tool outputs and messages by estimated tokens](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/context-content.png)

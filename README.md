@@ -14,13 +14,15 @@
 | [Snippets](#snippets-say-it-once-reuse-it-everywhere) | The prompts you'd otherwise type again | [![Snippets version](https://img.shields.io/npm/v/@lidtop/opencode-snippets?label=snippets)](https://www.npmjs.com/package/@lidtop/opencode-snippets) |
 | [Media](#media-narration-sound-and-images-on-request) | The voice, sound, and pictures your project needs | [![Media version](https://img.shields.io/npm/v/@lidtop/opencode-media?label=media)](https://www.npmjs.com/package/@lidtop/opencode-media) |
 
-*Screenshots show the OpenCode terminal UI with fictional demo data, except Feed, which shows real public status feeds.*
+*Demo videos and screenshots show the OpenCode terminal UI with fictional demo data, except the Feed screenshot, which shows real public status feeds.*
 
 ## Later: save the thought, keep the flow
 
 “After this, we should…” doesn't have to become a distraction. Keep a shared Later list across your local projects and sessions, with your next ideas visible in the sidebar.
 
 **Capture → organize → bring it back when you're ready.** Reorder what matters, keep completed history, and put an item into your prompt when it's time. Nothing runs automatically. You review the prompt and decide when to submit it. The agent can add and complete items for you, and asks before deleting one.
+
+https://github.com/user-attachments/assets/6c145b7c-be82-4ebe-a735-9e40ba2706d9
 
 <table>
   <tr>
@@ -43,6 +45,8 @@ Long session? Get a clearer picture before deciding what to trim or carry forwar
 
 **Get the overview → find the heavy parts.** Look beyond the totals to retained content and the instructions, skills, and tools available to your session. Estimates are labeled; this isn't a claim to see every hidden part of a provider request.
 
+https://github.com/user-attachments/assets/9fe6207a-63a4-4779-8eea-929bb9e0065e
+
 <table>
   <tr>
     <td width="50%">
@@ -63,6 +67,8 @@ Long session? Get a clearer picture before deciding what to trim or carry forwar
 Turn scattered sessions into a readable picture of your usage. See recorded costs and tokens across projects and models, with daily activity to show how things change over time.
 
 **Start with the totals → see them by model, project, day, or longest turn.** Costs come from OpenCode's provider-reported records, not a separate pricing calculator. Use them to understand your usage, but check your provider's invoice for billing.
+
+https://github.com/user-attachments/assets/5bb36ebf-b44d-41e9-8d1c-3b442618cb3b
 
 ![Cost dashboard with usage totals, model and project breakdowns, and daily activity ordered newest first](docs/images/cost-dashboard.png)
 
@@ -90,6 +96,8 @@ Is it your code, or is npm having a bad day? Follow the status pages and release
 
 **Glance at the sidebar → open `/feed` for the details → jump to the incident.** In-progress incidents come first, status pages with nothing going on are grayed out at the top, scheduled maintenance waits under Upcoming, and releases get their own tab. Pick from presets like npm, GitHub, Claude, OpenAI, AWS, and Cloudflare, plus release feeds and blogs, or paste any RSS or Atom URL.
 
+https://github.com/user-attachments/assets/52f67075-8fe5-4f3a-8e83-599213e15e60
+
 ![Feed Status tab with in-progress Claude and OpenAI incidents and operational status pages grayed out at the top](docs/images/feed-status.png)
 
 [Explore Feed →](plugins/feed/README.md)
@@ -99,6 +107,8 @@ Is it your code, or is npm having a bad day? Follow the status pages and release
 Someone asked for your review an hour ago, and your own pull request has been approved since lunch. See the GitHub pull requests that need you in the sidebar, using the GitHub CLI you're already signed in to.
 
 **Glance at the sidebar → open `/ghpr` for everything → jump to the pull request.** Review requests for you come first, then your teams', then your pull requests that are blocked or ready to merge. `/ghpr` lists your pull requests, the ones you review, and your teams' review requests with every requested reviewer, filtered to the team you choose.
+
+https://github.com/user-attachments/assets/8ccd999c-d742-4e8a-ac69-7ed7096f4fed
 
 [Explore GH PR Status →](plugins/gh-pr-status/README.md)
 
