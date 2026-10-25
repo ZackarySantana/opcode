@@ -1,5 +1,11 @@
 # @lidtop/opencode-context
 
+## 0.3.4
+
+### Patch Changes
+
+- e5df44d: The README opens with a short demo video.
+
 ## 0.3.3
 
 ### Patch Changes

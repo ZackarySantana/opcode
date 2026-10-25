@@ -1,5 +1,11 @@
 # @lidtop/opencode-feed
 
+## 0.4.2
+
+### Patch Changes
+
+- e5df44d: The README opens with a short demo video.
+
 ## 0.4.1
 
 ### Patch Changes

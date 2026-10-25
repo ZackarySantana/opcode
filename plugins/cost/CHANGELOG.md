@@ -1,5 +1,11 @@
 # @lidtop/opencode-cost
 
+## 0.3.1
+
+### Patch Changes
+
+- e5df44d: The README opens with a short demo video.
+
 ## 0.3.0
 
 ### Minor Changes
