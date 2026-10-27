@@ -20,7 +20,7 @@ async function setup(width = 90) {
   let files = [file(), other]
   const host = fakeHost({ diff: () => files })
   const panel = fakePanel(width)
-  const review = new ReviewController(host.api, async () => ({}), Date.now, fastTimer)
+  const review = new ReviewController(host.api, { replies: async () => ({}), timer: fastTimer })
   const view = await testRender(() => (
     <PluginContextProvider value={host.api}>
       <Show when={!panel.state.closed}><ReviewPanel panel={panel.input} review={review} /></Show>

@@ -10,10 +10,13 @@ export const modeTitle: Record<Mode, string> = { turn: "This turn", session: "Se
 
 /** How the changed files are listed: as a folder tree, or as full paths. */
 export type FileList = "tree" | "paths"
+/** How usages and definitions are found: a language server when one is set up for the file, else a search by name; or the search only. */
+export type ReferenceEngine = "lsp" | "search"
 export interface Settings {
   readonly fileList: FileList
+  readonly references: ReferenceEngine
 }
-export const defaultSettings: Settings = { fileList: "tree" }
+export const defaultSettings: Settings = { fileList: "tree", references: "lsp" }
 
 export type Side = "new" | "old"
 export type ReplyStatus = "done" | "answered" | "declined"
@@ -28,6 +31,8 @@ export interface Anchor {
   readonly end: number
   /** The commented rows, each with its diff sign, to find them again after the lines move. */
   readonly quote: readonly string[]
+  /** Left on a file opened from a usage, where the diff doesn't show the line: the agent hasn't touched it. */
+  readonly outside?: boolean
 }
 
 export interface Comment extends Anchor {

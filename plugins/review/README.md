@@ -19,7 +19,7 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 }
 ```
 
-**Where it runs.** The panel runs in the terminal. The server side records which comments a session was sent and gives its agent the `review_reply` tool, so configure the plugin where the server reads plugins (this config, or the remote server's). Diffs come from the server too, so they work against a remote server.
+**Where it runs.** The panel runs in the terminal. The server side records which comments a session was sent, gives its agent the `review_reply` tool, and runs the language servers and searches for usages, so configure the plugin where the server reads plugins (this config, or the remote server's). Diffs and usages come from the server, so they work against a remote server.
 
 ## Use
 
@@ -54,6 +54,20 @@ The session views come from OpenCode's own snapshots and include edits you make 
 
 **Mark viewed** (`m`) sets a file aside and moves to the next one. A viewed file comes back as soon as its diff changes, so you see what the agent did since you last looked.
 
+### Usages and definitions
+
+Under the diff, the names on the cursor's line are listed with one picked: a name the line defines, else one that changed, else a call. Move between them with `h` and `l`. Press `u` for its usages, or `d` for its definition.
+
+Usages are grouped by file: the definition first, then the files the diff changes, then the rest. Each is marked `+` when it's on a changed line, `·` when it's elsewhere in a changed file, and blank when the diff doesn't touch it. The list says what the change may have missed:
+
+- **signature changed**, and each use the diff didn't change is flagged **⚠ not updated?**: the agent changed the definition but maybe not every caller.
+- **definition removed**, with the uses still left.
+- **nothing uses it yet**, for a definition the diff adds that nothing calls.
+
+`tab` shows all of them, only those in the diff, or only those outside it. `enter` opens one: on its diff row when the diff shows it, else in a read-only view of the file, where `c` comments as usual. Those comments reach the agent marked **(outside the diff)**, so it knows to touch a file it hasn't. In an opened usage, `n` and `p` go to the next and previous one. `esc` (or `ctrl+o`) goes back a step, to the list and then to the diff. A single definition opens directly.
+
+**How they're found.** By default, the language server OpenCode is set up with for the file's language: your `lsp` config, merged across OpenCode's config files, or a built-in one (TypeScript, gopls, rust-analyzer, pyright, clangd, ruby-lsp, zls, lua-language-server, bash-language-server) when it's installed. `"lsp": false` turns them off. The server is started where the files are, kept running, and stopped after 10 idle minutes. It is asked about the exact symbol; right after it starts, the first lookup waits while it loads the project. Without a language server, or when it finds nothing, a whole-word search for the name answers instead (ripgrep, else `git grep`), and the list says why. **Search only** in the options never starts a language server. A name on a removed line is always searched for, since no file has that line any more.
+
 ### Keys
 
 | Key | Action |
@@ -62,18 +76,23 @@ The session views come from OpenCode's own snapshots and include edits you make 
 | `ctrl+d` / `ctrl+u`, `pagedown` / `pageup` | Half a page down / up |
 | `g` / `shift+g`, `home` / `end` | First / last line |
 | `]` / `[` | Next / previous hunk |
-| `n` / `p`, `alt+↓` / `alt+↑` | Next / previous file (clicking one in the list does too) |
+| `n` / `p`, `alt+↓` / `alt+↑` | Next / previous file (clicking one in the list does too); in an opened usage, the next / previous usage |
+| `h` / `l`, `←` / `→` | Previous / next name on the line |
+| `u` | Usages of the name |
+| `d` | Definition of the name |
 | `c`, `enter` | Comment on the line, or edit the draft there |
 | `v` | Start a range, then `c` comments on it |
 | `x` | Delete the draft on the line |
 | `m` | Mark the file viewed, or not |
-| `o` | Options: what to review, and how files are listed |
+| `o` | Options: what to review, how files are listed, and how usages are found |
 | `b` | Show or hide the file list |
 | `f` | Full screen |
 | `r` | Refresh now |
 | `S` | Send the drafts |
-| `esc` | Send the drafts and close |
+| `esc`, `ctrl+o` | Back from a usage or file; in the diff, `esc` sends the drafts and closes |
 | `q` | Close, keeping the drafts |
+
+In a usages list, `j` / `k` (or `n` / `p`) move, `enter` opens, `c` comments on the usage, `tab` changes the scope, `d` finds the definition, and `esc` goes back.
 
 In the comment box, `enter` saves, `shift+enter` adds a line, and `esc` saves and closes the box. An empty comment is discarded.
 

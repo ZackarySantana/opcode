@@ -12,7 +12,7 @@
 | GH PR Status | Pull requests classified by what waits on you, settings, and a saved team filter | Client-local SQLite, `gh` GraphQL and REST calls | Mine/Reviewing/Teams/Settings dialog, team picker, sidebar |
 | Snippets | Global and project snippet files, precedence, and `@name` mentions | Server-owned files, skill registration, prompt/context hooks, authoring tools, RPC | Dialog with previews, prompt paste bridge, authoring sessions |
 | Media | Project-relative output paths, image naming, PCM-to-WAV framing | OpenRouter media API with the `openrouter` integration credential; agent tools | None: server-only agent tools |
-| Review | Patch rows and segments, line comments that follow their text, delivery states, viewed-by-patch-hash, the review message | Host session/VCS diffs and inbox; synced terminal storage; server plugin storage, prompt/context hooks, a reply tool, RPC | Session panel with the file tree or paths and the diff, inline comment editor, options menu, sidebar |
+| Review | Patch rows and segments, line comments that follow their text, delivery states, viewed-by-patch-hash, the review message, names and definitions per language, usages arranged against the diff | Host session/VCS diffs and inbox; synced terminal storage; server plugin storage, prompt/context hooks, a reply tool, RPC; language servers from OpenCode's `lsp` config in a server-side pool, ripgrep / `git grep` | Session panel with the file tree or paths and the diff, inline comment editor, usages list, read-only file view, options menu, sidebar |
 
 Later is deliberately not an execution engine: starting an item pastes it into
 the existing prompt, without submission. Its server side only registers agent
@@ -35,7 +35,12 @@ original admission instead of a second message; a declared refusal returns the
 comments to drafts. Its prompt hook records the comment IDs a
 message carried; the `review_reply` tool exists only in sessions with such a
 record, and accepts only those IDs. Comments live in synced terminal storage,
-replies in server plugin storage, read back over RPC.
+replies in server plugin storage, read back over RPC. For usages, the terminal reads
+OpenCode's merged `lsp` config (the server plugin context has no config API) and
+passes it with each lookup; the server validates it and starts that language
+server in the caller's location, in a pool keyed by directory and server and
+disposed with the plugin. A client choosing the command doesn't widen what it can
+do: OpenCode clients can already run shells through the API.
 
 ## Shared code
 

@@ -1,12 +1,17 @@
 import { Plugin } from "@opencode/plugin"
 import { errorMessage } from "@opcode/core"
+import { createFinder, type FindIn } from "./finder"
+import { createPool } from "./lsp"
 import { TOOL_NAME } from "./message"
 import { PLUGIN_ID } from "./review"
 import { ReviewRpc } from "./rpc"
 import { ReviewRecords } from "./records"
+import type { Lookup } from "./references"
+import { searchName } from "./search"
+import { validLspConfig } from "./servers"
 import { replyTool } from "./tools"
 
-/** Records which comments each session was sent, lets its agent reply to them, and serves the replies to terminals. */
+/** Records which comments each session was sent, lets its agent reply to them, and serves the replies and symbol lookups to terminals. */
 export default Plugin.define({
   id: PLUGIN_ID,
   async setup(ctx) {
@@ -31,12 +36,27 @@ export default Plugin.define({
       if (!reviewed) delete event.tools[TOOL_NAME]
     })
 
+    // One plugin instance serves one location, so its directory is the root for language servers and searches.
+    const pool = createPool()
+    const finder = createFinder({ pool, search: searchName })
+    const symbolQuery = (find: FindIn) => async (input: unknown, call: { signal: AbortSignal; error: (type: "failed", message: string, details: {}) => unknown }) => {
+      const { lookup, lsp } = input as { lookup: Lookup; lsp: unknown }
+      // The terminal sends OpenCode's `lsp` config, and its commands run here as language servers. That grants nothing a
+      // client lacks: anyone who can call this RPC can already run shell commands through OpenCode's API. Nor does it get
+      // around anything beyond that, so the config is only checked for shape (and stripped of variables that load code into
+      // every child process), not trusted or sandboxed.
+      try { return await find(ctx.location.directory, lookup, lsp === null ? null : validLspConfig(lsp), call.signal) }
+      catch (error) { throw call.signal.aborted ? error : call.error("failed", errorMessage(error), {}) }
+    }
+
     const registration = await ctx.rpc.register(ReviewRpc, {
       replies: async (input, call) => {
         try { return { replies: (await records.get((input as { sessionID: string }).sessionID))?.replies ?? {} } }
         catch (error) { throw call.error("failed", errorMessage(error), {}) }
       },
+      usages: symbolQuery(finder.usages),
+      definition: symbolQuery(finder.definition),
     })
-    return () => registration.dispose()
+    return async () => { await Promise.all([registration.dispose(), pool.dispose()]) }
   },
 })

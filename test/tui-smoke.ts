@@ -80,6 +80,9 @@ try {
     XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data"), XDG_STATE_HOME: join(root, "state"), XDG_CACHE_HOME: join(root, "cache"),
   }
   await Promise.all(["config", "data", "state", "cache", "project"].map((directory) => mkdir(join(root, directory))))
+  // A repository with an uncommitted file, for Review's usages.
+  await Bun.write(join(root, "project/hello.ts"), "export function hello() {\n  return 1\n}\nhello()\n")
+  if ((await Bun.spawn(["git", "init", "-q"], { cwd: join(root, "project") }).exited) !== 0) throw new Error("git init failed")
   await Bun.write(environment.OPENCODE_CONFIG, "{}")
   const preview = await prepareDev(repositoryRoot, [...pluginIDs], environment, join(root, "preview"))
   // Create an empty session through the public client so Context's real tab
@@ -185,6 +188,18 @@ try {
   await requireText("Nothing changed in this turn", 0)
   await key("\x1b", "Opcode keyboard smoke", "Review This turn")
   console.log("Review: the real session panel opens with the session's diff and closes on Escape")
+  // Usages go through the real RPC: with no language server installed here, a search by name answers.
+  await open("review", "Review This turn")
+  await key("o", "Review options")
+  terminal.write("Uncommitted")
+  await key("\r", "Review Uncommitted")
+  await requireText("hello.ts", 0)
+  await key("u", "Usages of hello")
+  await requireText("text search", 0)
+  await requireText("hello()", 0)
+  await key("\x1b", "hello.ts", "Usages of hello")
+  await key("\x1b", "Opcode keyboard smoke", "Review Uncommitted")
+  console.log("Review: usages of a name in the diff come back through the real RPC")
 } catch (error) {
   if (!shutdown.signal.aborted) throw error
 } finally {

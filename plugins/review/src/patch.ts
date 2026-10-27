@@ -100,3 +100,24 @@ export function hashText(text: string): string {
   }
   return (hash >>> 0).toString(16).padStart(8, "0")
 }
+
+/** How many lines a file view shows on each side of its center. */
+export const FILE_RADIUS = 150
+
+/**
+ * A stretch of a whole file around `line`, as a patch whose rows are all unchanged, so a file the diff doesn't show
+ * is drawn, numbered, and commented on the same way.
+ */
+export function filePatch(content: string, line: number, radius = FILE_RADIUS): string {
+  const lines = content.split("\n")
+  if (lines.at(-1) === "") lines.pop()
+  if (!lines.length) return ""
+  const from = Math.max(1, Math.min(line, lines.length) - radius)
+  const to = Math.min(lines.length, line + radius)
+  const shown = lines.slice(from - 1, to)
+  // A Windows line ending isn't part of the line.
+  return [`@@ -${from},${shown.length} +${from},${shown.length} @@`, ...shown.map((text) => ` ${text.replace(/\r$/, "")}`)].join("\n") + "\n"
+}
+
+/** The new-side lines a patch shows, which a diff row can be opened on. */
+export const shownLines = (rows: readonly Row[]) => new Set(rows.flatMap((row) => row.kind === "del" ? [] : [row.new!]))

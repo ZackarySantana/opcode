@@ -9,7 +9,7 @@ const TEXT_LIMIT = 20_000
 
 function section(comment: Comment): string {
   const question = isQuestion(comment.text)
-  const where = `${comment.file}:${lineRange(comment)}${comment.side === "old" ? " (removed lines)" : ""}`
+  const where = `${comment.file}:${lineRange(comment)}${comment.side === "old" ? " (removed lines)" : comment.outside ? " (outside the diff)" : ""}`
   const quote = comment.quote.slice(0, QUOTE_LINES).map((line) => `> ${line}`)
   if (comment.quote.length > QUOTE_LINES) quote.push(`> (${comment.quote.length - QUOTE_LINES} more lines)`)
   const text = question ? comment.text.replaceAll("??", "?") : comment.text

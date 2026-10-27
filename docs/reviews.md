@@ -122,6 +122,24 @@ wrappers also failed to preserve the original plugins' design.
   limits, durable family tombstones/permissions, setup-level connection pinning,
   distinct rendered previews, and responsive background-sync regressions.
 
+## Review
+
+- **Design:** domain (patch rows, anchors, delivery, usages against the diff,
+  names per language), adapters (diff sources, RPC, language-server pool, search),
+  a controller that owns every write, and presentation stay separate. The message
+  ID comes from the host's own generator rather than a copy of it.
+- **Correctness:** a refresh no longer remounts an open comment box; an edit can't
+  outlive its editor; one send per session at a time; declared refusals return
+  comments to drafts. Lookups are effect-driven and answer the frame that asked,
+  by ID, so closing, going back, or switching sessions can't strand a list. A
+  name on a removed line is only ever searched for. Language servers report
+  loading as progress; the first lookup waits for it, which a real
+  typescript-language-server run confirmed (1 usage before, all 10 after).
+- **Test value:** behavior through the panel with a reactive panel input and an
+  asynchronous fake store; a fake language server with its own framing; real
+  `git grep`; a terminal/server metadata contract test. The PTY smoke opens the
+  panel and runs usages through the real RPC.
+
 ## Smoke-check safety
 
 Correctness review found that inherited `OPENCODE_DB` could bypass temporary XDG

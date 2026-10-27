@@ -34,7 +34,7 @@ type Handler = (event: { type: string; data: Record<string, unknown> }) => void
  * A terminal host in memory: synced storage as Solid stores, typed events you emit, a session inbox, prompts you can
  * hold or fail, and keymap layers that honor `enabled` and leave with their owner, as in the host.
  */
-export function fakeHost(options: { diff?: () => FileDiffInfo[] } = {}) {
+export function fakeHost(options: { diff?: () => FileDiffInfo[]; files?: Record<string, string>; lsp?: unknown } = {}) {
   const handlers = new Map<string, Set<Handler>>()
   const prompts: SessionPromptInput[] = []
   const toasts: { message: string; variant?: string }[] = []
@@ -72,6 +72,15 @@ export function fakeHost(options: { diff?: () => FileDiffInfo[] } = {}) {
         diff: async () => files(),
       },
       message: { list: async () => ({ data: [{ id: "msg_first" }], cursor: {} }) },
+      file: {
+        read: async ({ path }: { path: string }) => {
+          const content = options.files?.[path]
+          if (content === undefined) throw new Error(`No such file: ${path}`)
+          return new TextEncoder().encode(content)
+        },
+      },
+      // Two config documents, as OpenCode layers them; the later one's servers win.
+      config: { get: async () => [{ type: "document", info: {} }, { type: "document", info: options.lsp === undefined ? {} : { lsp: options.lsp } }] },
       rpc: () => ({ replies: async () => ({ replies: {} }) }),
       vcs: { diff: async () => ({ data: files() }), base: async () => ({ data: { name: "main" } }), branch: { list: async () => ({ data: ["main", "dev"] }) } },
     },

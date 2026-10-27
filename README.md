@@ -133,7 +133,7 @@ Building something that needs a voice-over or artwork? Connect OpenRouter once w
 
 The agent is ten files in and just hardcoded a timeout you wanted configurable. Point at the line instead of describing it. `/review` opens the agent's changes beside the conversation, updating as it edits.
 
-**Comment on a line → press `S` → the agent picks it up at its next step.** Comments carry the file and lines, so the agent finds them without guessing, and it replies to each one, shown under your comment. End a comment with `??` to ask instead of asking for a change. Review this turn, the whole session, uncommitted changes, or the branch against its base, and mark files viewed until they change again.
+**Comment on a line → press `S` → the agent picks it up at its next step.** Comments carry the file and lines, so the agent finds them without guessing, and it replies to each one, shown under your comment. End a comment with `??` to ask instead of asking for a change. Press `u` on a name to see its usages, with the callers the change may have missed flagged, through your language server or a search. Review this turn, the whole session, uncommitted changes, or the branch against its base, and mark files viewed until they change again.
 
 [Explore Review →](plugins/review/README.md)
 

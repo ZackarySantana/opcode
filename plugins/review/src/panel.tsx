@@ -2,20 +2,25 @@
 
 import { errorMessage } from "@opcode/core"
 import { createRefresh, type RefreshState } from "@opcode/core/refresh"
-import { KeyHints, usePalette, useText } from "@opcode/ui"
+import { KeyHints, usePalette, useText, type KeyHint } from "@opcode/ui"
 import type { FileDiffInfo } from "@opencode/client"
 import { usePlugin } from "@opencode/plugin/tui"
 import type { PanelInput } from "@opencode/plugin/tui/context"
 import { CliRenderEvents, pathToFiletype, type BoxRenderable, type ScrollBoxRenderable, type SyntaxStyle, type TextareaRenderable } from "@opentui/core"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js"
-import type { Position, ReviewController } from "./host"
-import { hunkStarts, lineOf, parsePatch, segments, type Segment } from "./patch"
+import type { Cursor, Frame, Position, ReviewController } from "./host"
+import { frameFor, frameID, trail } from "./frames"
+import { FILE_RADIUS, filePatch, hunkStarts, lineOf, parsePatch, segments, shownLines, type Segment } from "./patch"
+import type { Lookup, Place } from "./references"
+import { arrangeReferences, scopes } from "./usages"
+import { ReferencesView } from "./places"
 import {
   anchorOf, drafts, isQuestion, lineRange, locate, modes, modeTitle, nearestRow, placeComments, PLUGIN_ID,
-  type Anchor, type Comment, type Delivery, type FileList as FileListStyle, type Mode, type Reply,
+  type Anchor, type Comment, type Delivery, type FileList as FileListStyle, type Mode, type ReferenceEngine, type Reply,
 } from "./review"
 import { FileList } from "./files"
 import { listBranches, loadDiff } from "./source"
+import { defaultToken, identifiers } from "./symbols"
 import { treeOrder } from "./tree"
 
 /** Below this width the file list gives way to the diff; the header still names the file. */
@@ -35,6 +40,8 @@ const deliveryLabel: Record<Delivery, string> = {
   pending: "waiting for the agent",
   sent: "sent",
 }
+
+type RefsFrame = Extract<Frame, { kind: "refs" }>
 
 /** Live diffs of a session with comments between the lines. Everything it remembers lives in the controller, so closing it loses nothing. */
 export function ReviewPanel(props: { panel: PanelInput; review: ReviewController; syntax?: () => SyntaxStyle | undefined }) {
@@ -89,35 +96,95 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   })
   const position = () => review.position(sessionID())
   const place = (change: Partial<Position>) => review.setPosition(sessionID(), { ...position(), ...change })
+  /** The file picked in the diff, under any views opened from it. */
   const file = createMemo(() => files().find((entry) => entry.file === position().file) ?? ordered()[0])
   const fileIndex = () => Math.max(0, ordered().findIndex((entry) => entry.file === file()?.file))
-  // Every refresh brings new objects; only a changed patch re-parses, so an unchanged diff (and a comment being typed) stays mounted.
-  const patchText = createMemo(() => file()?.patch ?? "")
-  const rows = createMemo(() => parsePatch(patchText()))
   const viewed = (entry: FileDiffInfo) => review.isViewed(sessionID(), mode(), entry.file, entry.patch)
   const replies = () => review.repliesFor(sessionID())
 
-  // The cursor is a line, not a row index, so a refresh that adds rows above it doesn't move it.
-  const cursor = createMemo(() => nearestRow(rows(), position().line, position().old, position().text))
-  const moveTo = (index: number) => {
-    const row = rows()[Math.max(0, Math.min(rows().length - 1, index))]
-    if (row) place({ file: file()?.file, line: lineOf(row), old: row.kind === "del", text: row.text })
-  }
-  const [mark, setMark] = createSignal<number>()
-  // A range belongs to one file of one session.
-  createEffect(on(() => `${sessionID()}:${file()?.file}`, () => setMark(undefined), { defer: true }))
-  const selectFile = (index: number) => {
+  // Views opened from the diff: usages, a diff row jumped to, or a file the diff doesn't show. Escape pops one.
+  const stack = () => position().stack ?? []
+  const top = () => stack().at(-1)
+  const setStack = (next: readonly Frame[]) => place({ stack: next })
+  const setTop = (change: Partial<Frame>) => setStack([...stack().slice(0, -1), { ...stack().at(-1)!, ...change } as Frame])
+  const push = (frame: Frame) => {
     saveEditor()
-    const next = ordered()[Math.max(0, Math.min(ordered().length - 1, index))]
-    if (next) place({ file: next.file, line: undefined, old: undefined, text: undefined })
+    setCommentOn(undefined)
+    setStack([...stack(), frame])
+  }
+  const pop = () => {
+    saveEditor()
+    setCommentOn(undefined)
+    setStack(stack().slice(0, -1))
   }
 
-  const comments = createMemo(() => state().comments.filter((comment) => comment.file === file()?.file))
+  /** What the cursor moves through: a file of the diff, or a file opened read-only around a usage. */
+  const doc = createMemo(() => {
+    const frame = top()
+    if (frame?.kind === "file") return { file: frame.file, patch: frame.content === undefined ? "" : filePatch(frame.content, frame.center), outside: true }
+    if (frame?.kind === "refs") return undefined
+    const name = frame?.kind === "diff" ? frame.file : file()?.file
+    const entry = files().find((candidate) => candidate.file === name)
+    return entry && { file: entry.file, patch: entry.patch, outside: false }
+  })
+  // Every refresh brings new objects; only a changed patch re-parses, so an unchanged diff (and a comment being typed) stays mounted.
+  const patchText = createMemo(() => doc()?.patch ?? "")
+  const rows = createMemo(() => parsePatch(patchText()))
+  const docFile = () => doc()?.file
+
+  /** The cursor of the document shown: the diff's, or the open view's own. */
+  const here = (): Cursor => {
+    const frame = top()
+    return frame && frame.kind !== "refs" ? frame : position()
+  }
+  const setHere = (change: Partial<Cursor>) => {
+    const frame = top()
+    if (frame && frame.kind !== "refs") setTop(change)
+    else place(change)
+  }
+  // The cursor is a line and its text, not a row index, so a refresh that adds rows above it doesn't move it.
+  const cursor = createMemo(() => nearestRow(rows(), here().line, here().old, here().text))
+  const moveTo = (index: number) => {
+    const row = rows()[Math.max(0, Math.min(rows().length - 1, index))]
+    if (!row) return
+    const frame = top()
+    // A file view shows a stretch of the file; it moves along once the cursor nears an edge.
+    const recenter = frame?.kind === "file" && Math.abs(lineOf(row) - frame.center) > FILE_RADIUS - 10 ? { center: lineOf(row) } : {}
+    setHere({ ...frame ? recenter : { file: docFile() }, line: lineOf(row), old: row.kind === "del", text: row.text, token: undefined })
+  }
+  const [mark, setMark] = createSignal<number>()
+  // A range belongs to one document of one session. A memo, so moving the cursor (which rewrites the position) keeps it.
+  const markScope = createMemo(() => `${sessionID()}:${top()?.id ?? "diff"}:${docFile()}`)
+  createEffect(on(markScope, () => setMark(undefined), { defer: true }))
+  const selectFile = (index: number) => {
+    saveEditor()
+    setCommentOn(undefined)
+    const next = ordered()[Math.max(0, Math.min(ordered().length - 1, index))]
+    if (next) place({ file: next.file, line: undefined, old: undefined, text: undefined, token: undefined, stack: [] })
+  }
+
+  // The symbol on the cursor row that usages and definitions are for.
+  const tokens = createMemo(() => {
+    const row = rows()[cursor()]
+    return row && docFile() ? identifiers(row.text, docFile()!) : []
+  })
+  const token = createMemo(() => {
+    const list = tokens()
+    if (!list.length) return undefined
+    const picked = here().token
+    return picked !== undefined && picked < list.length ? picked : Math.min(list.length - 1, defaultToken(rows()[cursor()]!, rows(), docFile()!))
+  })
+  const stepToken = (by: number) => {
+    const at = token()
+    if (at !== undefined) setHere({ token: Math.max(0, Math.min(tokens().length - 1, at + by)) })
+  }
+
+  const comments = createMemo(() => state().comments.filter((comment) => comment.file === docFile()))
   const placed = createMemo(() => placeComments(comments(), rows()))
   const deliveries = () => review.deliveries(sessionID())
   // Drafts whose text the agent moved take their new lines, which the message and the card show.
   createEffect(on(placed, (list) => {
-    const name = file()?.file
+    const name = docFile()
     if (!name) return
     for (const { comment, at } of list) {
       if (comment.sent || !at) continue
@@ -128,7 +195,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   const editing = () => position().editing
   const editAt = createMemo(() => {
     const edit = editing()
-    if (!edit || edit.anchor.file !== file()?.file) return undefined
+    if (!edit || edit.anchor.file !== docFile()) return undefined
     return locate(edit.anchor, rows())?.to ?? rows().length - 1
   })
   const breaks = createMemo(() => new Set([...placed().flatMap(({ at }) => at ? [at.to] : []), ...editAt() === undefined ? [] : [editAt()!]]))
@@ -151,14 +218,14 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     const existing = atCursor()
     if (existing && !existing.sent) {
       // A plain copy: the memory store must not hold the synced store's live objects.
-      const { file, side, start, end, quote } = existing
-      place({ editing: { id: existing.id, anchor: { file, side, start, end, quote: [...quote] }, text: existing.text } })
+      const { file, side, start, end, quote, outside } = existing
+      place({ editing: { id: existing.id, anchor: { file, side, start, end, quote: [...quote], ...outside ? { outside } : {} }, text: existing.text } })
       return
     }
-    const name = file()?.file
-    if (!name || !rows().length) return
+    const current = doc()
+    if (!current || !rows().length) return
     const span = range() ?? { from: cursor(), to: cursor() }
-    place({ editing: { anchor: anchorOf(name, rows(), span.from, span.to), text: "" } })
+    place({ editing: { anchor: { ...anchorOf(current.file, rows(), span.from, span.to), ...current.outside ? { outside: true } : {} }, text: "" } })
     setMark(undefined)
   }
   let editor: TextareaRenderable | undefined
@@ -172,15 +239,123 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     place({ editing: undefined })
     props.panel.focus()
   }
-  // A comment whose file left the view (the agent reverted it) is saved rather than left without a box.
-  createEffect(() => { if (editing() && diff().value && editing()!.anchor.file !== file()?.file) saveEditor() })
+  // A comment whose document left the view (the agent reverted the file) is saved rather than left without a box.
+  createEffect(() => { if (editing() && diff().value && doc() && rows().length && editing()!.anchor.file !== docFile()) saveEditor() })
+
+  // A file opened from a usage is read once, from the session's directory on the server.
+  createEffect(on(() => {
+    const frame = top()
+    return frame?.kind === "file" && frame.content === undefined && !frame.error ? frame.file : undefined
+  }, (path) => {
+    const directory = review.directory(sessionID())
+    if (!path || !directory) return
+    const controller = new AbortController()
+    onCleanup(() => controller.abort())
+    api.client.file.read({ path, location: { directory } }, { signal: controller.signal }).then(
+      (bytes) => { if (!controller.signal.aborted && top()?.kind === "file") setTop({ content: new TextDecoder().decode(bytes) }) },
+      (error) => { if (!controller.signal.aborted && top()?.kind === "file") setTop({ error: errorMessage(error) }) },
+    )
+  }))
+
+  // A file the agent changes on disk is read again. Paths in the event may be absolute.
+  stops.push(api.data.on("filesystem.changed", (event) => {
+    const frame = top()
+    const changed = event.data.file.replaceAll("\\", "/")
+    if (frame?.kind === "file" && frame.content !== undefined && (changed === frame.file || changed.endsWith(`/${frame.file}`))) setTop({ content: undefined, error: undefined })
+  }))
+  // A diff row jumped to whose file the diff no longer shows becomes a read-only view of the file.
+  createEffect(() => {
+    const frame = top()
+    if (frame?.kind === "diff" && diff().value && !files().some((entry) => entry.file === frame.file)) setTop({ kind: "file", center: frame.line ?? 1 } as Partial<Frame>)
+  })
+
+  const shown = createMemo(() => new Map(files().map((entry) => [entry.file, shownLines(parsePatch(entry.patch))])))
+  /** Opens a place: on its diff row when the diff shows the line, else in a read-only view of its file. */
+  const openPlace = (target: Place, replace = false) => {
+    const frame = frameFor(target, (path) => shown().get(path), frameID())
+    if (replace) setStack([...stack().slice(0, -1), frame])
+    else push(frame)
+    return frame.id
+  }
+  // c on a usage opens it and starts a comment there, once that view's lines are in.
+  const [commentOn, setCommentOn] = createSignal<number>()
+  createEffect(() => {
+    const pending = commentOn()
+    if (pending === undefined || top()?.id !== pending || !rows().length) return
+    setCommentOn(undefined)
+    startComment()
+  })
+
+  /** The symbol under the cursor, and whether only a search can find it: a removed line isn't in any file a language server reads. */
+  const lookup = (): { lookup: Lookup; searchOnly: boolean } | undefined => {
+    const row = rows()[cursor()]
+    const at = token()
+    const picked = at === undefined ? undefined : tokens()[at]
+    if (!row || !picked || !docFile()) return undefined
+    return { lookup: { file: docFile()!, line: row.kind === "del" ? row.newAt : row.new!, column: picked.start, name: picked.name }, searchOnly: row.kind === "del" }
+  }
+  const find = (kind: "usages" | "definition", from = lookup()) => {
+    if (!from) return api.ui.toast.show({ title: "Review", message: "No name on this line to look up." })
+    push({ id: frameID(), kind: "refs", query: kind, lookup: from.lookup, searchOnly: from.searchOnly, scope: "all", selected: 0 })
+  }
+  // An unanswered list on top is looked up, also after reopening the panel or coming back to it. The answer goes to
+  // the frame that asked, by ID, in the session that asked, wherever that frame is by then.
+  createEffect(on(() => {
+    const frame = top()
+    return frame?.kind === "refs" && !frame.found && !frame.error ? frame.id : undefined
+  }, (id) => {
+    const frame = top()
+    if (id === undefined || frame?.kind !== "refs") return
+    const session = sessionID()
+    const controller = new AbortController()
+    onCleanup(() => controller.abort())
+    review.findSymbols(session, frame.query, frame.lookup, controller.signal, frame.searchOnly).then((found) => {
+      if (controller.signal.aborted) return
+      // A single definition opens directly; any other answer is a list to choose from.
+      const only = frame.query === "definition" && found.places.length === 1 ? found.places[0]! : undefined
+      review.updateFrame(session, id, (current) => only ? frameFor(only, (path) => shown().get(path), current.id) : { ...current, found } as Frame)
+    }, (error) => { if (!controller.signal.aborted) review.updateFrame(session, id, (current) => ({ ...current, error: errorMessage(error) }) as Frame) })
+  }))
+  const refsFrame = () => {
+    const frame = top()
+    return frame?.kind === "refs" ? frame : undefined
+  }
+  const listFor = (frame: RefsFrame) => frame.found
+    ? arrangeReferences(frame.lookup.name, frame.found.places, files(), { scope: frame.scope, current: frame.lookup.file, partial: frame.found.partial })
+    : undefined
+  // Moving the selection rewrites the frame; the list stays the same unless the answer, the scope, or the diff changed.
+  const listKey = createMemo(() => {
+    const frame = refsFrame()
+    return frame?.found ? { frame, found: frame.found, scope: frame.scope, files: files() } : undefined
+  }, undefined, { equals: (a, b) => a?.found === b?.found && a?.scope === b?.scope && a?.files === b?.files })
+  const references = createMemo(() => { const key = listKey(); return key && listFor(key.frame) })
+  const flatReferences = () => references()?.listed ?? []
+  const selectReference = (index: number) => setTop({ selected: Math.max(0, Math.min(flatReferences().length - 1, index)) } as Partial<RefsFrame>)
+  const openSelected = () => {
+    const chosen = flatReferences()[refsFrame()?.selected ?? 0]
+    if (chosen) openPlace(chosen)
+  }
+  /** From a usage opened out of the list, the next or previous one in its place. */
+  const stepUsage = (by: number) => {
+    const parent = stack().at(-2)
+    if (parent?.kind !== "refs") return false
+    const flat = listFor(parent)?.listed ?? []
+    const index = Math.max(0, Math.min(flat.length - 1, parent.selected + by))
+    const next = flat[index]
+    if (!next) return true
+    saveEditor()
+    setStack([...stack().slice(0, -2), { ...parent, selected: index }])
+    openPlace(next)
+    return true
+  }
 
   const send = () => void review.send(sessionID(), view())
   const hasUnsent = () => review.hasUnsent(sessionID())
-  /** What to review and how to list the files, in one menu. */
+  /** What to review, how to list the files, and how to find usages, in one menu. */
   const openOptions = async () => {
     const shown = (on: boolean, description: string) => on ? `Shown now. ${description}` : description
-    const choice = await api.ui.dialog.select<Mode | "base" | FileListStyle>({
+    const using = (engine: ReferenceEngine, description: string) => review.settings().references === engine ? `In use. ${description}` : description
+    const choice = await api.ui.dialog.select<Mode | "base" | FileListStyle | `refs:${ReferenceEngine}`>({
       title: "Review options",
       current: mode(),
       options: [
@@ -188,10 +363,13 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
         { title: "Base branch...", value: "base" as const, description: state().base ? `Comparing against ${state().base}` : "Pick what the branch view compares against", category: "View" },
         { title: "Folder tree", value: "tree" as const, description: shown(review.settings().fileList === "tree", "Files under their folders"), category: "File list" },
         { title: "Full paths", value: "paths" as const, description: shown(review.settings().fileList === "paths", "Each file's whole path"), category: "File list" },
+        { title: "Language server, then search", value: "refs:lsp" as const, description: using("lsp", "The language server OpenCode is set up with for the file, else a search by name"), category: "Usages and definitions" },
+        { title: "Search only", value: "refs:search" as const, description: using("search", "A whole-word search for the name, without starting a language server"), category: "Usages and definitions" },
       ],
     })
     if (choice === "base") return chooseBase()
     if (choice === "tree" || choice === "paths") return void review.updateSettings({ fileList: choice })
+    if (choice === "refs:lsp" || choice === "refs:search") return void review.updateSettings({ references: choice === "refs:lsp" ? "lsp" : "search" })
     if (choice) void review.setView(sessionID(), choice)
   }
   const chooseBase = async () => {
@@ -214,7 +392,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     // Marking a file viewed moves on to the next one still waiting.
     const order = [...ordered().slice(fileIndex() + 1), ...ordered().slice(0, fileIndex())]
     const next = order.find((candidate) => !viewed(candidate))
-    if (next) place({ file: next.file, line: undefined, old: undefined, text: undefined })
+    if (next) place({ file: next.file, line: undefined, old: undefined, text: undefined, token: undefined })
   }
 
   let scroll: ScrollBoxRenderable | undefined
@@ -222,10 +400,12 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   const starts = createMemo(() => hunkStarts(rows()))
   const [listShown, setListShown] = createSignal(true)
   const wide = () => props.panel.width >= TREE_WIDTH && listShown()
+  const inList = () => !!refsFrame()
+  const back = () => { if (stack().length) pop() }
 
   // The host scopes a panel's layers to when it owns input; checking focus too keeps a prompt you're typing in safe.
   api.keymap.layer(() => ({
-    enabled: () => props.panel.focused && !editing(),
+    enabled: () => props.panel.focused && !editing() && !inList(),
     commands: [
       { id: `${PLUGIN_ID}.down`, title: "Next line", bind: "j,down", run: () => moveTo(cursor() + 1) },
       { id: `${PLUGIN_ID}.up`, title: "Previous line", bind: "k,up", run: () => moveTo(cursor() - 1) },
@@ -235,25 +415,60 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       { id: `${PLUGIN_ID}.last`, title: "Last line", bind: "shift+g,end", run: () => moveTo(rows().length - 1) },
       { id: `${PLUGIN_ID}.hunk.next`, title: "Next hunk", bind: "]", run: () => moveTo(starts().find((start) => start > cursor()) ?? cursor()) },
       { id: `${PLUGIN_ID}.hunk.previous`, title: "Previous hunk", bind: "[", run: () => moveTo([...starts()].reverse().find((start) => start < cursor()) ?? 0) },
-      { id: `${PLUGIN_ID}.file.next`, title: "Next file", bind: "n,alt+down", run: () => selectFile(fileIndex() + 1) },
-      { id: `${PLUGIN_ID}.file.previous`, title: "Previous file", bind: "p,alt+up", run: () => selectFile(fileIndex() - 1) },
+      { id: `${PLUGIN_ID}.file.next`, title: "Next file, or the next usage", bind: "n,alt+down", run: () => { if (!stepUsage(1)) selectFile(fileIndex() + 1) } },
+      { id: `${PLUGIN_ID}.file.previous`, title: "Previous file, or the previous usage", bind: "p,alt+up", run: () => { if (!stepUsage(-1)) selectFile(fileIndex() - 1) } },
+      { id: `${PLUGIN_ID}.symbol.previous`, title: "Previous name on the line", bind: "h,left", run: () => stepToken(-1) },
+      { id: `${PLUGIN_ID}.symbol.next`, title: "Next name on the line", bind: "l,right", run: () => stepToken(1) },
+      { id: `${PLUGIN_ID}.usages`, title: "Usages of the name", bind: "u", run: () => find("usages") },
+      { id: `${PLUGIN_ID}.definition`, title: "Definition of the name", bind: "d", run: () => find("definition") },
       { id: `${PLUGIN_ID}.comment`, title: "Comment on the line or range", bind: "c,return", run: startComment },
       { id: `${PLUGIN_ID}.range`, title: "Start or clear a range", bind: "v", run: () => setMark((current) => current === undefined ? cursor() : undefined) },
       { id: `${PLUGIN_ID}.delete`, title: "Delete the draft here", bind: "x", run: () => {
         const comment = atCursor()
         if (comment && !comment.sent) void review.removeComment(sessionID(), comment.id)
       } },
-      { id: `${PLUGIN_ID}.viewed`, title: "Mark the file viewed", bind: "m", run: toggleFileViewed },
+      { id: `${PLUGIN_ID}.viewed`, title: "Mark the file viewed", bind: "m", enabled: () => !stack().length, run: toggleFileViewed },
+      { id: `${PLUGIN_ID}.back`, title: "Back", bind: "ctrl+o", enabled: () => stack().length > 0, run: back },
+      // Leaving sends what you wrote, like submitting a review. It never reaches the host's escape, which interrupts the agent.
+      // Inside a view opened from the diff, escape goes back instead.
+      { id: `${PLUGIN_ID}.leave`, title: "Back, or send the drafts and close", bind: "escape", run: () => {
+        if (stack().length) return pop()
+        if (hasUnsent()) send()
+        props.panel.close()
+      } },
+    ],
+  }))
+  api.keymap.layer(() => ({
+    enabled: () => props.panel.focused && !editing() && inList(),
+    commands: [
+      { id: `${PLUGIN_ID}.list.down`, title: "Next place", bind: "j,down,n", run: () => selectReference((refsFrame()?.selected ?? 0) + 1) },
+      { id: `${PLUGIN_ID}.list.up`, title: "Previous place", bind: "k,up,p", run: () => selectReference((refsFrame()?.selected ?? 0) - 1) },
+      { id: `${PLUGIN_ID}.list.open`, title: "Open the place", bind: "return", run: openSelected },
+      { id: `${PLUGIN_ID}.list.comment`, title: "Comment on the place", bind: "c", run: () => {
+        if (!flatReferences().length) return
+        const chosen = flatReferences()[refsFrame()?.selected ?? 0]
+        if (chosen) setCommentOn(openPlace(chosen))
+      } },
+      { id: `${PLUGIN_ID}.list.scope`, title: "All, in the diff, or outside it", bind: "tab", run: () => {
+        const frame = refsFrame()
+        if (frame) setTop({ scope: scopes[(scopes.indexOf(frame.scope) + 1) % scopes.length], selected: 0 } as Partial<RefsFrame>)
+      } },
+      { id: `${PLUGIN_ID}.list.definition`, title: "Definition of the name", bind: "d", run: () => {
+        const frame = refsFrame()
+        if (frame) find("definition", { lookup: frame.lookup, searchOnly: frame.searchOnly })
+      } },
+      { id: `${PLUGIN_ID}.list.back`, title: "Back", bind: "escape,ctrl+o", run: pop },
+    ],
+  }))
+  // Commands that work in every view.
+  api.keymap.layer(() => ({
+    enabled: () => props.panel.focused && !editing(),
+    commands: [
       { id: `${PLUGIN_ID}.options`, title: "Review options", bind: "o", run: () => void openOptions() },
       { id: `${PLUGIN_ID}.files`, title: "Toggle the file list", bind: "b", run: () => setListShown((shown) => !shown) },
       { id: `${PLUGIN_ID}.fullscreen`, title: "Toggle full screen", bind: "f", run: () => props.panel.toggleFullscreen() },
       { id: `${PLUGIN_ID}.refresh`, title: "Refresh", bind: "r", run: () => void reads.refresh() },
       { id: `${PLUGIN_ID}.send`, title: "Send the drafts to the agent", bind: "shift+s", run: send },
-      // Leaving sends what you wrote, like submitting a review. It never reaches the host's escape, which interrupts the agent.
-      { id: `${PLUGIN_ID}.leave`, title: "Send the drafts and close", bind: "escape", run: () => {
-        if (hasUnsent()) send()
-        props.panel.close()
-      } },
       { id: `${PLUGIN_ID}.close`, title: "Close, keeping the drafts", bind: "q", run: () => props.panel.close() },
     ],
   }))
@@ -301,6 +516,25 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     if (diff().loading) parts.push("refreshing")
     return parts.join(" · ")
   }
+  const hints = (): KeyHint[] => {
+    if (editing()) return [{ key: "enter", label: "save" }, { key: "shift+enter", label: "newline" }, { key: "esc", label: "save & close", command: `${PLUGIN_ID}.editor.save` }, { key: "??", label: "asks a question" }]
+    if (inList()) return [
+      { key: "enter", label: "open", command: `${PLUGIN_ID}.list.open` },
+      { key: "c", label: "comment", command: `${PLUGIN_ID}.list.comment` },
+      { key: "tab", label: "scope", command: `${PLUGIN_ID}.list.scope` },
+      { key: "d", label: "definition", command: `${PLUGIN_ID}.list.definition` },
+      { key: "esc", label: "back", command: `${PLUGIN_ID}.list.back` },
+    ]
+    return [
+      { key: "c", label: "comment", command: `${PLUGIN_ID}.comment` },
+      { key: "v", label: mark() === undefined ? "range" : "end range", command: `${PLUGIN_ID}.range` },
+      { key: "u", label: "usages", command: `${PLUGIN_ID}.usages` },
+      { key: "d", label: "definition", command: `${PLUGIN_ID}.definition` },
+      ...stack().length ? [] : [{ key: "S", label: hasUnsent() ? `send ${draftCount() || ""}`.trim() : "send", command: `${PLUGIN_ID}.send` }, { key: "m", label: "viewed", command: `${PLUGIN_ID}.viewed` }],
+      { key: "o", label: "options", command: `${PLUGIN_ID}.options` },
+      { key: "esc", label: stack().length ? "back" : hasUnsent() ? "send & close" : "close", command: `${PLUGIN_ID}.leave` },
+    ]
+  }
 
   return (
     <box width="100%" height="100%" flexDirection="column" minWidth={0} minHeight={0} paddingX={1} backgroundColor={palette.background}>
@@ -316,76 +550,95 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
             viewed={viewed} onSelect={(path) => selectFile(ordered().findIndex((entry) => entry.file === path))} />
         </Show>
         <box flexDirection="column" flexGrow={1} minWidth={0} minHeight={0}>
-          <Show when={file()} fallback={<text fg={palette.muted} wrapMode="word">{diff().value ? `Nothing changed in ${view().toLowerCase()}. Press o to review something else.` : "Loading changes..."}</text>}>
-            {(entry) => (
-              <text fg={palette.text} wrapMode="none" flexShrink={0}>
-                <span style={{ fg: palette.muted }}>{fileIndex() + 1}/{files().length} </span><b>{text.shorten(entry().file, Math.max(10, props.panel.width - 30))}</b> <span style={{ fg: palette.success }}>+{entry().additions}</span> <span style={{ fg: palette.error }}>-{entry().deletions}</span>
-                <span style={{ fg: palette.muted }}>{viewed(entry()) ? "  viewed" : ""}</span>
-              </text>
+          <Show when={stack().length}>
+            <text fg={palette.muted} wrapMode="none" flexShrink={0}>← {text.shorten(trail(stack()), Math.max(10, props.panel.width - 6))}</text>
+          </Show>
+          <Show when={refsFrame()} fallback={
+            <>
+              <Show when={top()?.kind === "file" ? top() as Extract<Frame, { kind: "file" }> : undefined} fallback={
+                <Show when={file()} fallback={<text fg={palette.muted} wrapMode="word">{diff().value ? `Nothing changed in ${view().toLowerCase()}. Press o to review something else.` : "Loading changes..."}</text>}>
+                  {(entry) => (
+                    <Show when={!stack().length}>
+                      <text fg={palette.text} wrapMode="none" flexShrink={0}>
+                        <span style={{ fg: palette.muted }}>{fileIndex() + 1}/{files().length} </span><b>{text.shorten(entry().file, Math.max(10, props.panel.width - 30))}</b> <span style={{ fg: palette.success }}>+{entry().additions}</span> <span style={{ fg: palette.error }}>-{entry().deletions}</span>
+                        <span style={{ fg: palette.muted }}>{viewed(entry()) ? "  viewed" : ""}</span>
+                      </text>
+                    </Show>
+                  )}
+                </Show>
+              }>
+                {(frame) => (
+                  <text fg={frame().error ? palette.error : palette.muted} wrapMode="word" flexShrink={0}>
+                    {frame().error ? `! ${frame().error}` : frame().content === undefined ? `Opening ${frame().file}...` : "Read-only: the diff doesn't show this. Comments here tell the agent it's outside the diff."}
+                  </text>
+                )}
+              </Show>
+              <scrollbox ref={(element: ScrollBoxRenderable) => { scroll = element }} flexGrow={1} minHeight={0}>
+                <For each={[false, true]}>{(outside) => (
+                  // Comments left outside the diff aren't gone from it; they were never in it.
+                  <Show when={placed().some(({ comment, at }) => !at && !!comment.outside === outside)}>
+                    <box flexDirection="column" marginBottom={1}>
+                      <text fg={palette.muted}>{outside ? "Outside the diff:" : "Not in this diff any more:"}</text>
+                      <For each={placed().filter(({ comment, at }) => !at && !!comment.outside === outside)}>{({ comment }) => <CommentCard comment={comment} delivery={deliveries().get(comment.id) ?? "draft"} reply={replies()[comment.id]} quote />}</For>
+                    </box>
+                  </Show>
+                )}</For>
+                <For each={parts()}>{(part) => {
+                  const end = part.start + part.rows.length - 1
+                  onCleanup(() => boxes.delete(part.start))
+                  let box: BoxRenderable | undefined
+                  return (
+                    <box flexDirection="column" minWidth={0}>
+                      <Show when={part.start > 0 && rows()[part.start - 1]!.hunk !== part.rows[0]!.hunk}>
+                        <text fg={colors().text.hunkHeader}>  ⋯</text>
+                      </Show>
+                      <box ref={(element: BoxRenderable) => { box = element; boxes.set(part.start, element) }} flexDirection="row" minWidth={0}
+                        onMouseDown={(event) => { if (box) moveTo(part.start + event.y - box.y) }}>
+                        <text width={1} flexShrink={0} wrapMode="none">
+                          <For each={part.rows}>{(_, offset) => <span style={{ fg: gutter(part.start + offset()).fg }}>{gutter(part.start + offset()).glyph + (offset() < part.rows.length - 1 ? "\n" : "")}</span>}</For>
+                        </text>
+                        <diff diff={part.patch} view="unified" filetype={pathToFiletype(docFile() ?? "")} syntaxStyle={props.syntax?.()} wrapMode="none" showLineNumbers
+                          flexGrow={1} minWidth={0} fg={colors().text.context}
+                          addedBg={colors().background.added} removedBg={colors().background.removed} contextBg={colors().background.context}
+                          addedSignColor={colors().text.added} removedSignColor={colors().text.removed} lineNumberFg={colors().lineNumber.text}
+                          addedLineNumberBg={colors().lineNumber.background.added} removedLineNumberBg={colors().lineNumber.background.removed} />
+                      </box>
+                      <For each={placed().filter(({ at }) => at?.to === end)}>{({ comment }) => <CommentCard comment={comment} delivery={deliveries().get(comment.id) ?? "draft"} reply={replies()[comment.id]} />}</For>
+                      <Show when={editAt() === end && editing()}>{(edit) => (
+                        <Editor anchor={edit().anchor} id={edit().id} text={edit().text} ref={(element) => { editor = element }} onSubmit={saveEditor}
+                          onChange={(body) => {
+                            // A change event can trail the save that closed the editor; it must not reopen it.
+                            const current = editing()
+                            if (current) place({ editing: { ...current, text: body } })
+                          }} />
+                      )}</Show>
+                    </box>
+                  )
+                }}</For>
+              </scrollbox>
+              <Show when={!editing() && tokens().length}>
+                <text wrapMode="none" flexShrink={0} fg={palette.muted}>
+                  <span style={{ fg: palette.muted }}>h/l </span>
+                  <For each={tokens()}>{(candidate, index) => <span style={index() === token() ? { fg: palette.selectedText, bg: palette.selectedBackground } : { fg: palette.text }}>{` ${candidate.name} `}</span>}</For>
+                </text>
+              </Show>
+            </>
+          }>
+            {(frame) => (
+              <ReferencesView query={frame().query} name={frame().lookup.name} found={frame().found} error={frame().error} list={references()}
+                scope={frame().scope} selected={frame().selected} width={props.panel.width} onSelect={(index) => { selectReference(index); openSelected() }} />
             )}
           </Show>
-          <scrollbox ref={(element: ScrollBoxRenderable) => { scroll = element }} flexGrow={1} minHeight={0}>
-            <Show when={placed().some(({ at }) => !at)}>
-              <box flexDirection="column" marginBottom={1}>
-                <text fg={palette.muted}>Not in this diff any more:</text>
-                <For each={placed().filter(({ at }) => !at)}>{({ comment }) => <CommentCard comment={comment} delivery={deliveries().get(comment.id) ?? "draft"} reply={replies()[comment.id]} quote />}</For>
-              </box>
-            </Show>
-            <For each={parts()}>{(part) => {
-              const end = part.start + part.rows.length - 1
-              onCleanup(() => boxes.delete(part.start))
-              let box: BoxRenderable | undefined
-              return (
-                <box flexDirection="column" minWidth={0}>
-                  <Show when={part.start > 0 && rows()[part.start - 1]!.hunk !== part.rows[0]!.hunk}>
-                    <text fg={colors().text.hunkHeader}>  ⋯</text>
-                  </Show>
-                  <box ref={(element: BoxRenderable) => { box = element; boxes.set(part.start, element) }} flexDirection="row" minWidth={0}
-                    onMouseDown={(event) => { if (box) moveTo(part.start + event.y - box.y) }}>
-                    <text width={1} flexShrink={0} wrapMode="none">
-                      <For each={part.rows}>{(_, offset) => <span style={{ fg: gutter(part.start + offset()).fg }}>{gutter(part.start + offset()).glyph + (offset() < part.rows.length - 1 ? "\n" : "")}</span>}</For>
-                    </text>
-                    <diff diff={part.patch} view="unified" filetype={pathToFiletype(file()?.file ?? "")} syntaxStyle={props.syntax?.()} wrapMode="none" showLineNumbers
-                      flexGrow={1} minWidth={0} fg={colors().text.context}
-                      addedBg={colors().background.added} removedBg={colors().background.removed} contextBg={colors().background.context}
-                      addedSignColor={colors().text.added} removedSignColor={colors().text.removed} lineNumberFg={colors().lineNumber.text}
-                      addedLineNumberBg={colors().lineNumber.background.added} removedLineNumberBg={colors().lineNumber.background.removed} />
-                  </box>
-                  <For each={placed().filter(({ at }) => at?.to === end)}>{({ comment }) => <CommentCard comment={comment} delivery={deliveries().get(comment.id) ?? "draft"} reply={replies()[comment.id]} />}</For>
-                  <Show when={editAt() === end && editing()}>{(edit) => (
-                    <Editor anchor={edit().anchor} id={edit().id} text={edit().text} ref={(element) => { editor = element }} onSubmit={saveEditor}
-                      onChange={(body) => {
-                        // A change event can trail the save that closed the editor; it must not reopen it.
-                        const current = editing()
-                        if (current) place({ editing: { ...current, text: body } })
-                      }} />
-                  )}</Show>
-                </box>
-              )
-            }}</For>
-          </scrollbox>
         </box>
       </box>
       <box flexShrink={0} minWidth={0}>
-        <Show when={editing()} fallback={
-          <KeyHints items={[
-            { key: "c", label: "comment", command: `${PLUGIN_ID}.comment` },
-            { key: "v", label: mark() === undefined ? "range" : "end range", command: `${PLUGIN_ID}.range` },
-            { key: "S", label: hasUnsent() ? `send ${draftCount() || ""}`.trim() : "send", command: `${PLUGIN_ID}.send` },
-            { key: "m", label: "viewed", command: `${PLUGIN_ID}.viewed` },
-            { key: "o", label: "options", command: `${PLUGIN_ID}.options` },
-            { key: "n/p", label: "file" },
-            { key: "esc", label: hasUnsent() ? "send & close" : "close", command: `${PLUGIN_ID}.leave` },
-          ]} />
-        }>
-          <KeyHints items={[{ key: "enter", label: "save" }, { key: "shift+enter", label: "newline" }, { key: "esc", label: "save & close", command: `${PLUGIN_ID}.editor.save` }, { key: "??", label: "asks a question" }]} />
-        </Show>
+        <KeyHints items={hints()} />
       </box>
     </box>
   )
 }
 
-const where = (anchor: Anchor) => `${anchor.side === "old" ? "removed " : ""}line ${lineRange(anchor)}`
+const where = (anchor: Anchor) => `${anchor.side === "old" ? "removed " : ""}line ${lineRange(anchor)}${anchor.outside ? " (outside the diff)" : ""}`
 
 function CommentCard(props: { comment: Comment; delivery: Delivery; reply?: Reply; quote?: boolean }) {
   const palette = usePalette()

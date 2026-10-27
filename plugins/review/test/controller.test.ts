@@ -11,7 +11,7 @@ const rows = parsePatch(patch)
 function setup(replies: (sessionID: string) => Promise<Record<string, Reply>> = async () => ({})) {
   const host = fakeHost()
   return createRoot((dispose) => {
-    const review = new ReviewController(host.api, (sessionID) => replies(sessionID), Date.now, fastTimer)
+    const review = new ReviewController(host.api, { replies: (sessionID) => replies(sessionID), timer: fastTimer })
     const comment = (text: string, row = 3) => review.addComment(SESSION, anchorOf("src/auth.ts", rows, row, row), text)
     const states = () => [...review.deliveries(SESSION).values()]
     return { ...host, review, comment, states, dispose: () => { review.dispose(); dispose() } }
