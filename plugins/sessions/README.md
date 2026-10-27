@@ -53,18 +53,18 @@ The **Agents** section at the top of the sidebar lists root sessions from every 
 | Mark | State | When |
 | --- | --- | --- |
 | `●` | needs you | A permission or question is waiting anywhere in the session or its subagents, or a retry needs you to act |
-| `✗` | failed | The run failed, and you haven't opened the session since |
-| `✓` | finished | The run finished, and you haven't opened the session since |
+| `✗` | failed | The run failed, and you haven't opened the session since, or did so within the last 10 minutes |
+| `✓` | finished | The run finished, and you haven't opened the session since, or did so within the last 10 minutes |
 | `↻` | retrying | The session or a subagent is retrying after an error |
 | `○` | working | The session or a subagent is running |
 
-Subagents are rolled up into their root session ("2 agents"); only the root needs to be seen for a finished run to drop out, and archived sessions never appear. The session you are in isn't listed. Each row shows its project, the time since it finished or was last active, and its title. Five rows are shown; "+N more" opens the full list. With no active sessions and no way back, the section is hidden.
+Subagents are rolled up into their root session ("2 agents"); only the root needs to be seen for a finished run to drop out, and archived sessions never appear. A run you've seen stays listed, its mark muted, for `inbox.keepRead` minutes after you first open the session following its finish, however long ago it finished. Opening it again doesn't extend that, and a run that finishes while you watch counts as seen then. The session you are in isn't listed. Each row shows its project, the time since it finished or was last active, and its title. Five rows are shown; "+N more" opens the full list. With no active sessions and no way back, the section is hidden.
 
 - Click a row, or run `/go <n>`, to open session n. `/go` alone, or **Go to active session** in the command palette, lists them all.
 - After the plugin takes you somewhere (a sidebar click, `/go`, the list, or opening a session from `/sessions`), a **Back to …** row appears above the list; click it, or run `/back`, `/previous`, or `/go back`. Going back again retraces each step. Switching sessions any other way, such as with tabs or going home, forgets the trail.
 - `/go`, `/back`, and `/previous` are each skipped when another command already uses that name; the palette entries (**Go to active session**, **Go back**) always work.
 
-The list follows the connected server's live events and is rebuilt on every (re)connection; nothing is stored. A finished session outside the newest 100 root sessions appears only once it becomes active again.
+The list follows the connected server's live events and is rebuilt on every (re)connection, including after 45 seconds without even a keepalive; nothing is stored. The server records only that a run was seen, not when, so a terminal knows when a run was seen only if it was running at the time. Times it has seen survive reconnections and plugin reloads, but not a restart. A finished session outside the newest 100 root sessions appears only once it becomes active again.
 
 ### From other plugins
 
@@ -112,6 +112,7 @@ Configure the active-sessions sidebar on the **terminal**: terminal extensions r
 
 - `inbox.enabled` (default `true`): `false` removes the sidebar section and its commands (`/go`, `/back`, `/previous`), and stops listening for session events.
 - `inbox.rows` (default `5`): rows shown before "+N more".
+- `inbox.keepRead` (default `10`): whole minutes a finished or failed run stays listed after you've seen it; `0` removes it as soon as you open it.
 - `inbox.notify` (default `false`): a desktop notification and sound while the terminal is unfocused, plus a toast, for each new permission or question and each finished or failed run, except in the session family you are in. They follow your OpenCode attention settings.
 
 ## Data and privacy

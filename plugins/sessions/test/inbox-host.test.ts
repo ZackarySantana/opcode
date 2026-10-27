@@ -46,9 +46,9 @@ function fixture(sessions: SessionInfo[], options: Partial<InboxOptions> & { run
       toast: { show: (value: ToastOptions) => toasts.push(value) },
     },
   } as unknown as Context
-  const { inbox, dispose } = createRoot((dispose) => ({ inbox: createInbox(api, { rows: 5, notify: false, ...options }), dispose }))
-  const settle = async (check: () => boolean) => {
-    for (let attempt = 0; attempt < 100 && !check(); attempt++) await Bun.sleep(1)
+  const { inbox, dispose } = createRoot((dispose) => ({ inbox: createInbox(api, { rows: 5, notify: false, keepRead: 10, ...options }), dispose }))
+  const settle = async (check: () => boolean, attempts = 100) => {
+    for (let attempt = 0; attempt < attempts && !check(); attempt++) await Bun.sleep(1)
     expect(check()).toBe(true)
   }
   return { inbox, push, queue, gate, route, setRoute, notified, toasts, settle, [Symbol.dispose]() { inbox.dispose(); dispose() } }
@@ -62,7 +62,8 @@ test("the snapshot finds running subagents' roots in other locations and their r
     { ...session("unseen", "/work/gamma"), time: { created: 1, updated: 5, idle: 5 } },
   ]
   const list = Promise.withResolvers<void>()
-  using ui = fixture(sessions, { running: ["child", "seen"], permissions: { "/work/beta": ["child"] } })
+  // Read finishes drop out at once.
+  using ui = fixture(sessions, { keepRead: 0, running: ["child", "seen"], permissions: { "/work/beta": ["child"] } })
   ui.gate.list = list.promise
   ui.push(event("server.connected", {}))
   await ui.gate.started.promise
@@ -83,6 +84,29 @@ test("the snapshot finds running subagents' roots in other locations and their r
   // The session you're in isn't listed, even when you're in one of its subagents.
   ui.setRoute({ type: "session", sessionID: "child" })
   expect(ids(ui.inbox)).toEqual(["unseen:finished", "old:working"])
+})
+
+test("a read finish stays listed in its place, across a reconnect, until its time is up", async () => {
+  const finished = (id: string, idle: number): SessionInfo => ({ ...session(id), time: { created: 1, updated: idle, idle } })
+  const sessions = [finished("first", 5), finished("second", 6)]
+  using ui = fixture(sessions, { keepRead: 1 })
+  ui.push(event("server.connected", {}))
+  await ui.settle(() => ids(ui.inbox).length === 2)
+
+  // Read almost a minute ago, in another terminal.
+  ui.push(event("session.viewed", { sessionID: "first", idle: 5 }, Date.now() - 60_000 + 400))
+  await ui.settle(() => ui.inbox.rows()[0]?.read === true)
+  expect(ids(ui.inbox)).toEqual(["first:finished", "second:finished"])
+
+  // The snapshot only says it was viewed; the read time survives it.
+  sessions[0] = { ...finished("first", 5), time: { created: 1, updated: 5, idle: 5, viewed: 5 } }
+  sessions.push(finished("third", 7))
+  ui.push(event("server.connected", {}))
+  await ui.settle(() => ids(ui.inbox).length === 3)
+  expect(ui.inbox.rows().map((row) => [row.id, row.read])).toEqual([["first", true], ["second", false], ["third", false]])
+
+  await ui.settle(() => ids(ui.inbox).length === 2, 2_000)
+  expect(ids(ui.inbox)).toEqual(["second:finished", "third:finished"])
 })
 
 test("notifications: one per new request or finish outside the current family", async () => {
@@ -130,9 +154,9 @@ test("the back row follows plugin navigation and disappears once the user naviga
   expect(ui.inbox.goBack()).toBe(false)
 })
 
-test("options: enabled with five rows and no notifications unless configured", () => {
-  expect(inboxOptions(undefined)).toEqual({ rows: 5, notify: false })
-  expect(inboxOptions({ rows: 0, notify: "yes" })).toEqual({ rows: 5, notify: false })
-  expect(inboxOptions({ rows: 8, notify: true })).toEqual({ rows: 8, notify: true })
+test("options: enabled with five rows, reads kept ten minutes, and no notifications unless configured", () => {
+  expect(inboxOptions(undefined)).toEqual({ rows: 5, notify: false, keepRead: 10 })
+  expect(inboxOptions({ rows: 0, notify: "yes", keepRead: -1 })).toEqual({ rows: 5, notify: false, keepRead: 10 })
+  expect(inboxOptions({ rows: 8, notify: true, keepRead: 0 })).toEqual({ rows: 8, notify: true, keepRead: 0 })
   expect(inboxOptions({ enabled: false })).toBeUndefined()
 })

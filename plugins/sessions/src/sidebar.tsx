@@ -26,7 +26,8 @@ function rowItem(row: InboxRow, number: number, now: number, palette: Palette): 
     retrying: ["↻", palette.warning], working: ["○", palette.value],
   } as const)[row.state]
   return {
-    key: row.id, mark: { glyph: `${number} ${glyph}`, color, title: palette.text, strong: row.state === "needs-you" },
+    // Already-read finishes stay a while, muted.
+    key: row.id, mark: { glyph: `${number} ${glyph}`, color: row.read ? palette.muted : color, title: palette.text, strong: row.state === "needs-you" },
     head: STATE_LABELS[row.state], detail: rowDetail(row), time: age(row.since, now), title: row.title,
   }
 }

@@ -28,10 +28,24 @@ export interface Projection {
 export interface ActiveRoot {
   id: string
   state: AgentState
+  /** Finished or failed and already viewed, so listed only for a while. */
+  read: boolean
   /** Busy subagents rolled up into this root. */
   agents: number
   /** When it finished, or its family's latest activity. */
   since: number
+}
+
+/** When each session's idle was first viewed. The server records only which idle was viewed; live events tell when. */
+export type Reads = Record<string, { idle: number; at: number }>
+
+/** Viewed finishes stay listed until `keep` milliseconds after they were read. */
+export interface Lingering { reads: Reads; keep: number; now: number }
+
+/** The next time a listed read drops out, if any is still listed. */
+export function nextExpiry({ reads, keep, now }: Lingering) {
+  const times = Object.values(reads).map((read) => read.at + keep).filter((time) => time > now)
+  return times.length ? Math.min(...times) : undefined
 }
 
 export const emptyProjection = (): Projection => ({ sessions: {}, status: {}, requests: {} })
@@ -75,7 +89,13 @@ export function missingSessions(projection: Projection) {
 /** Finished or failed until the root's latest idle has been viewed. Subagents are almost never viewed, so only roots count. */
 const unseen = (root: TrackedSession) => root.idle !== undefined && (root.viewed === undefined || root.idle > root.viewed)
 
-export function activeRoots(projection: Projection): ActiveRoot[] {
+export function activeRoots(projection: Projection, lingering?: Lingering): ActiveRoot[] {
+  /** Its latest idle was read recently enough to stay listed. */
+  const recent = (root: TrackedSession) => {
+    if (!lingering) return false
+    const read = lingering.reads[root.id]
+    return !!read && read.idle === root.idle && lingering.now < read.at + lingering.keep
+  }
   const families = new Map<string, { root: TrackedSession; needs: boolean; retry: boolean; busy: boolean; agents: number; since: number }>()
   const family = (sessionID: string) => {
     const root = rootOf(projection, sessionID)
@@ -98,15 +118,16 @@ export function activeRoots(projection: Projection): ActiveRoot[] {
     const found = family(sessionID)
     if (found) found.value.needs = true
   }
-  for (const session of Object.values(projection.sessions)) if (!session.parentID && unseen(session)) family(session.id)
+  for (const session of Object.values(projection.sessions)) if (!session.parentID && (unseen(session) || recent(session))) family(session.id)
   const result: ActiveRoot[] = []
   for (const { root, ...value } of families.values()) {
     const idle = !projection.status[root.id]
+    const done = !value.needs && idle && (unseen(root) || recent(root))
     const state: AgentState | undefined = value.needs ? "needs-you"
-      : idle && unseen(root) ? root.outcome === "failed" ? "failed" : "finished"
+      : done ? root.outcome === "failed" ? "failed" : "finished"
       : value.retry ? "retrying" : value.busy ? "working" : undefined
     if (!state) continue
-    result.push({ id: root.id, state, agents: value.agents, since: state === "failed" || state === "finished" ? root.idle! : value.since })
+    result.push({ id: root.id, state, read: done && !unseen(root), agents: value.agents, since: done ? root.idle! : value.since })
   }
   return result
 }

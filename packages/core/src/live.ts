@@ -17,12 +17,15 @@ export function sleep(milliseconds: number, signal?: AbortSignal) {
  */
 export async function consumeLive<T>(options: {
   signal: AbortSignal
-  subscribe: (signal: AbortSignal) => AsyncIterable<T>
+  /** `activity` reports anything the stream receives, including keepalives that yield no event. */
+  subscribe: (signal: AbortSignal, activity: () => void) => AsyncIterable<T>
   handle: (event: T, signal: AbortSignal) => void | Promise<void>
   warn: (error: unknown, source: LiveWarning) => void
   /** Runs alongside each resubscription (not the first), e.g. to reconcile events missed while offline. */
   onReconnect?: (signal: AbortSignal) => unknown
   retryMilliseconds?: number
+  /** Resubscribe after this long without activity, even if the stream never settles. Only for streams with keepalives. */
+  idleMilliseconds?: number
 }) {
   const { signal } = options
   const report = (error: unknown, source: LiveWarning) => {
@@ -35,8 +38,18 @@ export async function consumeLive<T>(options: {
     const active = AbortSignal.any([signal, attempt.signal])
     let iterator: AsyncIterator<T> | undefined
     let reconciliation: Promise<unknown> | undefined
+    let watchdog: ReturnType<typeof setTimeout> | undefined
+    const activity = () => {
+      if (options.idleMilliseconds === undefined || attempt.signal.aborted) return
+      clearTimeout(watchdog)
+      watchdog = setTimeout(() => attempt.abort(new Error("Event stream stalled")), options.idleMilliseconds)
+    }
+    // A stalled stream may ignore its signal, so waiting for the next event also ends when the attempt does.
+    const stalled = new Promise<never>((_, reject) => attempt.signal.addEventListener("abort", () => reject(attempt.signal.reason), { once: true }))
+    void stalled.catch(() => {})
     try {
-      iterator = options.subscribe(active)[Symbol.asyncIterator]()
+      iterator = options.subscribe(active, activity)[Symbol.asyncIterator]()
+      activity()
       // Calling next starts a lazy subscription, so reconciliation never waits for an event.
       let next = iterator.next()
       void next.catch(() => {})
@@ -45,7 +58,8 @@ export async function consumeLive<T>(options: {
         reconciliation = Promise.resolve().then(() => onReconnect(active)).catch((error) => { if (!active.aborted) report(error, "reconnect") })
       }
       while (!signal.aborted) {
-        const item = await next
+        const item = await Promise.race([next, stalled])
+        activity()
         if (item.done) break
         signal.throwIfAborted()
         next = iterator.next()
@@ -56,8 +70,14 @@ export async function consumeLive<T>(options: {
     } catch (error) {
       report(error, "stream")
     } finally {
+      clearTimeout(watchdog)
+      const stall = attempt.signal.aborted
       attempt.abort()
-      try { await iterator?.return?.() } catch { /* The attempt already reported its stream error. */ }
+      try {
+        const closing = Promise.resolve(iterator?.return?.()).catch(() => {})
+        // A stalled iterator may never finish closing.
+        if (!stall) await closing
+      } catch { /* The attempt already reported its stream error. */ }
       await reconciliation
     }
     reconnect = true

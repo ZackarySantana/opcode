@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { OpenCodeEvent } from "@opencode/client"
-import { activeRoots, applyEvent, backEntry, emptyProjection, observeRoute, popHistory, pushHistory, reorder } from "../src/inbox"
+import { activeRoots, applyEvent, backEntry, emptyProjection, nextExpiry, observeRoute, popHistory, pushHistory, reorder } from "../src/inbox"
 
 const event = (type: string, data: object, created = 0, directory = "/work/alpha") => ({ type, data, created, location: { directory } }) as unknown as OpenCodeEvent
 const created = (sessionID: string, parentID?: string, directory = "/work/alpha") => event("session.created", { sessionID, parentID, title: `Session ${sessionID}`, location: { directory } }, 1, directory)
@@ -45,6 +45,30 @@ test("one row per active root: subagents roll up, requests anywhere need you, an
   expect(states(projection)).toEqual([])
 })
 
+test("a viewed finish stays listed, read, until its time is up; a new finish is unread again", () => {
+  const projection = emptyProjection()
+  applyEvent(projection, created("root"))
+  applyEvent(projection, event("session.idle", { sessionID: "root" }, 30))
+  applyEvent(projection, event("session.viewed", { sessionID: "root", idle: 30 }, 100))
+  const reads = { root: { idle: 30, at: 100 } }
+  const at = (now: number, keep = 10) => activeRoots(projection, { reads, keep, now }).map(({ id, state, read, since }) => ({ id, state, read, since }))
+  // Listed by when it finished, however long before it was read.
+  expect(at(109)).toEqual([{ id: "root", state: "finished", read: true, since: 30 }])
+  expect(nextExpiry({ reads, keep: 10, now: 109 })).toBe(110)
+  expect(at(110)).toEqual([])
+  expect(nextExpiry({ reads, keep: 10, now: 110 })).toBeUndefined()
+  expect(at(100, 0)).toEqual([])
+
+  // Running again, it's working; finishing again, the old read no longer counts.
+  applyEvent(projection, status("root", "busy", undefined, 105))
+  expect(at(106)).toEqual([{ id: "root", state: "working", read: false, since: 105 }])
+  applyEvent(projection, status("root", "idle", undefined, 107))
+  applyEvent(projection, event("session.idle", { sessionID: "root" }, 107))
+  expect(at(108)).toEqual([{ id: "root", state: "finished", read: false, since: 107 }])
+  applyEvent(projection, event("session.viewed", { sessionID: "root", idle: 107 }, 108))
+  expect(at(108)).toEqual([])
+})
+
 test("a location shutdown stops its sessions without touching other locations", () => {
   const projection = emptyProjection()
   for (const value of [created("a"), created("b", undefined, "/work/beta"), status("a", "busy"), status("b", "busy")]) applyEvent(projection, value)
@@ -54,9 +78,9 @@ test("a location shutdown stops its sessions without touching other locations", 
 })
 
 test("activation order is stable while states change; new roots follow, oldest first", () => {
-  const roots = (ids: string[]) => ids.map((id, index) => ({ id, state: "working" as const, agents: 0, since: index }))
+  const roots = (ids: string[]) => ids.map((id, index) => ({ id, state: "working" as const, read: false, agents: 0, since: index }))
   expect(reorder([], roots(["b", "a"]))).toEqual(["b", "a"])
-  expect(reorder(["b", "a"], [{ id: "a", state: "needs-you", agents: 0, since: 9 }, { id: "c", state: "working", agents: 0, since: 5 }, { id: "b", state: "finished", agents: 0, since: 1 }])).toEqual(["b", "a", "c"])
+  expect(reorder(["b", "a"], [{ id: "a", state: "needs-you", read: false, agents: 0, since: 9 }, { id: "c", state: "working", read: false, agents: 0, since: 5 }, { id: "b", state: "finished", read: false, agents: 0, since: 1 }])).toEqual(["b", "a", "c"])
   expect(reorder(["b", "a", "c"], roots(["c", "b"]))).toEqual(["b", "c"])
 })
 
