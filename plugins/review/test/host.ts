@@ -19,6 +19,8 @@ export function reviewTheme(): Context["theme"] {
   theme.hue.accent[200] = gray
   theme.text.feedback.info = { base: gray }
   theme.text.action.primary.focused = gray
+  theme.background.raised.high = rgba("#2c2d2e")
+  theme.background.raised.max = rgba("#343536")
   theme.diff = {
     text: { added: rgba("#77cc88"), removed: rgba("#ee6666"), context: rgba("#e0e1e2"), hunkHeader: rgba("#819293") },
     background: { added: rgba("#1d2b1f"), removed: rgba("#2b1d1d"), context: rgba("#101112") },

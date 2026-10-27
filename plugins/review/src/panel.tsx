@@ -6,7 +6,7 @@ import { KeyHints, usePalette, useText, type KeyHint } from "@opcode/ui"
 import type { FileDiffInfo } from "@opencode/client"
 import { usePlugin } from "@opencode/plugin/tui"
 import type { PanelInput } from "@opencode/plugin/tui/context"
-import { CliRenderEvents, pathToFiletype, type BoxRenderable, type ScrollBoxRenderable, type SyntaxStyle, type TextareaRenderable } from "@opentui/core"
+import { CliRenderEvents, type BoxRenderable, type ScrollBoxRenderable, type SyntaxStyle, type TextareaRenderable } from "@opentui/core"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js"
 import type { Cursor, Frame, Position, ReviewController } from "./host"
 import { CommentsView } from "./comments"
@@ -17,6 +17,7 @@ import { FILE_RADIUS, filePatch, hunkStarts, lineOf, parsePatch, segments, shown
 import type { Lookup, Place } from "./references"
 import { arrangeReferences, scopes } from "./usages"
 import { ReferencesView } from "./places"
+import { DiffRows } from "./segment"
 import {
   anchorOf, drafts, isQuestion, lineRange, locate, modes, modeTitle, nearestRow, placeComments, PLUGIN_ID,
   type Anchor, type Comment, type Delivery, type FileList as FileListStyle, type Mode, type ReferenceEngine, type Reply,
@@ -181,6 +182,9 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     const picked = here().token
     return picked !== undefined && picked < list.length ? picked : Math.min(list.length - 1, defaultToken(rows()[cursor()]!, rows(), docFile()!))
   })
+  const pickedToken = () => { const at = token(); return at === undefined ? undefined : tokens()[at] }
+  /** The picked name, marked wherever it appears in the file being read. */
+  const pickedName = () => editing() ? undefined : pickedToken()?.name
   const stepToken = (by: number) => {
     const at = token()
     if (at !== undefined) setHere({ token: Math.max(0, Math.min(tokens().length - 1, at + by)) })
@@ -750,11 +754,9 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
                         <text width={1} flexShrink={0} wrapMode="none">
                           <For each={part.rows}>{(_, offset) => <span style={{ fg: gutter(part.start + offset()).fg }}>{gutter(part.start + offset()).glyph + (offset() < part.rows.length - 1 ? "\n" : "")}</span>}</For>
                         </text>
-                        <diff diff={part.patch} view="unified" filetype={pathToFiletype(docFile() ?? "")} syntaxStyle={props.syntax?.()} wrapMode="none" showLineNumbers
-                          flexGrow={1} minWidth={0} fg={colors().text.context}
-                          addedBg={colors().background.added} removedBg={colors().background.removed} contextBg={colors().background.context}
-                          addedSignColor={colors().text.added} removedSignColor={colors().text.removed} lineNumberFg={colors().lineNumber.text}
-                          addedLineNumberBg={colors().lineNumber.background.added} removedLineNumberBg={colors().lineNumber.background.removed} />
+                        <DiffRows rows={part.rows} file={docFile() ?? ""} syntax={props.syntax?.()} word={pickedName()}
+                          cursor={cursor() >= part.start && cursor() <= end ? cursor() - part.start : undefined}
+                          picked={cursor() >= part.start && cursor() <= end && pickedToken() ? { line: cursor() - part.start, start: pickedToken()!.start } : undefined} />
                       </box>
                       <For each={placed().filter(({ at }) => at?.to === end)}>{({ comment }) => <CommentCard comment={comment} delivery={deliveries().get(comment.id) ?? "draft"} reply={replies()[comment.id]} />}</For>
                       <Show when={editAt() === end && editing()}>{(edit) => (

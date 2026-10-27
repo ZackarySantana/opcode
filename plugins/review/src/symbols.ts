@@ -276,3 +276,29 @@ function typed(masked: string, N: string, W: string): boolean {
   const pattern = new RegExp(`(?<!${W}|\\.)(${W}+)(?:<[^()=;]*>)?(?:\\[\\])*(?:[*&]+\\s+|\\s+[*&]+|\\s+)(?:${W}+::)*${N}\\s*(?:\\(|=(?!=)|;|\\[)`, "gu")
   return [...masked.matchAll(pattern)].some((match) => !NOT_TYPES.has(match[1]!) && !/^\p{N}/u.test(match[1]!))
 }
+
+/** A styled stretch of a block of lines, as character offsets into the lines joined by newlines. */
+export interface Mark {
+  readonly start: number
+  readonly end: number
+  readonly style: "word" | "token"
+}
+
+/**
+ * Where to mark a name in a block of lines: every place it appears as an identifier, and the one picked on
+ * `picked.line` as the token. Strings and comments that merely contain the name aren't marked.
+ */
+export function wordMarks(lines: readonly string[], file: string, name: string | undefined, picked?: { line: number; start: number }): Mark[] {
+  if (!name) return []
+  const marks: Mark[] = []
+  let offset = 0
+  for (const [index, text] of lines.entries()) {
+    for (const token of identifiers(text, file)) {
+      if (token.name !== name) continue
+      const style = picked?.line === index && picked.start === token.start ? "token" : "word"
+      marks.push({ start: offset + token.start, end: offset + token.end, style })
+    }
+    offset += text.length + 1
+  }
+  return marks
+}

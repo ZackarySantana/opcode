@@ -56,7 +56,7 @@ The session views come from OpenCode's own snapshots and include edits you make 
 
 ### Usages and definitions
 
-Under the diff, the names on the cursor's line are listed with one picked: a name the line defines, else one that changed, else a call. Move between them with `h` and `l`. Press `u` for its usages, or `d` for its definition.
+Under the diff, the names on the cursor's line are listed with one picked: a name the line defines, else one that changed, else a call. Move between them with `h` and `l`. The picked name is drawn as selected in the code, and its other uses in the file are marked; the cursor's line has a stronger background of its own. Press `u` for its usages, or `d` for its definition.
 
 Usages are grouped by file: the definition first, then the files the diff changes, then the rest. Each is marked `+` when it's on a changed line, `·` when it's elsewhere in a changed file, and blank when the diff doesn't touch it. The list says what the change may have missed:
 

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { parsePatch } from "../src/patch"
-import { defaultToken, identifiers, isDefinition } from "../src/symbols"
+import { defaultToken, identifiers, isDefinition, wordMarks } from "../src/symbols"
 
 const names = (text: string, file: string) => identifiers(text, file).map((token) => token.name)
 
@@ -95,4 +95,14 @@ test("definitions in Java, Kotlin, C, and Ruby, where a type can lead", () => {
   expect(isDefinition("  def self.build(attrs)", "build", "a.rb")).toBe(true)
   expect(isDefinition("  attr_reader :name, :email", "email", "a.rb")).toBe(true)
   expect(isDefinition("  build(attrs) # def build", "build", "a.rb")).toBe(false)
+})
+
+test("a name is marked wherever it is an identifier in the block, with the picked one apart, but not inside strings or comments", () => {
+  const lines = ["const ttl = load(ttl)", "log(\"ttl is set\") // ttl", "return ttlx + ttl"]
+  const marks = wordMarks(lines, "a.ts", "ttl", { line: 0, start: 17 })
+  const text = lines.join("\n")
+  expect(marks.map((mark) => [text.slice(mark.start, mark.end), mark.style, mark.start])).toEqual([
+    ["ttl", "word", 6], ["ttl", "token", 17], ["ttl", "word", lines[0]!.length + 1 + lines[1]!.length + 1 + 14],
+  ])
+  expect(wordMarks(lines, "a.ts", undefined)).toEqual([])
 })
