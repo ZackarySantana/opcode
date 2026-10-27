@@ -16,16 +16,16 @@ const other: FileDiffInfo = { file: "src/db.ts", patch: "@@ -1,1 +1,1 @@\n-const
 /** The fixture with two lines added above the ttl change. */
 const shifted = () => file(patch.replace(" const user = load()", " const user = load()\n+// one\n+// two").replace("@@ -1,4 +1,5 @@", "@@ -1,4 +1,7 @@"))
 
-async function setup() {
+async function setup(width = 90) {
   let files = [file(), other]
   const host = fakeHost({ diff: () => files })
-  const panel = fakePanel()
+  const panel = fakePanel(width)
   const review = new ReviewController(host.api, async () => ({}), Date.now, fastTimer)
   const view = await testRender(() => (
     <PluginContextProvider value={host.api}>
       <Show when={!panel.state.closed}><ReviewPanel panel={panel.input} review={review} /></Show>
     </PluginContextProvider>
-  ), { width: 90, height: 40 })
+  ), { width, height: 40 })
   const frame = (text: string | RegExp) => view.waitForFrame((current) => typeof text === "string" ? current.includes(text) : text.test(current))
   const run = async (...ids: string[]) => { for (const id of ids) { host.dispatch(`${ID}.${id}`); await settle() } }
   const write = async (text: string) => {
@@ -199,5 +199,28 @@ test("switching sessions shows that session's review, without a range or drafts 
     await write("In the second")
     expect(review.review("ses_other").comments.map((comment) => [comment.id, comment.start])).toEqual([["r1", 1]])
     expect(review.review(SESSION).comments.map((comment) => comment.text)).toEqual(["In the first session"])
+  } finally { await dispose() }
+})
+
+test("options switch the file list between a folder tree and full paths, and choose what to review", async () => {
+  const { frame, run, choose, dispatch, dispose } = await setup(120)
+  try {
+    const tree = await frame("▾ src")
+    expect(tree).toMatch(/ {2}● auth\.ts \+3 -3/)
+    expect(tree).toMatch(/ {2}● db\.ts \+1 -1/)
+
+    choose("paths")
+    await run("options")
+    expect(await frame("● src/db.ts +1 -1")).not.toContain("▾ src")
+
+    choose("working")
+    await run("options")
+    await frame("Review Uncommitted")
+    choose("base", "dev")
+    await run("options")
+    await frame("Review Branch vs dev")
+
+    // The view has moved into options; d is free.
+    expect(dispatch(`${ID}.view`)).toBe(false)
   } finally { await dispose() }
 })

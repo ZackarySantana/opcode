@@ -7,11 +7,11 @@ import { createSignal } from "solid-js"
 import { formatReview } from "./message"
 import {
   addComment, confirm, delivery, drafts, editComment, emptyReview, isViewed, markSent, moveComment, PLUGIN_ID, removeComment, toggleViewed, unconfirmed, unsend,
-  type Anchor, type Delivery, type Mode, type Reply, type SessionReview,
+  defaultSettings, type Anchor, type Delivery, type Mode, type Reply, type SessionReview, type Settings,
 } from "./review"
 import { repliesRemote } from "./rpc"
 
-type Saved = { sessions: Record<string, SessionReview> }
+type Saved = { sessions: Record<string, SessionReview>; settings?: Settings }
 
 /** Where a session's panel was, so closing and reopening it (or a reload) lands on the same line and keeps a half-typed comment. */
 export interface Position {
@@ -68,6 +68,9 @@ export class ReviewController {
   }
 
   review = (sessionID: string): SessionReview => this.saved.sessions[sessionID] ?? emptyReview
+  /** Preferences for every session. */
+  settings = (): Settings => ({ ...defaultSettings, ...this.saved.settings })
+  updateSettings = (change: Partial<Settings>) => this.save((draft) => { draft.settings = { ...defaultSettings, ...draft.settings, ...change } })
   repliesFor = (sessionID: string): Record<string, Reply> => this.replySignal[0]()[sessionID] ?? {}
   position = (sessionID: string): Position => this.positions.sessions[sessionID] ?? {}
   setPosition = (sessionID: string, position: Position) => this.place((draft) => { draft.sessions[sessionID] = position })

@@ -23,7 +23,7 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 
 ## Use
 
-In a session, run `/review` or select **Review changes** in the command palette. The panel opens beside the conversation and takes the keyboard; `f` makes it full screen. On a wide panel the changed files are listed on the left, `●` until you mark one viewed and `✓` after.
+In a session, run `/review` or select **Review changes** in the command palette. The panel opens beside the conversation and takes the keyboard; `f` makes it full screen. On a wide panel the changed files are listed on the left as a folder tree (click a folder to fold it), `●` until you mark one viewed and `✓` after. `n` and `p` go through the files in the order the list shows them.
 
 Move to a line, press `c`, type, and press `enter`. The comment is a **draft** until you send it with `S`, or press `esc`, which sends the drafts and closes the panel. All drafts go in one message, which steers the running agent: it reads them at its next step instead of waiting for the turn to end. Each comment shows its state:
 
@@ -41,12 +41,14 @@ As the agent edits, drafts and the cursor follow the text they were on, and a dr
 
 ### What to review
 
-Press `d` to choose:
+Press `o` (or click **options** in the panel's header) for the options menu. It chooses the view:
 
 - **This turn** (default): what changed since your last prompt. Steering comments are part of the same turn, so the view stays put while you steer.
 - **Session:** everything the session changed since its first prompt.
 - **Uncommitted:** the worktree against HEAD, including untracked files.
 - **Branch:** the worktree against where it left a base branch. The base is found from the branch's history, or choose **Base branch...**.
+
+The same menu switches the file list between the **Folder tree** and **Full paths**, a choice kept for every session.
 
 The session views come from OpenCode's own snapshots and include edits you make yourself. Uncommitted and Branch show the whole worktree, so they include changes from other sessions in it.
 
@@ -65,7 +67,7 @@ The session views come from OpenCode's own snapshots and include edits you make 
 | `v` | Start a range, then `c` comments on it |
 | `x` | Delete the draft on the line |
 | `m` | Mark the file viewed, or not |
-| `d` | Choose what to review |
+| `o` | Options: what to review, and how files are listed |
 | `b` | Show or hide the file list |
 | `f` | Full screen |
 | `r` | Refresh now |

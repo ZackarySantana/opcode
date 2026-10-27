@@ -8,6 +8,13 @@ export type Mode = "turn" | "session" | "working" | "branch"
 export const modes: readonly Mode[] = ["turn", "session", "working", "branch"]
 export const modeTitle: Record<Mode, string> = { turn: "This turn", session: "Session", working: "Uncommitted", branch: "Branch" }
 
+/** How the changed files are listed: as a folder tree, or as full paths. */
+export type FileList = "tree" | "paths"
+export interface Settings {
+  readonly fileList: FileList
+}
+export const defaultSettings: Settings = { fileList: "tree" }
+
 export type Side = "new" | "old"
 export type ReplyStatus = "done" | "answered" | "declined"
 export const replyStatuses: readonly ReplyStatus[] = ["done", "answered", "declined"]

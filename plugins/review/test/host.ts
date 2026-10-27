@@ -53,6 +53,7 @@ export function fakeHost(options: { diff?: () => FileDiffInfo[] } = {}) {
     return [value, (mutation: (draft: Value) => void) => { set(produce(mutation)) }] as const
   }
   const session = { open: true }
+  const choices: unknown[] = []
   const layers = new Set<() => KeymapLayer>()
   const active = (layer: KeymapLayer) => typeof layer.enabled === "function" ? layer.enabled() : layer.enabled ?? true
   const dispatch = (id: string) => {
@@ -90,7 +91,8 @@ export function fakeHost(options: { diff?: () => FileDiffInfo[] } = {}) {
     storage: { store: durable, memory },
     ui: {
       toast: { show: (toast: { message: string; variant?: string }) => { toasts.push(toast) } },
-      dialog: { select: async () => undefined },
+      // Each select answers with the next queued choice, as if picked.
+      dialog: { select: async () => choices.shift() },
       slot: (claim: { render: (input: never) => unknown }) => { slots.push({ claim, render: claim.render }); return () => {} },
       panel: {
         current: () => panel[0].current,
@@ -120,6 +122,8 @@ export function fakeHost(options: { diff?: () => FileDiffInfo[] } = {}) {
     respond: (next: typeof respond) => { respond = next },
     setDiff: (next: () => FileDiffInfo[]) => { files = next },
     slots,
+    /** Queues what the next dialog.select picks. */
+    choose: (...values: unknown[]) => { choices.push(...values) },
     panelOpen: () => panel[0].current,
     /** Whether the route is a session, where panels can open. */
     session,

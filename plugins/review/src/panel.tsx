@@ -2,7 +2,7 @@
 
 import { errorMessage } from "@opcode/core"
 import { createRefresh, type RefreshState } from "@opcode/core/refresh"
-import { KeyHints, shorten, usePalette, useText } from "@opcode/ui"
+import { KeyHints, usePalette, useText } from "@opcode/ui"
 import type { FileDiffInfo } from "@opencode/client"
 import { usePlugin } from "@opencode/plugin/tui"
 import type { PanelInput } from "@opencode/plugin/tui/context"
@@ -12,9 +12,11 @@ import type { Position, ReviewController } from "./host"
 import { hunkStarts, lineOf, parsePatch, segments, type Segment } from "./patch"
 import {
   anchorOf, drafts, isQuestion, lineRange, locate, modes, modeTitle, nearestRow, placeComments, PLUGIN_ID,
-  type Anchor, type Comment, type Delivery, type Mode, type Reply,
+  type Anchor, type Comment, type Delivery, type FileList as FileListStyle, type Mode, type Reply,
 } from "./review"
+import { FileList } from "./files"
 import { listBranches, loadDiff } from "./source"
+import { treeOrder } from "./tree"
 
 /** Below this width the file list gives way to the diff; the header still names the file. */
 const TREE_WIDTH = 100
@@ -79,10 +81,16 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   onMount(() => props.panel.focus())
 
   const files = () => diff().value ?? []
+  // Next and previous follow the list as shown.
+  const ordered = createMemo(() => {
+    if (review.settings().fileList === "paths") return files()
+    const byPath = new Map(files().map((entry) => [entry.file, entry]))
+    return treeOrder(files().map((entry) => entry.file)).map((path) => byPath.get(path)!)
+  })
   const position = () => review.position(sessionID())
   const place = (change: Partial<Position>) => review.setPosition(sessionID(), { ...position(), ...change })
-  const file = createMemo(() => files().find((entry) => entry.file === position().file) ?? files()[0])
-  const fileIndex = () => Math.max(0, files().findIndex((entry) => entry.file === file()?.file))
+  const file = createMemo(() => files().find((entry) => entry.file === position().file) ?? ordered()[0])
+  const fileIndex = () => Math.max(0, ordered().findIndex((entry) => entry.file === file()?.file))
   // Every refresh brings new objects; only a changed patch re-parses, so an unchanged diff (and a comment being typed) stays mounted.
   const patchText = createMemo(() => file()?.patch ?? "")
   const rows = createMemo(() => parsePatch(patchText()))
@@ -100,7 +108,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   createEffect(on(() => `${sessionID()}:${file()?.file}`, () => setMark(undefined), { defer: true }))
   const selectFile = (index: number) => {
     saveEditor()
-    const next = files()[Math.max(0, Math.min(files().length - 1, index))]
+    const next = ordered()[Math.max(0, Math.min(ordered().length - 1, index))]
     if (next) place({ file: next.file, line: undefined, old: undefined, text: undefined })
   }
 
@@ -169,16 +177,21 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
 
   const send = () => void review.send(sessionID(), view())
   const hasUnsent = () => review.hasUnsent(sessionID())
-  const chooseView = async () => {
-    const choice = await api.ui.dialog.select<Mode | "base">({
-      title: "Review",
+  /** What to review and how to list the files, in one menu. */
+  const openOptions = async () => {
+    const shown = (on: boolean, description: string) => on ? `Shown now. ${description}` : description
+    const choice = await api.ui.dialog.select<Mode | "base" | FileListStyle>({
+      title: "Review options",
       current: mode(),
       options: [
-        ...modes.map((value) => ({ title: modeTitle[value], value, description: describe[value] })),
-        { title: "Base branch...", value: "base" as const, description: state().base ? `Comparing against ${state().base}` : "Pick what the branch view compares against", category: "Branch" },
+        ...modes.map((value) => ({ title: modeTitle[value], value, description: shown(value === mode(), describe[value]), category: "View" })),
+        { title: "Base branch...", value: "base" as const, description: state().base ? `Comparing against ${state().base}` : "Pick what the branch view compares against", category: "View" },
+        { title: "Folder tree", value: "tree" as const, description: shown(review.settings().fileList === "tree", "Files under their folders"), category: "File list" },
+        { title: "Full paths", value: "paths" as const, description: shown(review.settings().fileList === "paths", "Each file's whole path"), category: "File list" },
       ],
     })
     if (choice === "base") return chooseBase()
+    if (choice === "tree" || choice === "paths") return void review.updateSettings({ fileList: choice })
     if (choice) void review.setView(sessionID(), choice)
   }
   const chooseBase = async () => {
@@ -199,7 +212,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     void review.toggleViewed(sessionID(), mode(), entry.file, entry.patch)
     if (!nowViewed) return
     // Marking a file viewed moves on to the next one still waiting.
-    const order = [...files().slice(fileIndex() + 1), ...files().slice(0, fileIndex())]
+    const order = [...ordered().slice(fileIndex() + 1), ...ordered().slice(0, fileIndex())]
     const next = order.find((candidate) => !viewed(candidate))
     if (next) place({ file: next.file, line: undefined, old: undefined, text: undefined })
   }
@@ -207,8 +220,8 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   let scroll: ScrollBoxRenderable | undefined
   const page = () => Math.max(1, Math.floor((scroll?.viewport.height ?? 20) / 2))
   const starts = createMemo(() => hunkStarts(rows()))
-  const [tree, setTree] = createSignal(true)
-  const wide = () => props.panel.width >= TREE_WIDTH && tree()
+  const [listShown, setListShown] = createSignal(true)
+  const wide = () => props.panel.width >= TREE_WIDTH && listShown()
 
   // The host scopes a panel's layers to when it owns input; checking focus too keeps a prompt you're typing in safe.
   api.keymap.layer(() => ({
@@ -231,8 +244,8 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
         if (comment && !comment.sent) void review.removeComment(sessionID(), comment.id)
       } },
       { id: `${PLUGIN_ID}.viewed`, title: "Mark the file viewed", bind: "m", run: toggleFileViewed },
-      { id: `${PLUGIN_ID}.view`, title: "Choose what to review", bind: "d", run: () => void chooseView() },
-      { id: `${PLUGIN_ID}.tree`, title: "Toggle the file list", bind: "b", run: () => setTree((shown) => !shown) },
+      { id: `${PLUGIN_ID}.options`, title: "Review options", bind: "o", run: () => void openOptions() },
+      { id: `${PLUGIN_ID}.files`, title: "Toggle the file list", bind: "b", run: () => setListShown((shown) => !shown) },
       { id: `${PLUGIN_ID}.fullscreen`, title: "Toggle full screen", bind: "f", run: () => props.panel.toggleFullscreen() },
       { id: `${PLUGIN_ID}.refresh`, title: "Refresh", bind: "r", run: () => void reads.refresh() },
       { id: `${PLUGIN_ID}.send`, title: "Send the drafts to the agent", bind: "shift+s", run: send },
@@ -293,29 +306,20 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     <box width="100%" height="100%" flexDirection="column" minWidth={0} minHeight={0} paddingX={1} backgroundColor={palette.background}>
       <box flexDirection="row" flexShrink={0} minWidth={0} gap={1}>
         <text fg={palette.text} wrapMode="none" flexShrink={0}><b>Review</b> <span style={{ fg: palette.accent }}>{view()}</span></text>
-        <text fg={palette.muted} wrapMode="none" minWidth={0} flexShrink={1}>{status()}</text>
+        <text fg={palette.muted} wrapMode="none" minWidth={0} flexShrink={1} flexGrow={1}>{status()}</text>
+        <box flexShrink={0} onMouseDown={() => void openOptions()}><text fg={palette.muted} wrapMode="none">[<span style={{ fg: palette.text }}>o</span> options]</text></box>
       </box>
       <Show when={diff().error}>{(error) => <text fg={palette.error} wrapMode="word" flexShrink={0}>! {error()}</text>}</Show>
       <box flexDirection="row" flexGrow={1} minHeight={0} minWidth={0} gap={1}>
         <Show when={wide() && files().length}>
-          <scrollbox width={32} flexShrink={0}>
-            <For each={files()}>{(entry, index) => {
-              const selected = () => index() === fileIndex()
-              return (
-                <box flexDirection="row" backgroundColor={selected() ? palette.selectedBackground : undefined} onMouseDown={() => selectFile(index())}>
-                  <text wrapMode="none" fg={selected() ? palette.selectedText : viewed(entry) ? palette.muted : palette.text}>
-                    {viewed(entry) ? "✓ " : "● "}{text.shorten(entry.file, 22)} <span style={{ fg: selected() ? palette.selectedText : palette.success }}>+{entry.additions}</span> <span style={{ fg: selected() ? palette.selectedText : palette.error }}>-{entry.deletions}</span>
-                  </text>
-                </box>
-              )
-            }}</For>
-          </scrollbox>
+          <FileList files={ordered()} selected={file()?.file} style={review.settings().fileList} width={Math.min(44, Math.max(28, Math.floor(props.panel.width * 0.3)))}
+            viewed={viewed} onSelect={(path) => selectFile(ordered().findIndex((entry) => entry.file === path))} />
         </Show>
         <box flexDirection="column" flexGrow={1} minWidth={0} minHeight={0}>
-          <Show when={file()} fallback={<text fg={palette.muted} wrapMode="word">{diff().value ? `Nothing changed in ${view().toLowerCase()}. Press d to review something else.` : "Loading changes..."}</text>}>
+          <Show when={file()} fallback={<text fg={palette.muted} wrapMode="word">{diff().value ? `Nothing changed in ${view().toLowerCase()}. Press o to review something else.` : "Loading changes..."}</text>}>
             {(entry) => (
               <text fg={palette.text} wrapMode="none" flexShrink={0}>
-                <span style={{ fg: palette.muted }}>{fileIndex() + 1}/{files().length} </span><b>{shorten(entry().file, Math.max(10, props.panel.width - 30))}</b> <span style={{ fg: palette.success }}>+{entry().additions}</span> <span style={{ fg: palette.error }}>-{entry().deletions}</span>
+                <span style={{ fg: palette.muted }}>{fileIndex() + 1}/{files().length} </span><b>{text.shorten(entry().file, Math.max(10, props.panel.width - 30))}</b> <span style={{ fg: palette.success }}>+{entry().additions}</span> <span style={{ fg: palette.error }}>-{entry().deletions}</span>
                 <span style={{ fg: palette.muted }}>{viewed(entry()) ? "  viewed" : ""}</span>
               </text>
             )}
@@ -369,7 +373,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
             { key: "v", label: mark() === undefined ? "range" : "end range", command: `${PLUGIN_ID}.range` },
             { key: "S", label: hasUnsent() ? `send ${draftCount() || ""}`.trim() : "send", command: `${PLUGIN_ID}.send` },
             { key: "m", label: "viewed", command: `${PLUGIN_ID}.viewed` },
-            { key: "d", label: "view", command: `${PLUGIN_ID}.view` },
+            { key: "o", label: "options", command: `${PLUGIN_ID}.options` },
             { key: "n/p", label: "file" },
             { key: "esc", label: hasUnsent() ? "send & close" : "close", command: `${PLUGIN_ID}.leave` },
           ]} />

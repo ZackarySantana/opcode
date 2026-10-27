@@ -12,7 +12,7 @@
 | GH PR Status | Pull requests classified by what waits on you, settings, and a saved team filter | Client-local SQLite, `gh` GraphQL and REST calls | Mine/Reviewing/Teams/Settings dialog, team picker, sidebar |
 | Snippets | Global and project snippet files, precedence, and `@name` mentions | Server-owned files, skill registration, prompt/context hooks, authoring tools, RPC | Dialog with previews, prompt paste bridge, authoring sessions |
 | Media | Project-relative output paths, image naming, PCM-to-WAV framing | OpenRouter media API with the `openrouter` integration credential; agent tools | None: server-only agent tools |
-| Review | Patch rows and segments, line comments that follow their text, delivery states, viewed-by-patch-hash, the review message | Host session/VCS diffs and inbox; synced terminal storage; server plugin storage, prompt/context hooks, a reply tool, RPC | Session panel with the file list and diff, inline comment editor, sidebar |
+| Review | Patch rows and segments, line comments that follow their text, delivery states, viewed-by-patch-hash, the review message | Host session/VCS diffs and inbox; synced terminal storage; server plugin storage, prompt/context hooks, a reply tool, RPC | Session panel with the file tree or paths and the diff, inline comment editor, options menu, sidebar |
 
 Later is deliberately not an execution engine: starting an item pastes it into
 the existing prompt, without submission. Its server side only registers agent
