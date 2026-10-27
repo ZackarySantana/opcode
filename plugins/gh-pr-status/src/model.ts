@@ -128,6 +128,16 @@ function reviewStatus(pr: PullRequest): { label: string; tone: Tone } {
 
 const reviewed = (pr: PullRequest): Entry => ({ pr, ...reviewStatus(pr), pending: false, own: false, direct: false, teams: [] })
 
+/**
+ * Newest first, by the time the sidebar shows: when your review, or your team's, was requested, or for your own, when it
+ * opened. Ones without a known request time follow, by when they opened. GitHub's search returns them by last update.
+ */
+function newest(entries: Entry[]): Entry[] {
+  const since = (entry: Entry) => (entry.own ? entry.pr.createdAt : entry.requestedAt) ?? 0
+  return entries.sort((a, b) => since(b) - since(a) || b.pr.createdAt - a.pr.createdAt)
+}
+
+/** Each list is newest first, by when it was requested of you or your team, or for your own, when it opened. */
 export interface View {
   readonly mine: readonly Entry[]
   /** Review requests for you, then pull requests you've reviewed. */
@@ -138,12 +148,12 @@ export interface View {
 
 export function view(snapshot: Snapshot | undefined): View {
   if (!snapshot) return { mine: [], reviewing: [], teams: [] }
-  const requests = snapshot.requested.prs.filter((pr) => pr.author !== snapshot.viewer).flatMap((pr) => requested(pr, snapshot) ?? [])
+  const requests = newest(snapshot.requested.prs.filter((pr) => pr.author !== snapshot.viewer).flatMap((pr) => requested(pr, snapshot) ?? []))
   const direct = requests.filter((entry) => entry.direct)
   const byName = new Set(direct.map((entry) => entry.pr.url))
   return {
-    mine: snapshot.mine.prs.map(authored),
-    reviewing: [...direct, ...snapshot.reviewed.prs.filter((pr) => !byName.has(pr.url)).map(reviewed)],
+    mine: newest(snapshot.mine.prs.map(authored)),
+    reviewing: [...direct, ...newest(snapshot.reviewed.prs.filter((pr) => !byName.has(pr.url)).map(reviewed))],
     teams: [...direct, ...requests.filter((entry) => !entry.direct)].filter((entry) => entry.teams.length),
   }
 }

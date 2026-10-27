@@ -6,11 +6,11 @@ export const user = (login: string): Reviewer => ({ login })
 export const team = (name: string): Reviewer => { const [org, slug] = name.split("/"); return { slug: slug!, organization: { login: org! } } }
 
 export function pr(number: number, title: string, options: {
-  author?: string; draft?: boolean; conflicts?: boolean; decision?: string; checks?: string
+  author?: string; opened?: number; draft?: boolean; conflicts?: boolean; decision?: string; checks?: string
   requested?: { reviewer: Reviewer; hours?: number }[]; review?: { state: string; hours?: number }
 } = {}) {
   return {
-    url: `https://github.com/acme/web/pull/${number}`, number, title, isDraft: options.draft ?? false, createdAt: hoursAgo(72),
+    url: `https://github.com/acme/web/pull/${number}`, number, title, isDraft: options.draft ?? false, createdAt: hoursAgo(options.opened ?? 72),
     reviewDecision: options.decision ?? null, mergeable: options.conflicts ? "CONFLICTING" : "MERGEABLE",
     author: { login: options.author ?? "me" }, repository: { nameWithOwner: "acme/web" },
     commits: { nodes: [{ commit: { statusCheckRollup: options.checks ? { state: options.checks } : null } }] },

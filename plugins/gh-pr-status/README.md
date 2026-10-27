@@ -34,7 +34,7 @@ Run `/ghpr` or select **Pull requests** in the command palette. The dialog has f
 - **Teams:** review requests for your teams, ones that also request you first, with every requested reviewer listed. Press `f` to show one team; the choice is saved until you pick **All your teams** there.
 - **Settings:** what the sidebar shows, and how often it refreshes.
 
-Each pull request shows its status, author, repository and number, when it was opened, and who is requested and when: you first, then your teams, then everyone else.
+Each pull request shows its status, author, repository and number, when it was opened, and who is requested and when: you first, then your teams, then everyone else. Within each group the newest come first: by when your review, or your team's, was requested, or by when the pull request opened for your own and ones you've reviewed.
 
 | Key | Action |
 | --- | --- |
@@ -54,7 +54,7 @@ A pull request **waits on you** when:
 
 Statuses are colored by urgency: red for your pull requests that are blocked, yellow for review requests (**Review requested** for you, **Team: web** for your team), green for approved, the theme's highlight for pull requests waiting on someone else, and gray for drafts and pull requests you've approved or commented on.
 
-The sidebar lists only what waits on you: review requests for you first, then your teams' (narrowed to the team chosen on the Teams tab), then your own pull requests that need you. Each shows how long ago your review was requested, or for your own, how long ago it opened. It lists five by default, then a count of the rest and a pointer to `/ghpr`; with nothing waiting it's just the title. Beside the title, a countdown shows the time to the next refresh. Click a pull request there to open it in your browser, or the "+N more" line to open `/ghpr`.
+The sidebar lists only what waits on you: review requests for you first, then your teams' (narrowed to the team chosen on the Teams tab), then your own pull requests that need you. Each shows how long ago your review was requested, or for your own, how long ago it opened, and each part lists the newest first. It lists five by default, then a count of the rest and a pointer to `/ghpr`; with nothing waiting it's just the title. Beside the title, a countdown shows the time to the next refresh. Click a pull request there to open it in your browser, or the "+N more" line to open `/ghpr`.
 
 Links open in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-open` (Linux); on WSL it tries `wslview`, `xdg-open`, then PowerShell.
 

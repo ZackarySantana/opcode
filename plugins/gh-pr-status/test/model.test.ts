@@ -5,6 +5,9 @@ import { pr, response, team, teams, user } from "./fixtures"
 
 const snapshot: Snapshot = { ...parseResponse(response, ""), teams: ["acme/web", "acme/api"] }
 const summary = (entries: readonly { label: string; pr: { number: number }; teams: readonly string[] }[]) => entries.map((entry) => [entry.pr.number, entry.label, entry.teams])
+const numbers = (entries: readonly { pr: { number: number } }[]) => entries.map((entry) => entry.pr.number)
+const searches = (requested: unknown[], reviewed: unknown[], mine: unknown[] = []) =>
+  JSON.stringify({ data: { viewer: { login: "me" }, mine: { nodes: mine }, requested: { nodes: requested }, reviewed: { nodes: reviewed } } })
 
 test("your pull requests show what blocks them first; review requests split into yours, your teams', and teams your token can't see", () => {
   const current = view(snapshot)
@@ -17,16 +20,38 @@ test("your pull requests show what blocks them first; review requests split into
 
 test("the sidebar lists only what waits on you: your reviews, your teams' (narrowed by the filter), then your pull requests", () => {
   const current = view(snapshot)
-  const numbers = (settings: Partial<typeof defaultSettings>) => sidebarEntries(current, { ...defaultSettings, ...settings }).map((entry) => entry.pr.number)
-  expect(numbers({})).toEqual([10, 11, 12, 13, 1, 2])
-  expect(numbers({ team: "acme/web" })).toEqual([10, 11, 1, 2])
-  expect(numbers({ sidebarTeams: false, sidebarMine: false })).toEqual([10])
+  const listed = (settings: Partial<typeof defaultSettings>) => numbers(sidebarEntries(current, { ...defaultSettings, ...settings }))
+  expect(listed({})).toEqual([10, 11, 12, 13, 1, 2])
+  expect(listed({ team: "acme/web" })).toEqual([10, 11, 1, 2])
+  expect(listed({ sidebarTeams: false, sidebarMine: false })).toEqual([10])
+})
+
+test("lists put the newest first, by when your review or your team's was requested, or when your own opened, not GitHub's last update", () => {
+  const web = (hours?: number) => [{ reviewer: team("acme/web"), hours }]
+  const current = view({ ...parseResponse(searches(
+    [
+      pr(10, "Add REST route", { author: "alice", requested: web(135) }),
+      pr(11, "Quarantine context", { author: "bob", requested: web(1) }),
+      pr(12, "Full clone fallback", { author: "carol", requested: web(67) }),
+      // With no known request time, it follows the rest, though it opened last.
+      pr(13, "Rotate secrets", { author: "dave", opened: 1, requested: web() }),
+      pr(14, "Stream logs", { author: "erin", requested: [{ reviewer: user("me"), hours: 50 }] }),
+      pr(15, "Trim the bundle", { author: "erin", requested: [{ reviewer: user("me"), hours: 4 }] }),
+    ],
+    [
+      pr(20, "Docs for webhooks", { author: "erin", opened: 100, review: { state: "APPROVED" } }),
+      pr(21, "Fix typos", { author: "erin", opened: 10, review: { state: "COMMENTED" } }),
+    ],
+    [pr(1, "Merge via CLI", { conflicts: true, opened: 6_000 }), pr(2, "Status check", { conflicts: true, opened: 3 })],
+  ), ""), teams: ["acme/web"] })
+  expect(numbers(current.teams)).toEqual([11, 12, 10, 13])
+  expect(numbers(current.reviewing)).toEqual([15, 14, 21, 20])
+  expect(numbers(current.mine)).toEqual([2, 1])
+  expect(numbers(sidebarEntries(current, defaultSettings))).toEqual([15, 14, 11, 12, 10, 13, 2, 1])
 })
 
 test("a review request you've reviewed since no longer waits on you, though GitHub's search or a team still lists it", () => {
   const approved = { review: { state: "APPROVED", hours: 1 } }
-  const searches = (requested: unknown[], reviewed: unknown[]) =>
-    JSON.stringify({ data: { viewer: { login: "me" }, mine: { nodes: [] }, requested: { nodes: requested }, reviewed: { nodes: reviewed } } })
   const current = view({ ...parseResponse(searches(
     [
       // The author re-requested you; you approved, and the search hasn't caught up.
@@ -46,7 +71,7 @@ test("a review request you've reviewed since no longer waits on you, though GitH
     ],
   ), ""), teams: ["acme/web", "acme/api"] })
   expect(summary(current.reviewing)).toEqual([[33, "Review requested", []], [30, "You approved", []], [31, "You approved", []]])
-  expect(summary(current.teams)).toEqual([[31, "You approved", ["acme/web"]], [32, "Team: web", ["acme/web"]], [34, "You approved", [HIDDEN_TEAM]]])
+  expect(summary(current.teams)).toEqual([[32, "Team: web", ["acme/web"]], [31, "You approved", ["acme/web"]], [34, "You approved", [HIDDEN_TEAM]]])
   expect(sidebarEntries(current, defaultSettings).map((entry) => [entry.pr.number, entry.label])).toEqual([[33, "Review requested"], [32, "Team: web"]])
 })
 
