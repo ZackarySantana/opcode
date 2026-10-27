@@ -26,7 +26,13 @@ async function setup(width = 90) {
       <Show when={!panel.state.closed}><ReviewPanel panel={panel.input} review={review} /></Show>
     </PluginContextProvider>
   ), { width, height: 40 })
-  const frame = (text: string | RegExp) => view.waitForFrame((current) => typeof text === "string" ? current.includes(text) : text.test(current))
+  // The current frame may already show it: waiting only sees frames rendered later, and a settled tree renders none.
+  const frame = async (text: string | RegExp) => {
+    const matches = (current: string) => typeof text === "string" ? current.includes(text) : text.test(current)
+    await view.renderOnce()
+    const current = view.captureCharFrame()
+    return matches(current) ? current : view.waitForFrame(matches)
+  }
   const run = async (...ids: string[]) => { for (const id of ids) { host.dispatch(`${ID}.${id}`); await settle() } }
   const write = async (text: string) => {
     await view.mockInput.typeText(text)
@@ -234,5 +240,55 @@ test("a narrow panel shows the folder tree above the diff by default, and b hide
     expect(opened).toMatch(/ {2}● auth\.ts \+3 -3/)
     await run("files")
     await view.waitForFrame((current) => !current.includes("▾ src"))
+  } finally { await dispose() }
+})
+
+test("/ searches the paths and lines of the diff; a match opens on its row, n goes to the next, and escape comes back", async () => {
+  const { frame, run, view, dispatch, dispose } = await setup()
+  try {
+    await frame("const ttl = Number(env.TTL ?? 3600)")
+    await run("search")
+    await view.mockInput.typeText("ttl")
+    expect(await frame("0 files · 3 lines")).toMatch(/src\/auth\.ts:3 -const ttl = 3600/)
+    // Typing keeps the letters in the box, not the panel's keys.
+    expect(dispatch(`${ID}.options`)).toBe(false)
+    // Escape while typing keeps the results to browse; / types again.
+    await run("search.back")
+    await frame("j/k move")
+    await run("search.type")
+    await frame("enter open  esc done")
+
+    await run("search.down", "search.open")
+    expect(await frame("← diff › search \"ttl\" › src/auth.ts:2")).toMatch(/▶ 2 \+ const ttl = Number/)
+    await run("result.next")
+    expect(await frame("src/auth.ts:3")).toMatch(/▶ 3 \+ if \(!ttl\)/)
+
+    await run("leave")
+    await frame("3 lines")
+    await run("search.back")
+    await frame("1/2 src/auth.ts")
+
+    // Files by name, and shift+j / shift+k for the next and previous file.
+    await run("search")
+    await view.mockInput.typeText("db")
+    await frame("1 file · 0 lines")
+    await run("search.open")
+
+    await frame("src/db.ts:")
+    await run("leave", "search.back")
+    await run("file.next")
+    await frame("2/2 src/db.ts")
+  } finally { await dispose() }
+})
+
+test("the footer says how to get back to the prompt, or into the panel when it doesn't have the keys, and ? hides the keys", async () => {
+  const { frame, run, panel, view, dispose } = await setup()
+  try {
+    expect(await frame("ctrl+x ← focus prompt")).toContain("? hide keys")
+    panel.set("focused", false)
+    await frame("ctrl+x → focus review")
+    panel.set("focused", true)
+    await run("keys")
+    await view.waitForFrame((current) => current.includes("? keys") && !current.includes("c comment"))
   } finally { await dispose() }
 })

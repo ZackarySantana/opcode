@@ -12,7 +12,8 @@ export function frameFor(place: Place, shown: (file: string) => ReadonlySet<numb
 
 /** Where the open views lead from the diff, as a breadcrumb. */
 export function trail(stack: readonly Frame[]): string {
-  return ["diff", ...stack.map((frame) => frame.kind === "refs" ? `${frame.query === "usages" ? "usages" : "definition"} of ${frame.lookup.name}` : `${frame.file}:${frame.line ?? ""}`)].join(" › ")
+  return ["diff", ...stack.map((frame) => frame.kind === "refs" ? `${frame.query === "usages" ? "usages" : "definition"} of ${frame.lookup.name}`
+    : frame.kind === "search" ? `search "${frame.query}"` : `${frame.file}:${frame.line ?? ""}`)].join(" › ")
 }
 
 let last = 0

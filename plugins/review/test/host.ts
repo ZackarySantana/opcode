@@ -112,6 +112,8 @@ export function fakeHost(options: { diff?: () => FileDiffInfo[]; files?: Record<
     },
     keymap: {
       dispatch,
+      // The host's default bindings for moving between the conversation and a panel.
+      shortcuts: (id: string) => ({ "pane.focus.left": ["ctrl+x left"], "pane.focus.right": ["ctrl+x right"] } as Record<string, string[]>)[id] ?? [],
       layer: (factory: () => KeymapLayer) => {
         let current: KeymapLayer = {}
         const layer = () => current

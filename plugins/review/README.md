@@ -76,7 +76,9 @@ Usages are grouped by file: the definition first, then the files the diff change
 | `ctrl+d` / `ctrl+u`, `pagedown` / `pageup` | Half a page down / up |
 | `g` / `shift+g`, `home` / `end` | First / last line |
 | `]` / `[` | Next / previous hunk |
-| `n` / `p`, `alt+↓` / `alt+↑` | Next / previous file (clicking one in the list does too); in an opened usage, the next / previous usage |
+| `shift+j` / `shift+k`, `alt+↓` / `alt+↑` | Next / previous file (clicking one in the list does too) |
+| `n` / `p` | In a usage or search match you opened, the next / previous one |
+| `/` | Search the diff: file paths and lines |
 | `h` / `l`, `←` / `→` | Previous / next name on the line |
 | `u` | Usages of the name |
 | `d` | Definition of the name |
@@ -91,6 +93,13 @@ Usages are grouped by file: the definition first, then the files the diff change
 | `S` | Send the drafts |
 | `esc`, `ctrl+o` | Back from a usage or file; in the diff, `esc` sends the drafts and closes |
 | `q` | Close, keeping the drafts |
+| `?` | Show or hide the key hints |
+
+### Search
+
+`/` searches the diff as you type: the changed files whose path matches, those whose name matches first, then every diff line that does, removed lines included. It ignores case unless you type a capital letter. `↑` / `↓` move through the results while you type and `enter` opens one on its diff row; `esc` leaves the box with the results kept, where `j` / `k` move and `/` types again. In a match you opened, `n` / `p` go to the next and previous one, and `esc` comes back to the results.
+
+The bar at the bottom shows how to get back to the prompt (`ctrl+x ←` by default, OpenCode's **Focus session pane**), or into the panel when it doesn't have the keys.
 
 In a usages list, `j` / `k` (or `n` / `p`) move, `enter` opens, `c` comments on the usage, `tab` changes the scope, `d` finds the definition, and `esc` goes back.
 

@@ -10,6 +10,8 @@ import { CliRenderEvents, pathToFiletype, type BoxRenderable, type ScrollBoxRend
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js"
 import type { Cursor, Frame, Position, ReviewController } from "./host"
 import { frameFor, frameID, trail } from "./frames"
+import { searchDiff, type Match } from "./matches"
+import { SearchResults } from "./results"
 import { FILE_RADIUS, filePatch, hunkStarts, lineOf, parsePatch, segments, shownLines, type Segment } from "./patch"
 import type { Lookup, Place } from "./references"
 import { arrangeReferences, scopes } from "./usages"
@@ -44,6 +46,7 @@ const deliveryLabel: Record<Delivery, string> = {
 }
 
 type RefsFrame = Extract<Frame, { kind: "refs" }>
+type SearchFrame = Extract<Frame, { kind: "search" }>
 
 /** Live diffs of a session with comments between the lines. Everything it remembers lives in the controller, so closing it loses nothing. */
 export function ReviewPanel(props: { panel: PanelInput; review: ReviewController; syntax?: () => SyntaxStyle | undefined }) {
@@ -124,7 +127,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   const doc = createMemo(() => {
     const frame = top()
     if (frame?.kind === "file") return { file: frame.file, patch: frame.content === undefined ? "" : filePatch(frame.content, frame.center), outside: true }
-    if (frame?.kind === "refs") return undefined
+    if (frame?.kind === "refs" || frame?.kind === "search") return undefined
     const name = frame?.kind === "diff" ? frame.file : file()?.file
     const entry = files().find((candidate) => candidate.file === name)
     return entry && { file: entry.file, patch: entry.patch, outside: false }
@@ -137,11 +140,11 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   /** The cursor of the document shown: the diff's, or the open view's own. */
   const here = (): Cursor => {
     const frame = top()
-    return frame && frame.kind !== "refs" ? frame : position()
+    return frame?.kind === "diff" || frame?.kind === "file" ? frame : position()
   }
   const setHere = (change: Partial<Cursor>) => {
     const frame = top()
-    if (frame && frame.kind !== "refs") setTop(change)
+    if (frame?.kind === "diff" || frame?.kind === "file") setTop(change)
     else place(change)
   }
   // The cursor is a line and its text, not a row index, so a refresh that adds rows above it doesn't move it.
@@ -271,7 +274,9 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     if (frame?.kind === "diff" && diff().value && !files().some((entry) => entry.file === frame.file)) setTop({ kind: "file", center: frame.line ?? 1 } as Partial<Frame>)
   })
 
-  const shown = createMemo(() => new Map(files().map((entry) => [entry.file, shownLines(parsePatch(entry.patch))])))
+  // Each changed file's rows, parsed once per refresh, for jumping to lines and searching them.
+  const parsed = createMemo(() => new Map(files().map((entry) => [entry.file, parsePatch(entry.patch)])))
+  const shown = createMemo(() => new Map([...parsed()].map(([path, fileRows]) => [path, shownLines(fileRows)])))
   /** Opens a place: on its diff row when the diff shows the line, else in a read-only view of its file. */
   const openPlace = (target: Place, replace = false) => {
     const frame = frameFor(target, (path) => shown().get(path), frameID())
@@ -337,9 +342,17 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     const chosen = flatReferences()[refsFrame()?.selected ?? 0]
     if (chosen) openPlace(chosen)
   }
-  /** From a usage opened out of the list, the next or previous one in its place. */
-  const stepUsage = (by: number) => {
+  /** From a usage or match opened out of its list, the next or previous one in its place. */
+  const stepResult = (by: number) => {
     const parent = stack().at(-2)
+    if (parent?.kind === "search") {
+      const matches = searchFor(parent.query).matches
+      const index = Math.max(0, Math.min(matches.length - 1, parent.selected + by))
+      saveEditor()
+      setStack([...stack().slice(0, -2), { ...parent, selected: index, typing: false }])
+      openMatch(matches[index])
+      return true
+    }
     if (parent?.kind !== "refs") return false
     const flat = listFor(parent)?.listed ?? []
     const index = Math.max(0, Math.min(flat.length - 1, parent.selected + by))
@@ -349,6 +362,32 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     setStack([...stack().slice(0, -2), { ...parent, selected: index }])
     openPlace(next)
     return true
+  }
+
+  // Searching the diff: files by path and lines by text, in the order the file list shows them.
+  const searchFrame = () => {
+    const frame = top()
+    return frame?.kind === "search" ? frame : undefined
+  }
+  const typing = () => !!searchFrame()?.typing
+  const searchFor = (query: string) => searchDiff(query, ordered().map((entry) => ({ file: entry.file, rows: parsed().get(entry.file) ?? [] })))
+  const found = createMemo(() => searchFor(searchFrame()?.query ?? ""))
+  const openSearch = () => {
+    const frame = searchFrame()
+    if (frame) setTop({ typing: true } as Partial<SearchFrame>)
+    else push({ id: frameID(), kind: "search", query: "", typing: true, selected: 0 })
+  }
+  const selectMatch = (index: number) => setTop({ selected: Math.max(0, Math.min(found().matches.length - 1, index)) } as Partial<SearchFrame>)
+  /** A match opens on its diff row, or a matched file at its start; escape comes back to the results. */
+  const openMatch = (match: Match | undefined, replace = false) => {
+    if (!match) return
+    const frame: Frame = match.kind === "file"
+      ? { id: frameID(), kind: "diff", file: match.file }
+      : { id: frameID(), kind: "diff", file: match.file, line: match.line, old: match.old, text: match.text }
+    if (replace) return setStack([...stack().slice(0, -1), frame])
+    // Coming back finds the results to browse, not the box still taking keys.
+    if (searchFrame()?.typing) setTop({ typing: false } as Partial<SearchFrame>)
+    push(frame)
   }
 
   const send = () => void review.send(sessionID(), view())
@@ -401,9 +440,14 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   const page = () => Math.max(1, Math.floor((scroll?.viewport.height ?? 20) / 2))
   const starts = createMemo(() => hunkStarts(rows()))
   const [listShown, setListShown] = createSignal(true)
+  const [keysShown, setKeysShown] = createSignal(true)
+  /** The host's binding for a command, arrows drawn as arrows. */
+  const shortcut = (id: string) => api.keymap.shortcuts(id)[0]?.replace(/\bleft\b/, "←").replace(/\bright\b/, "→")
+  const focusPrompt = () => shortcut("pane.focus.left")
+  const focusPanel = () => shortcut("pane.focus.right")
   /** Where the file list goes: beside the diff, above it, or nowhere when hidden or empty. */
   const listAt = () => !listShown() || !files().length ? undefined : props.panel.width >= SIDE_WIDTH ? "side" : "top"
-  const inList = () => !!refsFrame()
+  const inList = () => !!refsFrame() || !!searchFrame()
   const back = () => { if (stack().length) pop() }
 
   // The host scopes a panel's layers to when it owns input; checking focus too keeps a prompt you're typing in safe.
@@ -418,11 +462,15 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       { id: `${PLUGIN_ID}.last`, title: "Last line", bind: "shift+g,end", run: () => moveTo(rows().length - 1) },
       { id: `${PLUGIN_ID}.hunk.next`, title: "Next hunk", bind: "]", run: () => moveTo(starts().find((start) => start > cursor()) ?? cursor()) },
       { id: `${PLUGIN_ID}.hunk.previous`, title: "Previous hunk", bind: "[", run: () => moveTo([...starts()].reverse().find((start) => start < cursor()) ?? 0) },
-      { id: `${PLUGIN_ID}.file.next`, title: "Next file, or the next usage", bind: "n,alt+down", run: () => { if (!stepUsage(1)) selectFile(fileIndex() + 1) } },
-      { id: `${PLUGIN_ID}.file.previous`, title: "Previous file, or the previous usage", bind: "p,alt+up", run: () => { if (!stepUsage(-1)) selectFile(fileIndex() - 1) } },
+      { id: `${PLUGIN_ID}.file.next`, title: "Next file", bind: "shift+j,alt+down", run: () => selectFile(fileIndex() + 1) },
+      { id: `${PLUGIN_ID}.file.previous`, title: "Previous file", bind: "shift+k,alt+up", run: () => selectFile(fileIndex() - 1) },
+      // Opened from a list of usages or matches, the next or previous one in its place.
+      { id: `${PLUGIN_ID}.result.next`, title: "Next usage or match", bind: "n", enabled: () => stack().at(-2)?.kind === "refs" || stack().at(-2)?.kind === "search", run: () => stepResult(1) },
+      { id: `${PLUGIN_ID}.result.previous`, title: "Previous usage or match", bind: "p", enabled: () => stack().at(-2)?.kind === "refs" || stack().at(-2)?.kind === "search", run: () => stepResult(-1) },
       { id: `${PLUGIN_ID}.symbol.previous`, title: "Previous name on the line", bind: "h,left", run: () => stepToken(-1) },
       { id: `${PLUGIN_ID}.symbol.next`, title: "Next name on the line", bind: "l,right", run: () => stepToken(1) },
       { id: `${PLUGIN_ID}.usages`, title: "Usages of the name", bind: "u", run: () => find("usages") },
+      { id: `${PLUGIN_ID}.search`, title: "Search the diff's files and lines", bind: "/", run: openSearch },
       { id: `${PLUGIN_ID}.definition`, title: "Definition of the name", bind: "d", run: () => find("definition") },
       { id: `${PLUGIN_ID}.comment`, title: "Comment on the line or range", bind: "c,return", run: startComment },
       { id: `${PLUGIN_ID}.range`, title: "Start or clear a range", bind: "v", run: () => setMark((current) => current === undefined ? cursor() : undefined) },
@@ -442,7 +490,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     ],
   }))
   api.keymap.layer(() => ({
-    enabled: () => props.panel.focused && !editing() && inList(),
+    enabled: () => props.panel.focused && !editing() && !!refsFrame(),
     commands: [
       { id: `${PLUGIN_ID}.list.down`, title: "Next place", bind: "j,down,n", run: () => selectReference((refsFrame()?.selected ?? 0) + 1) },
       { id: `${PLUGIN_ID}.list.up`, title: "Previous place", bind: "k,up,p", run: () => selectReference((refsFrame()?.selected ?? 0) - 1) },
@@ -463,9 +511,26 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       { id: `${PLUGIN_ID}.list.back`, title: "Back", bind: "escape,ctrl+o", run: pop },
     ],
   }))
-  // Commands that work in every view.
   api.keymap.layer(() => ({
-    enabled: () => props.panel.focused && !editing(),
+    enabled: () => props.panel.focused && !editing() && !!searchFrame(),
+    commands: [
+      // Up and down browse the results while typing; the letters stay in the box.
+      { id: `${PLUGIN_ID}.search.down`, title: "Next match", bind: "down", run: () => selectMatch((searchFrame()?.selected ?? 0) + 1) },
+      { id: `${PLUGIN_ID}.search.up`, title: "Previous match", bind: "up", run: () => selectMatch((searchFrame()?.selected ?? 0) - 1) },
+      { id: `${PLUGIN_ID}.search.down.vi`, title: "Next match", bind: "j,n", enabled: () => !typing(), run: () => selectMatch((searchFrame()?.selected ?? 0) + 1) },
+      { id: `${PLUGIN_ID}.search.up.vi`, title: "Previous match", bind: "k,p", enabled: () => !typing(), run: () => selectMatch((searchFrame()?.selected ?? 0) - 1) },
+      { id: `${PLUGIN_ID}.search.open`, title: "Open the match", bind: "return", run: () => openMatch(found().matches[searchFrame()?.selected ?? 0]) },
+      { id: `${PLUGIN_ID}.search.type`, title: "Search again", bind: "/", enabled: () => !typing(), run: openSearch },
+      // Escape leaves the box with the results kept to browse, then closes the search.
+      { id: `${PLUGIN_ID}.search.back`, title: "Done typing, or back", bind: "escape", run: () => {
+        if (typing() && searchFrame()?.query) setTop({ typing: false } as Partial<SearchFrame>)
+        else pop()
+      } },
+    ],
+  }))
+  // Commands that work in every view, except while typing a search.
+  api.keymap.layer(() => ({
+    enabled: () => props.panel.focused && !editing() && !typing(),
     commands: [
       { id: `${PLUGIN_ID}.options`, title: "Review options", bind: "o", run: () => void openOptions() },
       { id: `${PLUGIN_ID}.files`, title: "Toggle the file list", bind: "b", run: () => setListShown((shown) => !shown) },
@@ -473,6 +538,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       { id: `${PLUGIN_ID}.refresh`, title: "Refresh", bind: "r", run: () => void reads.refresh() },
       { id: `${PLUGIN_ID}.send`, title: "Send the drafts to the agent", bind: "shift+s", run: send },
       { id: `${PLUGIN_ID}.close`, title: "Close, keeping the drafts", bind: "q", run: () => props.panel.close() },
+      { id: `${PLUGIN_ID}.keys`, title: "Show or hide the keys", bind: "shift+/,?", run: () => setKeysShown((shown) => !shown) },
     ],
   }))
   api.keymap.layer(() => ({
@@ -521,6 +587,9 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   }
   const hints = (): KeyHint[] => {
     if (editing()) return [{ key: "enter", label: "save" }, { key: "shift+enter", label: "newline" }, { key: "esc", label: "save & close", command: `${PLUGIN_ID}.editor.save` }, { key: "??", label: "asks a question" }]
+    if (searchFrame()) return typing()
+      ? [{ key: "↑/↓", label: "move" }, { key: "enter", label: "open", command: `${PLUGIN_ID}.search.open` }, { key: "esc", label: searchFrame()!.query ? "done" : "back", command: `${PLUGIN_ID}.search.back` }]
+      : [{ key: "j/k", label: "move" }, { key: "enter", label: "open", command: `${PLUGIN_ID}.search.open` }, { key: "/", label: "edit", command: `${PLUGIN_ID}.search.type` }, { key: "esc", label: "back", command: `${PLUGIN_ID}.search.back` }]
     if (inList()) return [
       { key: "enter", label: "open", command: `${PLUGIN_ID}.list.open` },
       { key: "c", label: "comment", command: `${PLUGIN_ID}.list.comment` },
@@ -533,6 +602,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       { key: "v", label: mark() === undefined ? "range" : "end range", command: `${PLUGIN_ID}.range` },
       { key: "u", label: "usages", command: `${PLUGIN_ID}.usages` },
       { key: "d", label: "definition", command: `${PLUGIN_ID}.definition` },
+      { key: "/", label: "search", command: `${PLUGIN_ID}.search` },
       ...stack().length ? [] : [{ key: "S", label: hasUnsent() ? `send ${draftCount() || ""}`.trim() : "send", command: `${PLUGIN_ID}.send` }, { key: "m", label: "viewed", command: `${PLUGIN_ID}.viewed` }],
       { key: "o", label: "options", command: `${PLUGIN_ID}.options` },
       { key: "esc", label: stack().length ? "back" : hasUnsent() ? "send & close" : "close", command: `${PLUGIN_ID}.leave` },
@@ -540,8 +610,9 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   }
 
   return (
-    <box width="100%" height="100%" flexDirection="column" minWidth={0} minHeight={0} paddingX={1} backgroundColor={palette.background}>
-      <box flexDirection="row" flexShrink={0} minWidth={0} gap={1}>
+    <box width="100%" height="100%" flexDirection="column" minWidth={0} minHeight={0} backgroundColor={palette.panel}>
+    <box flexDirection="column" flexGrow={1} minWidth={0} minHeight={0} paddingX={1} paddingTop={1}>
+      <box flexDirection="row" flexShrink={0} minWidth={0} gap={1} marginBottom={1}>
         <text fg={palette.text} wrapMode="none" flexShrink={0}><b>Review</b> <span style={{ fg: palette.accent }}>{view()}</span></text>
         <text fg={palette.muted} wrapMode="none" minWidth={0} flexShrink={1} flexGrow={1}>{status()}</text>
         <box flexShrink={0} onMouseDown={() => void openOptions()}><text fg={palette.muted} wrapMode="none">[<span style={{ fg: palette.text }}>o</span> options]</text></box>
@@ -562,16 +633,30 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
           <Show when={stack().length}>
             <text fg={palette.muted} wrapMode="none" flexShrink={0}>← {text.shorten(trail(stack()), Math.max(10, props.panel.width - 6))}</text>
           </Show>
+          <Show when={!searchFrame()} fallback={
+            <SearchResults query={searchFrame()?.query ?? ""} typing={typing()} found={found()} selected={searchFrame()?.selected ?? 0} width={props.panel.width}
+              onInput={(query) => setTop({ query, selected: 0 } as Partial<SearchFrame>)} onSubmit={() => openMatch(found().matches[searchFrame()?.selected ?? 0])}
+              onSelect={(index) => { selectMatch(index); openMatch(found().matches[index]) }} />
+          }>
           <Show when={refsFrame()} fallback={
             <>
               <Show when={top()?.kind === "file" ? top() as Extract<Frame, { kind: "file" }> : undefined} fallback={
                 <Show when={file()} fallback={<text fg={palette.muted} wrapMode="word">{diff().value ? `Nothing changed in ${view().toLowerCase()}. Press o to review something else.` : "Loading changes..."}</text>}>
                   {(entry) => (
                     <Show when={!stack().length}>
-                      <text fg={palette.text} wrapMode="none" flexShrink={0}>
-                        <span style={{ fg: palette.muted }}>{fileIndex() + 1}/{files().length} </span><b>{text.shorten(entry().file, Math.max(10, props.panel.width - 30))}</b> <span style={{ fg: palette.success }}>+{entry().additions}</span> <span style={{ fg: palette.error }}>-{entry().deletions}</span>
-                        <span style={{ fg: palette.muted }}>{viewed(entry()) ? "  viewed" : ""}</span>
-                      </text>
+                      <box flexDirection="row" flexShrink={0} minWidth={0} gap={1}>
+                        <text fg={palette.text} wrapMode="none" minWidth={0} flexShrink={1} flexGrow={1}>
+                          <span style={{ fg: palette.muted }}>{fileIndex() + 1}/{files().length} </span>{(() => {
+                            // The folder steps back so the file's name stands out, as in /diff.
+                            const shown = text.shorten(entry().file, Math.max(10, props.panel.width - 24))
+                            const slash = shown.lastIndexOf("/") + 1
+                            return <><span style={{ fg: palette.muted }}>{shown.slice(0, slash)}</span><b>{shown.slice(slash)}</b></>
+                          })()}
+                        </text>
+                        <text wrapMode="none" flexShrink={0} fg={palette.muted}>
+                          {viewed(entry()) ? "viewed  " : ""}<span style={{ fg: palette.success }}>+{entry().additions}</span> <span style={{ fg: palette.error }}>-{entry().deletions}</span>
+                        </text>
+                      </box>
                     </Show>
                   )}
                 </Show>
@@ -638,10 +723,23 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
                 scope={frame().scope} selected={frame().selected} width={props.panel.width} onSelect={(index) => { selectReference(index); openSelected() }} />
             )}
           </Show>
+          </Show>
         </box>
       </box>
-      <box flexShrink={0} minWidth={0}>
-        <KeyHints items={hints()} />
+      <Show when={keysShown()}>
+        <box flexShrink={0} minWidth={0} marginTop={1}>
+          <KeyHints items={hints()} />
+        </box>
+      </Show>
+    </box>
+      {/* How to get back to the conversation, or here, in the host's own binding, as /diff says it. */}
+      <box flexDirection="row" flexShrink={0} minWidth={0} paddingX={1} gap={2} backgroundColor={palette.background}>
+        <text wrapMode="none" minWidth={0} flexShrink={1} flexGrow={1} fg={palette.muted}>
+          <Show when={props.panel.focused ? focusPrompt() : focusPanel()}>{(keys) => <><span style={{ fg: palette.accent }}>{keys()}</span> {props.panel.focused ? "focus prompt" : "focus review"}</>}</Show>
+        </text>
+        <box flexShrink={0} onMouseDown={() => setKeysShown((shown) => !shown)}>
+          <text wrapMode="none" fg={palette.muted}><span style={{ fg: palette.text }}>?</span> {keysShown() ? "hide keys" : "keys"}</text>
+        </box>
       </box>
     </box>
   )

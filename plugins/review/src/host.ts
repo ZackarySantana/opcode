@@ -38,6 +38,12 @@ export type Frame = { readonly id: number } & (
     readonly searchOnly: boolean
     readonly found?: Found; readonly error?: string; readonly scope: Scope; readonly selected: number
   }
+  | {
+    readonly kind: "search"; readonly query: string
+    /** The box has the keyboard; otherwise the keys move through what it found. */
+    readonly typing: boolean
+    readonly selected: number
+  }
   | ({ readonly kind: "diff"; readonly file: string } & Cursor)
   | ({
     readonly kind: "file"; readonly file: string; readonly content?: string; readonly error?: string

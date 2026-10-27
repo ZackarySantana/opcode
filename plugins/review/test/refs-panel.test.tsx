@@ -90,7 +90,7 @@ test("a usage in the diff opens on its row; one outside opens the file, where a 
     expect(await frame("← diff › usages of readJson › src/store.ts:2")).toMatch(/▶ 2 \+ const raw = readJson\(path, true\)/)
 
     // n steps to the next usage without going back to the list.
-    await run("file.next")
+    await run("result.next")
     const outside = await frame("Read-only")
     expect(outside).toContain("src/load.ts:21")
     expect(outside).toMatch(/▶ 21\s+const cfg = readJson\(file\)/)
