@@ -6,7 +6,6 @@ import { Show } from "solid-js"
 import { ReviewController } from "./host"
 import { ReviewPanel } from "./panel"
 import { PLUGIN_ID } from "./review"
-import { Sidebar } from "./sidebar"
 import { useSyntax } from "./syntax"
 
 /** The panel with the host theme's syntax colors: one style per open panel, rebuilt with the theme. */
@@ -24,7 +23,6 @@ export default Plugin.define({
         append: "session.panel",
         render: (panel) => <Show when={panel.name === PLUGIN_ID}><ThemedPanel api={api} panel={panel} review={review} /></Show>,
       }),
-      api.ui.slot({ append: "sidebar.content", render: ({ sessionID }) => <Sidebar review={review} sessionID={sessionID} /> }),
     ]
     api.keymap.layer(() => ({ mode: "global", commands: [{
       id: `${PLUGIN_ID}.open`, title: "Review changes", group: "Opcode", palette: true,

@@ -6,7 +6,7 @@ import { Identifier } from "@opencode/schema/identifier"
 import { createSignal } from "solid-js"
 import { formatReview } from "./message"
 import {
-  addComment, confirm, delivery, drafts, editComment, emptyReview, isViewed, markSent, moveComment, PLUGIN_ID, removeComment, toggleViewed, unconfirmed, unsend,
+  addComment, confirm, delivery, drafts, editComment, emptyReview, isViewed, markSeen, markSent, moveComment, PLUGIN_ID, removeComment, toggleViewed, unconfirmed, unsend, unseenReplies,
   defaultSettings, type Anchor, type Delivery, type Mode, type Reply, type SessionReview, type Settings,
 } from "./review"
 import { mergeLspConfig, type Found, type Lookup, type LspConfig } from "./references"
@@ -38,6 +38,7 @@ export type Frame = { readonly id: number } & (
     readonly searchOnly: boolean
     readonly found?: Found; readonly error?: string; readonly scope: Scope; readonly selected: number
   }
+  | { readonly kind: "comments"; readonly selected: number }
   | {
     readonly kind: "search"; readonly query: string
     /** The box has the keyboard; otherwise the keys move through what it found. */
@@ -148,6 +149,9 @@ export class ReviewController {
   removeComment = (sessionID: string, id: string) => this.change(sessionID, (review) => removeComment(review, id))
   toggleViewed = (sessionID: string, mode: Mode, file: string, patch: string) => this.change(sessionID, (review) => toggleViewed(review, mode, file, patch))
   isViewed = (sessionID: string, mode: Mode, file: string, patch: string) => isViewed(this.review(sessionID), mode, file, patch)
+  /** Comments whose reply came in since the comments view last showed it. */
+  unseen = (sessionID: string) => unseenReplies(this.review(sessionID), this.repliesFor(sessionID))
+  markSeen = (sessionID: string) => this.change(sessionID, (review) => markSeen(review, this.repliesFor(sessionID)))
   setView = (sessionID: string, mode: Mode, base?: string) => this.change(sessionID, (review) => ({ ...review, mode, base: base ?? review.base }))
 
   /**

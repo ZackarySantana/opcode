@@ -29,7 +29,7 @@ Move to a line, press `c`, type, and press `enter`. The comment is a **draft** u
 
 - **draft:** not sent yet. `c` on it edits it, `x` deletes it.
 - **sending**, then **waiting for the agent** while the message sits in the session's queue, then **sent**.
-- **not confirmed:** the send failed partway. `S` sends it again under the same message ID, so the agent never gets it twice. The sidebar counts these as left to send.
+- **not confirmed:** the send failed partway. `S` sends it again under the same message ID, so the agent never gets it twice.
 
 Cancelling the message from OpenCode's queue turns its comments back into drafts, as does a send the server refuses, such as one to a session that no longer exists. Sent comments can't be edited, since the agent already has them.
 
@@ -94,6 +94,7 @@ Usages are grouped by file: the definition first, then the files the diff change
 | `esc`, `ctrl+o` | Back from a usage or file; in the diff, `esc` sends the drafts and closes |
 | `q` | Close, keeping the drafts |
 | `?` | Show or hide the key hints |
+| `C` | All comments and the agent's replies |
 
 ### Search
 
@@ -105,7 +106,9 @@ In a usages list, `j` / `k` (or `n` / `p`) move, `enter` opens, `c` comments on 
 
 In the comment box, `enter` saves, `shift+enter` adds a line, and `esc` saves and closes the box. An empty comment is discarded.
 
-The sidebar shows the session's review once it has comments: how many are left to send, waiting for the agent, and replied to. Click it to open the panel.
+### All comments
+
+`C` (or **comments** in the header) lists every comment of the session, oldest first: its file and lines, whether it's a draft, waiting for the agent, or sent, its text, and the agent's reply in full. The header counts the comments and shows **● N new** when replies have come in since you last looked; opening the list marks them seen, and they stay marked **● new** while it's open. `j` / `k` move, `enter` opens a comment where it is (its diff row, or its file when the diff no longer shows it), `x` deletes a draft, `S` sends, and `esc` goes back.
 
 ## Storage
 

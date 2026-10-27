@@ -8,6 +8,7 @@ import { Show } from "solid-js"
 import { ReviewController } from "../src/host"
 import { ReviewPanel } from "../src/panel"
 import { patch } from "./fixtures"
+import type { Reply } from "../src/review"
 import { fakeHost, fakePanel, fastTimer, SESSION, settle } from "./host"
 
 const ID = "opcode-review"
@@ -18,9 +19,10 @@ const shifted = () => file(patch.replace(" const user = load()", " const user = 
 
 async function setup(width = 90) {
   let files = [file(), other]
+  let answered: Record<string, Reply> = {}
   const host = fakeHost({ diff: () => files })
   const panel = fakePanel(width)
-  const review = new ReviewController(host.api, { replies: async () => ({}), timer: fastTimer })
+  const review = new ReviewController(host.api, { replies: async () => answered, timer: fastTimer })
   const view = await testRender(() => (
     <PluginContextProvider value={host.api}>
       <Show when={!panel.state.closed}><ReviewPanel panel={panel.input} review={review} /></Show>
@@ -41,6 +43,13 @@ async function setup(width = 90) {
   }
   return {
     ...host, view, frame, run, write, panel, review,
+    /** The agent replies, and a tool finishing tells the panel to look. */
+    reply: async (replies: Record<string, Reply>) => {
+      answered = replies
+      host.emit("session.tool.success", { sessionID: SESSION })
+      await settle()
+      await settle()
+    },
     /** The agent edits: a finished step refreshes the diff after its debounce. */
     change: async (next: FileDiffInfo[]) => {
       files = next
@@ -290,5 +299,37 @@ test("the footer says how to get back to the prompt, or into the panel when it d
     panel.set("focused", true)
     await run("keys")
     await view.waitForFrame((current) => current.includes("? keys") && !current.includes("c comment"))
+  } finally { await dispose() }
+})
+
+test("C lists every comment with the agent's reply in full, marks new replies until seen, and opens a comment where it is", async () => {
+  const { frame, run, write, reply, view, dispose } = await setup()
+  try {
+    await frame("const ttl = Number(env.TTL ?? 3600)")
+    await run("down", "down", "down", "comment")
+    await write("Read it from config??")
+    await run("send")
+    await run("down", "comment")
+    await write("Also guard zero")
+    // No reply yet, so nothing new.
+    await frame("[C 2 comments]")
+
+    await reply({ r1: { status: "answered", reply: "Config isn't loaded this early, so env is the only source here.", at: 5 } })
+    await frame("● 1 new")
+    await run("comments")
+    const list = await frame(/Comments\s+2 comments · 1 to send · 1 replied/)
+    expect(list).toMatch(/r1 src\/auth\.ts:2 · question · sent/)
+    expect(list).toMatch(/● new\s+↳ answered: Config isn't loaded this early/)
+    expect(list).toMatch(/r2 src\/auth\.ts:3 · draft/)
+    // Seen now: the header no longer counts it as new.
+    expect(list).not.toMatch(/\[C 2 comments ● 1 new\]/)
+
+    // A draft can go from here; enter opens the other where it is.
+    await run("comments.down", "comments.delete")
+    await view.waitForFrame((current) => !current.includes("Also guard zero"))
+    await run("comments.open")
+    expect(await frame("← diff › comments › src/auth.ts:2")).toMatch(/▶ 2 \+ const ttl = Number/)
+    await run("leave")
+    await frame("1 comment · 1 replied")
   } finally { await dispose() }
 })

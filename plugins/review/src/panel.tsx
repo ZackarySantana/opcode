@@ -9,6 +9,7 @@ import type { PanelInput } from "@opencode/plugin/tui/context"
 import { CliRenderEvents, pathToFiletype, type BoxRenderable, type ScrollBoxRenderable, type SyntaxStyle, type TextareaRenderable } from "@opentui/core"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js"
 import type { Cursor, Frame, Position, ReviewController } from "./host"
+import { CommentsView } from "./comments"
 import { frameFor, frameID, trail } from "./frames"
 import { searchDiff, type Match } from "./matches"
 import { SearchResults } from "./results"
@@ -47,6 +48,7 @@ const deliveryLabel: Record<Delivery, string> = {
 
 type RefsFrame = Extract<Frame, { kind: "refs" }>
 type SearchFrame = Extract<Frame, { kind: "search" }>
+type CommentsFrame = Extract<Frame, { kind: "comments" }>
 
 /** Live diffs of a session with comments between the lines. Everything it remembers lives in the controller, so closing it loses nothing. */
 export function ReviewPanel(props: { panel: PanelInput; review: ReviewController; syntax?: () => SyntaxStyle | undefined }) {
@@ -127,7 +129,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   const doc = createMemo(() => {
     const frame = top()
     if (frame?.kind === "file") return { file: frame.file, patch: frame.content === undefined ? "" : filePatch(frame.content, frame.center), outside: true }
-    if (frame?.kind === "refs" || frame?.kind === "search") return undefined
+    if (frame?.kind === "refs" || frame?.kind === "search" || frame?.kind === "comments") return undefined
     const name = frame?.kind === "diff" ? frame.file : file()?.file
     const entry = files().find((candidate) => candidate.file === name)
     return entry && { file: entry.file, patch: entry.patch, outside: false }
@@ -390,6 +392,33 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     push(frame)
   }
 
+  // Every comment of the session in one place, with the agent's replies.
+  const commentsFrame = () => {
+    const frame = top()
+    return frame?.kind === "comments" ? frame : undefined
+  }
+  const allComments = () => state().comments
+  const unseen = createMemo(() => review.unseen(sessionID()))
+  /** The replies that were new when the view opened stay marked while it's open. */
+  const [fresh, setFresh] = createSignal<ReadonlySet<string>>(new Set())
+  const openComments = () => {
+    if (commentsFrame()) return
+    setFresh(new Set(unseen()))
+    void review.markSeen(sessionID())
+    push({ id: frameID(), kind: "comments", selected: 0 })
+  }
+  const selectComment = (index: number) => setTop({ selected: Math.max(0, Math.min(allComments().length - 1, index)) } as Partial<CommentsFrame>)
+  /** Opens a comment where it is: its diff row when the diff still shows its lines, else its file around them. */
+  const openComment = (comment: Comment | undefined) => {
+    if (!comment) return
+    const fileRows = comment.outside ? undefined : parsed().get(comment.file)
+    const at = fileRows && locate(comment, fileRows)
+    const row = at && fileRows[at.from]
+    push(row
+      ? { id: frameID(), kind: "diff", file: comment.file, line: lineOf(row), old: row.kind === "del", text: row.text }
+      : { id: frameID(), kind: "file", file: comment.file, line: comment.start, center: comment.start })
+  }
+
   const send = () => void review.send(sessionID(), view())
   const hasUnsent = () => review.hasUnsent(sessionID())
   /** What to review, how to list the files, and how to find usages, in one menu. */
@@ -447,7 +476,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   const focusPanel = () => shortcut("pane.focus.right")
   /** Where the file list goes: beside the diff, above it, or nowhere when hidden or empty. */
   const listAt = () => !listShown() || !files().length ? undefined : props.panel.width >= SIDE_WIDTH ? "side" : "top"
-  const inList = () => !!refsFrame() || !!searchFrame()
+  const inList = () => !!refsFrame() || !!searchFrame() || !!commentsFrame()
   const back = () => { if (stack().length) pop() }
 
   // The host scopes a panel's layers to when it owns input; checking focus too keeps a prompt you're typing in safe.
@@ -528,6 +557,19 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       } },
     ],
   }))
+  api.keymap.layer(() => ({
+    enabled: () => props.panel.focused && !editing() && !!commentsFrame(),
+    commands: [
+      { id: `${PLUGIN_ID}.comments.down`, title: "Next comment", bind: "j,down", run: () => selectComment((commentsFrame()?.selected ?? 0) + 1) },
+      { id: `${PLUGIN_ID}.comments.up`, title: "Previous comment", bind: "k,up", run: () => selectComment((commentsFrame()?.selected ?? 0) - 1) },
+      { id: `${PLUGIN_ID}.comments.open`, title: "Open the comment where it is", bind: "return", run: () => openComment(allComments()[commentsFrame()?.selected ?? 0]) },
+      { id: `${PLUGIN_ID}.comments.delete`, title: "Delete the draft", bind: "x", run: () => {
+        const comment = allComments()[commentsFrame()?.selected ?? 0]
+        if (comment && !comment.sent) void review.removeComment(sessionID(), comment.id).then(() => selectComment(commentsFrame()?.selected ?? 0))
+      } },
+      { id: `${PLUGIN_ID}.comments.back`, title: "Back", bind: "escape,ctrl+o", run: pop },
+    ],
+  }))
   // Commands that work in every view, except while typing a search.
   api.keymap.layer(() => ({
     enabled: () => props.panel.focused && !editing() && !typing(),
@@ -538,6 +580,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       { id: `${PLUGIN_ID}.refresh`, title: "Refresh", bind: "r", run: () => void reads.refresh() },
       { id: `${PLUGIN_ID}.send`, title: "Send the drafts to the agent", bind: "shift+s", run: send },
       { id: `${PLUGIN_ID}.close`, title: "Close, keeping the drafts", bind: "q", run: () => props.panel.close() },
+      { id: `${PLUGIN_ID}.comments`, title: "All comments and replies", bind: "shift+c", run: openComments },
       { id: `${PLUGIN_ID}.keys`, title: "Show or hide the keys", bind: "shift+/,?", run: () => setKeysShown((shown) => !shown) },
     ],
   }))
@@ -590,6 +633,13 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     if (searchFrame()) return typing()
       ? [{ key: "↑/↓", label: "move" }, { key: "enter", label: "open", command: `${PLUGIN_ID}.search.open` }, { key: "esc", label: searchFrame()!.query ? "done" : "back", command: `${PLUGIN_ID}.search.back` }]
       : [{ key: "j/k", label: "move" }, { key: "enter", label: "open", command: `${PLUGIN_ID}.search.open` }, { key: "/", label: "edit", command: `${PLUGIN_ID}.search.type` }, { key: "esc", label: "back", command: `${PLUGIN_ID}.search.back` }]
+    if (commentsFrame()) return [
+      { key: "j/k", label: "move" },
+      { key: "enter", label: "open", command: `${PLUGIN_ID}.comments.open` },
+      { key: "x", label: "delete draft", command: `${PLUGIN_ID}.comments.delete` },
+      { key: "S", label: "send", command: `${PLUGIN_ID}.send` },
+      { key: "esc", label: "back", command: `${PLUGIN_ID}.comments.back` },
+    ]
     if (inList()) return [
       { key: "enter", label: "open", command: `${PLUGIN_ID}.list.open` },
       { key: "c", label: "comment", command: `${PLUGIN_ID}.list.comment` },
@@ -615,6 +665,11 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       <box flexDirection="row" flexShrink={0} minWidth={0} gap={1} marginBottom={1}>
         <text fg={palette.text} wrapMode="none" flexShrink={0}><b>Review</b> <span style={{ fg: palette.accent }}>{view()}</span></text>
         <text fg={palette.muted} wrapMode="none" minWidth={0} flexShrink={1} flexGrow={1}>{status()}</text>
+        <box flexShrink={0} onMouseDown={openComments}>
+          <text fg={palette.muted} wrapMode="none">
+            [<span style={{ fg: palette.text }}>C</span> {allComments().length} {allComments().length === 1 ? "comment" : "comments"}<Show when={unseen().length}><span style={{ fg: palette.accent }}> ● {unseen().length} new</span></Show>]
+          </text>
+        </box>
         <box flexShrink={0} onMouseDown={() => void openOptions()}><text fg={palette.muted} wrapMode="none">[<span style={{ fg: palette.text }}>o</span> options]</text></box>
       </box>
       <Show when={diff().error}>{(error) => <text fg={palette.error} wrapMode="word" flexShrink={0}>! {error()}</text>}</Show>
@@ -633,6 +688,10 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
           <Show when={stack().length}>
             <text fg={palette.muted} wrapMode="none" flexShrink={0}>← {text.shorten(trail(stack()), Math.max(10, props.panel.width - 6))}</text>
           </Show>
+          <Show when={!commentsFrame()} fallback={
+            <CommentsView comments={allComments()} deliveries={deliveries()} replies={replies()} fresh={fresh()} selected={commentsFrame()?.selected ?? 0}
+              width={props.panel.width} onSelect={(index) => { selectComment(index); openComment(allComments()[index]) }} />
+          }>
           <Show when={!searchFrame()} fallback={
             <SearchResults query={searchFrame()?.query ?? ""} typing={typing()} found={found()} selected={searchFrame()?.selected ?? 0} width={props.panel.width}
               onInput={(query) => setTop({ query, selected: 0 } as Partial<SearchFrame>)} onSubmit={() => openMatch(found().matches[searchFrame()?.selected ?? 0])}
@@ -722,6 +781,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
               <ReferencesView query={frame().query} name={frame().lookup.name} found={frame().found} error={frame().error} list={references()}
                 scope={frame().scope} selected={frame().selected} width={props.panel.width} onSelect={(index) => { selectReference(index); openSelected() }} />
             )}
+          </Show>
           </Show>
           </Show>
         </box>

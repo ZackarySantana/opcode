@@ -57,6 +57,8 @@ export interface SessionReview {
   readonly viewed: Readonly<Record<string, string>>
   readonly mode: Mode
   readonly base?: string
+  /** When each comment's reply was last seen, so newer ones show as new. */
+  readonly seen?: Readonly<Record<string, number>>
 }
 
 export const emptyReview: SessionReview = { next: 1, comments: [], viewed: {}, mode: "turn" }
@@ -167,6 +169,14 @@ export function confirm(review: SessionReview, messageID: string): SessionReview
 /** A message that never reached the agent (cancelled, or refused) returns its comments to the drafts. */
 export function unsend(review: SessionReview, messageID: string): SessionReview {
   return { ...review, comments: review.comments.map(({ sent, ...comment }) => sent && sent.messageID !== messageID ? { ...comment, sent } : comment) }
+}
+
+/** Replies newer than when they were last seen in the comments view. */
+export const unseenReplies = (review: SessionReview, replies: Readonly<Record<string, Reply>>) =>
+  review.comments.filter((comment) => { const reply = replies[comment.id]; return reply && reply.at > (review.seen?.[comment.id] ?? 0) }).map((comment) => comment.id)
+
+export function markSeen(review: SessionReview, replies: Readonly<Record<string, Reply>>): SessionReview {
+  return { ...review, seen: { ...review.seen, ...Object.fromEntries(Object.entries(replies).map(([id, reply]) => [id, reply.at])) } }
 }
 
 export function toggleViewed(review: SessionReview, mode: Mode, file: string, patch: string): SessionReview {

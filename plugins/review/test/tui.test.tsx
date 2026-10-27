@@ -7,7 +7,7 @@ import type { JSX } from "solid-js"
 import plugin from "../src/tui"
 import { fakeHost, fakePanel, SESSION, settle } from "./host"
 
-/** The plugin as the host loads it, with its sidebar and session panel slots rendered. */
+/** The plugin as the host loads it, with its session panel slot rendered. */
 async function setup() {
   const host = fakeHost({ diff: () => [{ file: "src/auth.ts", patch: "@@ -1,1 +1,1 @@\n-a\n+b\n", additions: 1, deletions: 1, status: "modified" }] })
   const panel = fakePanel()
@@ -20,7 +20,6 @@ async function setup() {
     return (
       <PluginContextProvider value={host.api}>
         <box flexDirection="column">
-          {slot("sidebar.content")({ sessionID: SESSION } as never) as JSX.Element}
           {slot("session.panel")(panel.input as never) as JSX.Element}
         </box>
       </PluginContextProvider>
@@ -44,23 +43,5 @@ test("/review opens the panel in a session, takes input when it's already open, 
     session.open = false
     await run("open")
     expect(toasts.at(-1)).toMatchObject({ variant: "warning", message: expect.stringContaining("Open a session first") })
-  } finally { await dispose() }
-})
-
-test("the sidebar counts what is left to send, what waits for the agent, and then that all was sent", async () => {
-  const { run, view, frame, prompts, setPending, dispose } = await setup()
-  try {
-    await frame("Review This turn")
-    expect(view.captureCharFrame()).not.toContain("to send")
-    await run("down", "comment")
-    await view.mockInput.typeText("Rename it")
-    view.mockInput.pressEnter()
-    await frame("1 to send")
-
-    await run("send")
-    setPending([prompts[0]!.id!])
-    await frame("1 waiting")
-    setPending([])
-    await frame("all sent")
   } finally { await dispose() }
 })
