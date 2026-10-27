@@ -131,7 +131,7 @@
     },
     "plugins/review": {
       "name": "@lidtop/opencode-review",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/ui": "workspace:*",
