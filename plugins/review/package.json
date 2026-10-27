@@ -5,7 +5,10 @@
   "keywords": [
     "opencode",
     "opencode-plugin",
-    "code-review"
+    "code-review",
+    "diff",
+    "lsp",
+    "agent"
   ],
   "type": "module",
   "license": "MIT",
