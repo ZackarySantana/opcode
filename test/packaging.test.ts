@@ -328,6 +328,7 @@ describe("independent release policy", () => {
       { id: "gh-pr-status" },
       { id: "snippets" },
       { id: "media" },
+      { id: "review" },
     ] as const
     for (const plugin of plugins) {
       const { id, ...manifest } = plugin

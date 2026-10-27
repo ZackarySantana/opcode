@@ -12,6 +12,7 @@
 | GH PR Status | Pull requests classified by what waits on you, settings, and a saved team filter | Client-local SQLite, `gh` GraphQL and REST calls | Mine/Reviewing/Teams/Settings dialog, team picker, sidebar |
 | Snippets | Global and project snippet files, precedence, and `@name` mentions | Server-owned files, skill registration, prompt/context hooks, authoring tools, RPC | Dialog with previews, prompt paste bridge, authoring sessions |
 | Media | Project-relative output paths, image naming, PCM-to-WAV framing | OpenRouter media API with the `openrouter` integration credential; agent tools | None: server-only agent tools |
+| Review | Patch rows and segments, line comments that follow their text, delivery states, viewed-by-patch-hash, the review message | Host session/VCS diffs and inbox; synced terminal storage; server plugin storage, prompt/context hooks, a reply tool, RPC | Session panel with the file list and diff, inline comment editor, sidebar |
 
 Later is deliberately not an execution engine: starting an item pastes it into
 the existing prompt, without submission. Its server side only registers agent
@@ -28,6 +29,13 @@ asks for permission. Media reads the `openrouter` integration credential for eac
 call rather than going through the provider, so a policy that denies the
 OpenRouter provider leaves its tools working; it checks the tool/model and `edit`
 permissions before spending anything, and writes only inside the project.
+Review sends all drafts as one steering prompt under a host-format message ID it
+generates and stores first, so a retry after an uncertain failure returns the
+original admission instead of a second message; a declared refusal returns the
+comments to drafts. Its prompt hook records the comment IDs a
+message carried; the `review_reply` tool exists only in sessions with such a
+record, and accepts only those IDs. Comments live in synced terminal storage,
+replies in server plugin storage, read back over RPC.
 
 ## Shared code
 
@@ -70,7 +78,7 @@ search box and Escape that undoes one step at a time, grouped item cards that
 open on enter or click, the picker, the Settings tab, sidebar items with "+N
 more" lines, the refresh countdown beside a section title, the refresh schedule, and the browser
 launcher. Sessions uses its dialog, picker, and sidebar items too, Cost its tabbed
-dialog and picker, and Snippets its tabbed dialog and item cards. Native prompts
+dialog and picker, Snippets its tabbed dialog and item cards, and Review its sidebar click. Native prompts
 replace a custom dialog, so Later passes its own tab and focus signals, and Snippets
 its focus signal, to come back on the same tab and item. It is a separate workspace so
 that changing it releases only its consumers, not every consumer of `@opcode/ui`.
@@ -91,7 +99,7 @@ Private workspace source is bundled into each package. Host runtimes and all
 third-party dependencies stay external.
 
 The public npm packages are `@lidtop/opencode-context`, `@lidtop/opencode-cost`,
-`@lidtop/opencode-later`, `@lidtop/opencode-sessions`, `@lidtop/opencode-feed`, `@lidtop/opencode-gh-pr-status`, `@lidtop/opencode-snippets`, and `@lidtop/opencode-media`. Each has its own version
+`@lidtop/opencode-later`, `@lidtop/opencode-sessions`, `@lidtop/opencode-feed`, `@lidtop/opencode-gh-pr-status`, `@lidtop/opencode-snippets`, `@lidtop/opencode-media`, and `@lidtop/opencode-review`. Each has its own version
 and changeset history; they are not a permanent lockstep group. The npm scope does not rename runtime plugin, command,
 or RPC IDs, nor existing database paths. Shared-source or
 catalog updates require releases of affected consumers, not a forced permanent
