@@ -23,8 +23,10 @@ import { listBranches, loadDiff } from "./source"
 import { defaultToken, identifiers } from "./symbols"
 import { treeOrder } from "./tree"
 
-/** Below this width the file list gives way to the diff; the header still names the file. */
-const TREE_WIDTH = 100
+/** From this width the file list sits beside the diff; a narrower panel shows a few rows of it above. */
+const SIDE_WIDTH = 100
+/** How tall the file list above the diff grows at most. */
+const TOP_ROWS = 8
 
 const describe: Record<Mode, string> = {
   turn: "What the agent changed since your last prompt",
@@ -353,18 +355,18 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   const hasUnsent = () => review.hasUnsent(sessionID())
   /** What to review, how to list the files, and how to find usages, in one menu. */
   const openOptions = async () => {
-    const shown = (on: boolean, description: string) => on ? `Shown now. ${description}` : description
-    const using = (engine: ReferenceEngine, description: string) => review.settings().references === engine ? `In use. ${description}` : description
+    // What's in effect is checked in the title, so it reads at a glance however narrow the menu is.
+    const checked = (on: boolean, title: string) => on ? `✓ ${title}` : `  ${title}`
     const choice = await api.ui.dialog.select<Mode | "base" | FileListStyle | `refs:${ReferenceEngine}`>({
       title: "Review options",
       current: mode(),
       options: [
-        ...modes.map((value) => ({ title: modeTitle[value], value, description: shown(value === mode(), describe[value]), category: "View" })),
-        { title: "Base branch...", value: "base" as const, description: state().base ? `Comparing against ${state().base}` : "Pick what the branch view compares against", category: "View" },
-        { title: "Folder tree", value: "tree" as const, description: shown(review.settings().fileList === "tree", "Files under their folders"), category: "File list" },
-        { title: "Full paths", value: "paths" as const, description: shown(review.settings().fileList === "paths", "Each file's whole path"), category: "File list" },
-        { title: "Language server, then search", value: "refs:lsp" as const, description: using("lsp", "The language server OpenCode is set up with for the file, else a search by name"), category: "Usages and definitions" },
-        { title: "Search only", value: "refs:search" as const, description: using("search", "A whole-word search for the name, without starting a language server"), category: "Usages and definitions" },
+        ...modes.map((value) => ({ title: checked(value === mode(), modeTitle[value]), value, description: describe[value], category: "View" })),
+        { title: "  Base branch...", value: "base" as const, description: state().base ? `Comparing against ${state().base}` : "Pick what the branch view compares against", category: "View" },
+        { title: checked(review.settings().fileList === "tree", "Folder tree"), value: "tree" as const, description: "Files under their folders", category: "File list" },
+        { title: checked(review.settings().fileList === "paths", "Full paths"), value: "paths" as const, description: "Each file's whole path", category: "File list" },
+        { title: checked(review.settings().references === "lsp", "Language server, then search"), value: "refs:lsp" as const, description: "The language server OpenCode is set up with for the file, else a search by name", category: "Usages and definitions" },
+        { title: checked(review.settings().references === "search", "Search only"), value: "refs:search" as const, description: "A whole-word search for the name, without starting a language server", category: "Usages and definitions" },
       ],
     })
     if (choice === "base") return chooseBase()
@@ -399,7 +401,8 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   const page = () => Math.max(1, Math.floor((scroll?.viewport.height ?? 20) / 2))
   const starts = createMemo(() => hunkStarts(rows()))
   const [listShown, setListShown] = createSignal(true)
-  const wide = () => props.panel.width >= TREE_WIDTH && listShown()
+  /** Where the file list goes: beside the diff, above it, or nowhere when hidden or empty. */
+  const listAt = () => !listShown() || !files().length ? undefined : props.panel.width >= SIDE_WIDTH ? "side" : "top"
   const inList = () => !!refsFrame()
   const back = () => { if (stack().length) pop() }
 
@@ -545,11 +548,17 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       </box>
       <Show when={diff().error}>{(error) => <text fg={palette.error} wrapMode="word" flexShrink={0}>! {error()}</text>}</Show>
       <box flexDirection="row" flexGrow={1} minHeight={0} minWidth={0} gap={1}>
-        <Show when={wide() && files().length}>
+        <Show when={listAt() === "side"}>
           <FileList files={ordered()} selected={file()?.file} style={review.settings().fileList} width={Math.min(44, Math.max(28, Math.floor(props.panel.width * 0.3)))}
             viewed={viewed} onSelect={(path) => selectFile(ordered().findIndex((entry) => entry.file === path))} />
         </Show>
         <box flexDirection="column" flexGrow={1} minWidth={0} minHeight={0}>
+          <Show when={listAt() === "top"}>
+            <box flexShrink={0} marginBottom={1} border={["bottom"]} borderColor={palette.border}>
+              <FileList files={ordered()} selected={file()?.file} style={review.settings().fileList} width={props.panel.width - 2} maxRows={TOP_ROWS}
+                viewed={viewed} onSelect={(path) => selectFile(ordered().findIndex((entry) => entry.file === path))} />
+            </box>
+          </Show>
           <Show when={stack().length}>
             <text fg={palette.muted} wrapMode="none" flexShrink={0}>← {text.shorten(trail(stack()), Math.max(10, props.panel.width - 6))}</text>
           </Show>

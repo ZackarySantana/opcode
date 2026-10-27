@@ -224,3 +224,15 @@ test("options switch the file list between a folder tree and full paths, and cho
     expect(dispatch(`${ID}.view`)).toBe(false)
   } finally { await dispose() }
 })
+
+test("a narrow panel shows the folder tree above the diff by default, and b hides it", async () => {
+  const { frame, run, view, dispose } = await setup(90)
+  try {
+    const opened = await frame("▾ src")
+    // The tree comes first, then the open file's diff.
+    expect(opened.indexOf("▾ src")).toBeLessThan(opened.indexOf("1/2 src/auth.ts"))
+    expect(opened).toMatch(/ {2}● auth\.ts \+3 -3/)
+    await run("files")
+    await view.waitForFrame((current) => !current.includes("▾ src"))
+  } finally { await dispose() }
+})

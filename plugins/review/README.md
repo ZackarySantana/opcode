@@ -23,7 +23,7 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 
 ## Use
 
-In a session, run `/review` or select **Review changes** in the command palette. The panel opens beside the conversation and takes the keyboard; `f` makes it full screen. On a wide panel the changed files are listed on the left as a folder tree (click a folder to fold it), `●` until you mark one viewed and `✓` after. `n` and `p` go through the files in the order the list shows them.
+In a session, run `/review` or select **Review changes** in the command palette. The panel opens beside the conversation and takes the keyboard; `f` makes it full screen. The changed files are listed as a folder tree (click a folder to fold it), `●` until you mark one viewed and `✓` after: beside the diff when the panel is wide, and in a few rows above it when it's narrow. `b` hides or shows the list. `n` and `p` go through the files in the order the list shows them.
 
 Move to a line, press `c`, type, and press `enter`. The comment is a **draft** until you send it with `S`, or press `esc`, which sends the drafts and closes the panel. All drafts go in one message, which steers the running agent: it reads them at its next step instead of waiting for the turn to end. Each comment shows its state:
 
