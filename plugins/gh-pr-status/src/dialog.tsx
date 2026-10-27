@@ -7,7 +7,7 @@ import { usePalette, type KeyHint } from "@opcode/ui"
 import { usePlugin } from "@opencode/plugin/tui"
 import { createMemo, createSignal, Show } from "solid-js"
 import type { PullRequestsController } from "./host"
-import { matches, onTeam, refreshChoices, sidebarItemChoices, teamChoices, view, type Entry, type Search, type Settings } from "./model"
+import { matches, onTeam, ordered, refreshChoices, sidebarItemChoices, teamChoices, view, type Entry, type Order, type Search, type Settings } from "./model"
 import { card } from "./style"
 
 export const PREFIX = "opcode-gh-pr-status"
@@ -37,7 +37,7 @@ export function PullRequestsDialog(props: { prs: PullRequestsController }) {
   )
 }
 
-/** Grouped pull requests; enter or a click opens one. Lists the refresh error and anything GitHub withheld above them. */
+/** Grouped pull requests, each group in the chosen order; enter or a click opens one. Lists the refresh error and anything GitHub withheld above them. */
 function PullList(props: {
   prs: PullRequestsController
   groups: readonly { title: string; entries: readonly Entry[] }[]
@@ -58,7 +58,8 @@ function PullList(props: {
       open={(item) => openLink(api, TITLE, item.key)}
       groups={props.groups.map((group) => ({
         title: group.title,
-        items: group.entries.filter((entry) => matches(entry, tab.query())).map((entry) => card(entry, props.prs.snapshot()!.viewer, props.prs.now(), palette)),
+        items: ordered(group.entries.filter((entry) => matches(entry, tab.query())), props.prs.settings().order)
+          .map((entry) => card(entry, props.prs.snapshot()!.viewer, props.prs.now(), palette)),
       }))}
       hints={[
         ...tab.navigation,
@@ -102,7 +103,16 @@ function Teams(props: { prs: PullRequestsController; entries: readonly Entry[] }
 
 const yesNo = [{ value: false, label: "No" }, { value: true, label: "Yes" }]
 
+const orders: { value: Order; label: string }[] = [{ value: "smart", label: "Smart" }, { value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }]
+
 const settingRows = (team: string | undefined) => [
+  {
+    id: "order", label: "Order",
+    description: "Smart prioritizes pull requests that need your eyes.",
+    choices: orders,
+    current: (settings) => settings.order,
+    update: (order) => ({ order }),
+  } satisfies SettingRow<Settings, Order>,
   {
     id: "teams", label: "Sidebar team reviews",
     description: `Whether review requests for your teams appear in the sidebar, narrowed to the Teams tab's filter (${team ?? "all your teams"}). Requests for you always do.`,
@@ -112,14 +122,14 @@ const settingRows = (team: string | undefined) => [
   } satisfies SettingRow<Settings, boolean>,
   {
     id: "mine", label: "Sidebar own PRs",
-    description: "Whether your pull requests that need you appear in the sidebar: conflicts, failing checks, changes requested, or approved and ready to merge.",
+    description: "Whether your open pull requests appear in the sidebar.",
     choices: yesNo,
     current: (settings) => settings.sidebarMine,
     update: (sidebarMine) => ({ sidebarMine }),
   } satisfies SettingRow<Settings, boolean>,
   {
     id: "items", label: "Sidebar items",
-    description: "How many pull requests the sidebar lists, your review requests first, before pointing to /ghpr.",
+    description: "How many pull requests the sidebar lists before pointing to /ghpr.",
     choices: sidebarItemChoices.map((count) => ({ value: count, label: `${count}` })),
     current: (settings) => settings.sidebarItems,
     update: (sidebarItems) => ({ sidebarItems }),

@@ -33,6 +33,7 @@ fragment pr on PullRequest {
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
   reviewRequests(first: 30) { nodes { requestedReviewer { ${reviewer} } } }
   viewerLatestReview { state submittedAt }
+  latestReviews(first: 30) { nodes { state submittedAt author { __typename login } } }
   timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: 50) { nodes { ... on ReviewRequestedEvent { createdAt requestedReviewer { ${reviewer} } } } }
 }`
 
@@ -50,6 +51,7 @@ interface RawPullRequest {
   commits: { nodes: { commit: { statusCheckRollup: { state: string } | null } }[] }
   reviewRequests: { nodes: { requestedReviewer: RawReviewer }[] }
   viewerLatestReview: { state: string; submittedAt: string | null } | null
+  latestReviews: { nodes: { state: string; submittedAt: string | null; author: { __typename: string; login: string } | null }[] }
   timelineItems: { nodes: { createdAt?: string; requestedReviewer?: RawReviewer }[] }
 }
 interface GraphQLResponse {
@@ -61,7 +63,8 @@ interface GraphQLResponse {
 const nameOf = (raw: RawReviewer) => raw?.slug && raw.organization ? `${raw.organization.login}/${raw.slug}` : raw?.login
 
 const checks = { SUCCESS: "passing", FAILURE: "failing", ERROR: "failing", PENDING: "running", EXPECTED: "running" } as const
-const decisions = ["APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED"] as const
+// Changes requested comes from the reviews themselves, since a reviewer you request again no longer waits on you.
+const decisions = ["APPROVED", "REVIEW_REQUIRED"] as const
 
 function parsePullRequest(raw: RawPullRequest): PullRequest {
   const requestedAt = new Map<string, number>()
@@ -83,6 +86,9 @@ function parsePullRequest(raw: RawPullRequest): PullRequest {
     checks: state ? checks[state as keyof typeof checks] : undefined,
     requested,
     yourReview: yours?.submittedAt ? { state: yours.state, submittedAt: Date.parse(yours.submittedAt) } : undefined,
+    // Bots' reviews, such as Copilot's, never wait on you.
+    reviews: raw.latestReviews.nodes.flatMap(({ state, submittedAt, author }) =>
+      submittedAt && author && author.__typename !== "Bot" ? [{ author: author.login, state, submittedAt: Date.parse(submittedAt) }] : []),
   }
 }
 

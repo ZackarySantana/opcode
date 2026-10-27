@@ -31,10 +31,15 @@ Run `/ghpr` or select **Pull requests** in the command palette. The dialog has f
 
 - **Mine:** your open pull requests. The ones that need you come first, then the ones waiting on others, then drafts.
 - **Reviewing:** pull requests requesting your review by name, then open ones you've already reviewed. Requests only for your teams are on Teams.
-- **Teams:** review requests for your teams, ones that also request you first, with every requested reviewer listed. Press `f` to show one team; the choice is saved until you pick **All your teams** there.
-- **Settings:** what the sidebar shows, and how often it refreshes.
+- **Teams:** review requests for your teams, with every requested reviewer listed. Press `f` to show one team; the choice is saved until you pick **All your teams** there.
+- **Settings:** the order of pull requests, what the sidebar shows, and how often it refreshes.
 
-Each pull request shows its status, author, repository and number, when it was opened, and who is requested and when: you first, then your teams, then everyone else. Within each group the newest come first: by when your review, or your team's, was requested, or by when the pull request opened for your own and ones you've reviewed.
+Each pull request shows its status, author, repository and number, when it came to you, and who is requested and when: you first, then your teams, then everyone else. It came to you when your review, or your team's, was requested; for your own, when a reviewer first commented or requested changes; otherwise when it opened.
+
+The **Order** setting sorts each group, and the sidebar, by that time:
+
+- **Smart** (the default) puts pull requests that need your eyes first: review requests for you by name, and your own pull requests where a reviewer commented or requested changes and you haven't requested their review again since. The rest follow. Both parts are oldest first.
+- **Newest** and **Oldest** sort by time alone.
 
 | Key | Action |
 | --- | --- |
@@ -50,11 +55,11 @@ Each pull request shows its status, author, repository and number, when it was o
 A pull request **waits on you** when:
 
 - it requests your review, or your team's, and you haven't reviewed it since (GitHub can keep a team's request after you review, such as one a ruleset requires);
-- it's yours and has merge conflicts, failing checks, or requested changes, or is approved and ready to merge.
+- it's yours and has merge conflicts, failing checks, or a reviewer's comments or requested changes, or is approved and ready to merge.
 
 Statuses are colored by urgency: red for your pull requests that are blocked, yellow for review requests (**Review requested** for you, **Team: web** for your team), green for approved, the theme's highlight for pull requests waiting on someone else, and gray for drafts and pull requests you've approved or commented on.
 
-The sidebar lists only what waits on you: review requests for you first, then your teams' (narrowed to the team chosen on the Teams tab), then your own pull requests that need you. Each shows how long ago your review was requested, or for your own, how long ago it opened, and each part lists the newest first. It lists five by default, then a count of the rest and a pointer to `/ghpr`; with nothing waiting it's just the title. Beside the title, a countdown shows the time to the next refresh. Click a pull request there to open it in your browser, or the "+N more" line to open `/ghpr`.
+The sidebar lists review requests waiting on you, your teams' (narrowed to the team chosen on the Teams tab), and all your open pull requests, as one list in the **Order** setting's order. Each shows how long ago it came to you. It lists five by default, then a count of the rest and a pointer to `/ghpr`; with nothing to list it's just the title. Beside the title, a countdown shows the time to the next refresh. Click a pull request there to open it in your browser, or the "+N more" line to open `/ghpr`.
 
 Links open in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-open` (Linux); on WSL it tries `wslview`, `xdg-open`, then PowerShell.
 
@@ -74,6 +79,7 @@ GitHub sometimes withholds results. A pull request in an organization that enfor
 
 | Setting | Choices | Default |
 | --- | --- | --- |
+| Order | Smart, Newest, Oldest | Smart |
 | Sidebar team reviews | No, Yes | Yes |
 | Sidebar own PRs | No, Yes | Yes |
 | Sidebar items | 3, 5, 10, 15, 20 | 5 |

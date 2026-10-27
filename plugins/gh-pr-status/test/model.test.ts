@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { fetchSnapshot, parseResponse, type Runner } from "../src/gh"
-import { defaultSettings, HIDDEN_TEAM, sidebarEntries, view, type Snapshot } from "../src/model"
+import { defaultSettings, HIDDEN_TEAM, sidebarEntries, view, type Order, type Snapshot } from "../src/model"
 import { pr, response, team, teams, user } from "./fixtures"
 
 const snapshot: Snapshot = { ...parseResponse(response, ""), teams: ["acme/web", "acme/api"] }
@@ -18,36 +18,45 @@ test("your pull requests show what blocks them first; review requests split into
   expect(summary(current.teams)).toEqual([[10, "Review requested", ["acme/web"]], [11, "Team: web", ["acme/web"]], [12, "Team: api", ["acme/api"]], [13, "Team review", [HIDDEN_TEAM]]])
 })
 
-test("the sidebar lists only what waits on you: your reviews, your teams' (narrowed by the filter), then your pull requests", () => {
+test("the sidebar lists what waits on you and all your open pull requests, as one list, narrowed by the team filter", () => {
   const current = view(snapshot)
   const listed = (settings: Partial<typeof defaultSettings>) => numbers(sidebarEntries(current, { ...defaultSettings, ...settings }))
-  expect(listed({})).toEqual([10, 11, 12, 13, 1, 2])
-  expect(listed({ team: "acme/web" })).toEqual([10, 11, 1, 2])
+  // Your request by name first, then by when each came to you; drafts and ones waiting on reviewers are yours too.
+  expect(listed({})).toEqual([10, 1, 13, 2, 3, 4, 12, 11])
+  expect(listed({ team: "acme/web" })).toEqual([10, 1, 2, 3, 4, 11])
   expect(listed({ sidebarTeams: false, sidebarMine: false })).toEqual([10])
 })
 
-test("lists put the newest first, by when your review or your team's was requested, or when your own opened, not GitHub's last update", () => {
+test("smart puts requests for you by name and reviewers' comments on yours first, then the rest, each oldest first", () => {
   const web = (hours?: number) => [{ reviewer: team("acme/web"), hours }]
   const current = view({ ...parseResponse(searches(
     [
       pr(10, "Add REST route", { author: "alice", requested: web(135) }),
       pr(11, "Quarantine context", { author: "bob", requested: web(1) }),
       pr(12, "Full clone fallback", { author: "carol", requested: web(67) }),
-      // With no known request time, it follows the rest, though it opened last.
-      pr(13, "Rotate secrets", { author: "dave", opened: 1, requested: web() }),
       pr(14, "Stream logs", { author: "erin", requested: [{ reviewer: user("me"), hours: 50 }] }),
       pr(15, "Trim the bundle", { author: "erin", requested: [{ reviewer: user("me"), hours: 4 }] }),
     ],
+    [],
     [
-      pr(20, "Docs for webhooks", { author: "erin", opened: 100, review: { state: "APPROVED" } }),
-      pr(21, "Fix typos", { author: "erin", opened: 10, review: { state: "COMMENTED" } }),
+      pr(1, "Merge via CLI", { conflicts: true, opened: 6_000 }),
+      pr(2, "Status check", { opened: 3, reviews: [{ author: "alice", state: "COMMENTED", hours: 2 }] }),
+      // From the first review still asking for changes.
+      pr(3, "Retry uploads", { opened: 200, reviews: [{ author: "bob", state: "CHANGES_REQUESTED", hours: 30 }, { author: "carol", state: "COMMENTED", hours: 90 }] }),
+      // Requested again, the reviewer is back to reviewing.
+      pr(4, "Pin the toolchain", { opened: 10, requested: [{ reviewer: user("dave"), hours: 5 }], reviews: [{ author: "dave", state: "CHANGES_REQUESTED", hours: 20 }] }),
+      // Bots' reviews and your own replies don't count.
+      pr(5, "Split the worker", { opened: 40, reviews: [{ author: "copilot", state: "COMMENTED", hours: 1, bot: true }, { author: "me", state: "COMMENTED", hours: 1 }] }),
     ],
-    [pr(1, "Merge via CLI", { conflicts: true, opened: 6_000 }), pr(2, "Status check", { conflicts: true, opened: 3 })],
   ), ""), teams: ["acme/web"] })
-  expect(numbers(current.teams)).toEqual([11, 12, 10, 13])
-  expect(numbers(current.reviewing)).toEqual([15, 14, 21, 20])
-  expect(numbers(current.mine)).toEqual([2, 1])
-  expect(numbers(sidebarEntries(current, defaultSettings))).toEqual([15, 14, 11, 12, 10, 13, 2, 1])
+  expect(current.mine.map((entry) => [entry.pr.number, entry.label, entry.since.event])).toEqual([
+    [1, "Conflicts", "opened"], [2, "Review comments", "reviewed"], [3, "Changes requested", "reviewed"], [4, "Awaiting review", "opened"], [5, "Open", "opened"],
+  ])
+  const listed = (order: Order) => numbers(sidebarEntries(current, { ...defaultSettings, order }))
+  expect(listed("smart")).toEqual([3, 14, 15, 2, 1, 10, 12, 5, 4, 11])
+  // By time alone.
+  expect(listed("newest")).toEqual([11, 2, 15, 4, 5, 14, 12, 3, 10, 1])
+  expect(listed("oldest")).toEqual([1, 10, 3, 12, 14, 5, 4, 15, 2, 11])
 })
 
 test("a review request you've reviewed since no longer waits on you, though GitHub's search or a team still lists it", () => {
@@ -71,7 +80,7 @@ test("a review request you've reviewed since no longer waits on you, though GitH
     ],
   ), ""), teams: ["acme/web", "acme/api"] })
   expect(summary(current.reviewing)).toEqual([[33, "Review requested", []], [30, "You approved", []], [31, "You approved", []]])
-  expect(summary(current.teams)).toEqual([[32, "Team: web", ["acme/web"]], [31, "You approved", ["acme/web"]], [34, "You approved", [HIDDEN_TEAM]]])
+  expect(summary(current.teams)).toEqual([[31, "You approved", ["acme/web"]], [32, "Team: web", ["acme/web"]], [34, "You approved", [HIDDEN_TEAM]]])
   expect(sidebarEntries(current, defaultSettings).map((entry) => [entry.pr.number, entry.label])).toEqual([[33, "Review requested"], [32, "Team: web"]])
 })
 

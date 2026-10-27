@@ -24,22 +24,22 @@ export function requestedLine(entry: Entry, viewer: string, now: number): string
   return parts.length ? `Requested: ${parts.join(", ")}` : undefined
 }
 
-/** A dialog card: status, author and where, when it opened, then who is requested and when. */
+/** A dialog card: status, author and where, when it came to you, then who is requested and when. */
 export function card(entry: Entry, viewer: string, now: number, palette: Palette): Item {
   const { pr } = entry
   const where = `${pr.repository}#${pr.number}`
   return {
     key: pr.url, mark: toneMark(entry.tone, palette), head: entry.label, detail: entry.own ? where : `@${pr.author} · ${where}`,
-    time: `opened ${relative(pr.createdAt, now)}`, title: pr.title, summary: requestedLine(entry, viewer, now),
+    time: `${entry.since.event} ${relative(entry.since.at, now)}`, title: pr.title, summary: requestedLine(entry, viewer, now),
   }
 }
 
-/** A sidebar entry: author, or for your own pull requests, which one. The age is since your review was requested, or since your pull request opened. */
+/** A sidebar entry: author, or for your own pull requests, which one. The age is since it came to you, which lists sort by. */
 export function sidebarItem(entry: Entry, now: number, palette: Palette): Item {
   const { pr } = entry
   return {
     key: pr.url, mark: toneMark(entry.tone, palette), head: entry.label, link: pr.url,
     detail: entry.own ? `${pr.repository.split("/").pop()}#${pr.number}` : `@${pr.author}`,
-    time: age(entry.own ? pr.createdAt : entry.requestedAt, now), title: pr.title,
+    time: age(entry.since.at, now), title: pr.title,
   }
 }

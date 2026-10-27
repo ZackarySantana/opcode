@@ -8,6 +8,7 @@ export const team = (name: string): Reviewer => { const [org, slug] = name.split
 export function pr(number: number, title: string, options: {
   author?: string; opened?: number; draft?: boolean; conflicts?: boolean; decision?: string; checks?: string
   requested?: { reviewer: Reviewer; hours?: number }[]; review?: { state: string; hours?: number }
+  reviews?: { author: string; state: string; hours: number; bot?: boolean }[]
 } = {}) {
   return {
     url: `https://github.com/acme/web/pull/${number}`, number, title, isDraft: options.draft ?? false, createdAt: hoursAgo(options.opened ?? 72),
@@ -16,6 +17,8 @@ export function pr(number: number, title: string, options: {
     commits: { nodes: [{ commit: { statusCheckRollup: options.checks ? { state: options.checks } : null } }] },
     reviewRequests: { nodes: (options.requested ?? []).map(({ reviewer }) => ({ requestedReviewer: reviewer })) },
     viewerLatestReview: options.review ? { state: options.review.state, submittedAt: hoursAgo(options.review.hours ?? 1) } : null,
+    latestReviews: { nodes: (options.reviews ?? []).map(({ author, state, hours, bot }) =>
+      ({ state, submittedAt: hoursAgo(hours), author: { __typename: bot ? "Bot" : "User", login: author } })) },
     timelineItems: { nodes: (options.requested ?? []).filter(({ hours }) => hours !== undefined).map(({ reviewer, hours }) => ({ createdAt: hoursAgo(hours!), requestedReviewer: reviewer })) },
   }
 }
@@ -27,10 +30,10 @@ export const response = JSON.stringify({
   data: {
     viewer: { login: "me" },
     mine: { nodes: [
-      pr(1, "Fix login redirect", { conflicts: true, checks: "FAILURE" }),
-      pr(2, "Add dark mode", { decision: "APPROVED", checks: "SUCCESS" }),
-      pr(3, "Refactor the router", { draft: true }),
-      pr(4, "Upgrade TypeScript", { decision: "REVIEW_REQUIRED", requested: [{ reviewer: user("alice") }] }),
+      pr(1, "Fix login redirect", { opened: 100, conflicts: true, checks: "FAILURE" }),
+      pr(2, "Add dark mode", { opened: 50, decision: "APPROVED", checks: "SUCCESS" }),
+      pr(3, "Refactor the router", { opened: 30, draft: true }),
+      pr(4, "Upgrade TypeScript", { opened: 20, decision: "REVIEW_REQUIRED", requested: [{ reviewer: user("alice") }] }),
     ] },
     requested: { nodes: [
       pr(10, "Cache build artifacts", { author: "alice", requested: [{ reviewer: user("me"), hours: 2 }, { reviewer: team("acme/web"), hours: 30 }] }),

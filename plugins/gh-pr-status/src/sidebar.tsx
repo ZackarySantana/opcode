@@ -10,7 +10,7 @@ import type { PullRequestsController } from "./host"
 import { sidebarEntries, view } from "./model"
 import { sidebarItem } from "./style"
 
-/** Only what waits on you; /ghpr has everything else. */
+/** Review requests waiting on you and your open pull requests, as one list; /ghpr has everything else. */
 export function Sidebar(props: { prs: PullRequestsController }) {
   const api = usePlugin()
   const palette = usePalette()
