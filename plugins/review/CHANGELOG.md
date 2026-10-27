@@ -1,5 +1,11 @@
 # @lidtop/opencode-review
 
+## 0.1.1
+
+### Patch Changes
+
+- 6930cad: List Review under diff, language server, and agent searches on npm.
+
 ## 0.1.0
 
 ### Minor Changes
