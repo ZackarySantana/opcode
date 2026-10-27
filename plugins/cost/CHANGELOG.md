@@ -1,5 +1,11 @@
 # @lidtop/opencode-cost
 
+## 0.3.2
+
+### Patch Changes
+
+- abc551c: The shared live-event helper can now resubscribe to an event stream that stops delivering, for the Sessions sidebar. No behavior changes.
+
 ## 0.3.1
 
 ### Patch Changes

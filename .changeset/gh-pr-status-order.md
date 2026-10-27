@@ -1,5 +1,0 @@
----
-"@lidtop/opencode-gh-pr-status": patch
----
-
-Pull requests are ordered by when they came to you, not GitHub's last update, and a new **Order** setting (Smart, Newest, Oldest) chooses how. Smart, the default, puts pull requests that need your eyes first: review requests for you by name, and your own pull requests where a reviewer commented or requested changes and you haven't requested their review again since. The rest follow, both parts oldest first. The sidebar is one list in that order and now includes all your open pull requests. Each pull request shows the time it sorts by: when your review, or your team's, was requested; when a reviewer first asked for changes to yours; otherwise when it opened. A reviewer's comments on your pull request now mark it **Review comments**, and requested changes clear once you request that reviewer again. Settings saved by earlier versions can't be read: delete `opcode-gh-pr-status/gh-pr-status.sqlite` in OpenCode's state directory before upgrading.

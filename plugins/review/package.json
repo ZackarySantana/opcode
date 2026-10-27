@@ -1,6 +1,6 @@
 {
   "name": "@lidtop/opencode-review",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Comment on the agent's diffs in OpenCode while it works, and send the comments to steer it",
   "keywords": [
     "opencode",

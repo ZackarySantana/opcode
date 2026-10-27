@@ -61,7 +61,7 @@
     },
     "plugins/cost": {
       "name": "@lidtop/opencode-cost",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/tabs": "workspace:*",
@@ -92,7 +92,7 @@
     },
     "plugins/gh-pr-status": {
       "name": "@lidtop/opencode-gh-pr-status",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/tabs": "workspace:*",
@@ -131,7 +131,7 @@
     },
     "plugins/review": {
       "name": "@lidtop/opencode-review",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/ui": "workspace:*",
@@ -148,7 +148,7 @@
     },
     "plugins/sessions": {
       "name": "@lidtop/opencode-sessions",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/tabs": "workspace:*",

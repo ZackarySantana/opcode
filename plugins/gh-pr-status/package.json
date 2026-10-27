@@ -1,6 +1,6 @@
 {
   "name": "@lidtop/opencode-gh-pr-status",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "See the GitHub pull requests waiting on you in the OpenCode sidebar",
   "keywords": [
     "opencode",

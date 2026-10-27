@@ -1,5 +1,12 @@
 # @lidtop/opencode-sessions
 
+## 0.3.1
+
+### Patch Changes
+
+- abc551c: Finished and failed sessions stay in the Agents sidebar for 10 minutes after you first open them, with a muted mark, instead of dropping out right away. They keep their place and their number for `/go` while listed. Set `inbox.keepRead` in `cli.json` to a different number of minutes, or `0` to drop them as soon as you open them.
+- abc551c: The Agents sidebar no longer freezes when its event stream silently stops delivering, which left finished sessions listed as working, missed new ones, and kept sessions you had opened. Like OpenCode itself, it now reconnects after 45 seconds without even a keepalive and reloads the list.
+
 ## 0.3.0
 
 ### Minor Changes
