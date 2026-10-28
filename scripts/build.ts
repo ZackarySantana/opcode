@@ -1,9 +1,12 @@
 import solidPlugin from "@opentui/solid/bun-plugin"
 import { cp, mkdir, readdir, rm, writeFile } from "node:fs/promises"
 import { existsSync } from "node:fs"
+import { isBuiltin } from "node:module"
 import { join, relative } from "node:path"
 import ts from "typescript"
-import { inside, packageName, pluginEntries, pluginIDs, privateWorkspaces, publicManifest, relativeModule, repositoryRoot, stagedManifest, workspaceSource } from "./packaging"
+import { build as vite } from "vite"
+import { gui } from "@opencode/plugin/gui/vite"
+import { guiBundle, guiEntry, hasGui, inside, packageName, pluginEntries, pluginIDs, privateWorkspaces, publicManifest, relativeModule, repositoryRoot, stagedManifest, workspaceSource } from "./packaging"
 
 /** Stages into `.release/opcode-<id>` by default, or into a new empty directory elsewhere. */
 export async function buildPlugin(root: string, id: typeof pluginIDs[number], destination = join(root, ".release", `opcode-${id}`)) {
@@ -48,7 +51,7 @@ export async function buildPlugin(root: string, id: typeof pluginIDs[number], de
   })
   if (!bundle.success) throw new AggregateError(bundle.logs, `Build failed for ${manifest.name}`)
   await emitDeclarations(root, entrypoints, destination, workspaceMap)
-  const exports = Object.fromEntries(entries.map((entry) => {
+  const exports: Record<string, unknown> = Object.fromEntries(entries.map((entry) => {
     const name = entry.replace(/\.tsx?$/, "")
     return [name === "index" ? "." : `./${name}`, {
       types: `./dist/types/plugins/${id}/src/${name}.d.ts`,
@@ -56,6 +59,10 @@ export async function buildPlugin(root: string, id: typeof pluginIDs[number], de
       default: `./dist/${name}.js`,
     }]
   }))
+  if (hasGui(directory)) {
+    await buildGui(directory, join(destination, "dist", guiBundle), workspaceMap)
+    exports["./gui-experimental"] = `./dist/${guiBundle}`
+  }
   await writeFile(join(destination, "package.json"), `${JSON.stringify(await stagedManifest(root, manifest, exports, imports), null, 2)}\n`)
   await cp(join(root, "LICENSE"), join(destination, "LICENSE"))
   for (const file of ["README.md", "CHANGELOG.md"]) {
@@ -66,6 +73,29 @@ export async function buildPlugin(root: string, id: typeof pluginIDs[number], de
     await writeFile(join(destination, "README.md"), `# ${manifest.name}\n\n${manifest.description ?? "An OpenCode V2 plugin."}\n\nInstall by adding \`${manifest.name}\` to \`plugins\` in your OpenCode configuration.${terminal}\n`)
   }
   return destination
+}
+
+/** The desktop part: one CommonJS file that leaves the modules OpenCode Desktop provides external. */
+export async function buildGui(directory: string, outFile: string, workspaces: Awaited<ReturnType<typeof privateWorkspaces>>) {
+  await vite({
+    root: directory,
+    configFile: false,
+    logLevel: "warn",
+    plugins: [{
+      name: "window-only-private-workspaces",
+      enforce: "pre",
+      resolveId(source, importer) {
+        // Our GUI parts are window-only: Node and Bun work belongs to the server part, behind its RPC.
+        if (source.startsWith("bun:") || source === "bun" || isBuiltin(source)) this.error(`${source} (from ${importer}) does not run in an OpenCode Desktop window`)
+        const workspace = workspaces.get(packageName(source))
+        if (!workspace) return
+        const path = workspaceSource(workspace.directory, workspace.manifest, source)
+        if (!inside(workspace.directory, path)) this.error(`Private import escaped its workspace: ${source}`)
+        return path
+      },
+    }, ...gui({ entry: join(directory, "src", guiEntry), outFile })],
+    build: { sourcemap: "inline", minify: false },
+  })
 }
 
 async function emitDeclarations(root: string, entrypoints: string[], destination: string, workspaces: Awaited<ReturnType<typeof privateWorkspaces>>) {

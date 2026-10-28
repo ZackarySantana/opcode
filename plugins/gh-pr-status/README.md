@@ -8,7 +8,7 @@ Never leave a review waiting. See the GitHub pull requests that need you in the 
 
 ## Install
 
-Requires OpenCode **2.1.3 or newer in the 2.x line**, and the [GitHub CLI](https://cli.github.com/) signed in with `gh auth login` where the OpenCode server runs.
+Requires OpenCode **2.2.0 or newer in the 2.x line**, and the [GitHub CLI](https://cli.github.com/) signed in with `gh auth login` where the OpenCode server runs.
 
 ```sh
 opencode plugin add @lidtop/opencode-gh-pr-status

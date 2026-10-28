@@ -10,7 +10,7 @@ See where your usage and time go: recorded costs and tokens across projects and 
 
 ## Install
 
-Requires OpenCode **2.1.3 or newer in the 2.x line**.
+Requires OpenCode **2.2.0 or newer in the 2.x line**.
 
 ```sh
 opencode plugin add @lidtop/opencode-cost

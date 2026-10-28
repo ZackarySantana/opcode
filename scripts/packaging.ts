@@ -24,6 +24,14 @@ export async function manifestAt(directory: string): Promise<Manifest> {
   return JSON.parse(await readFile(join(directory, "package.json"), "utf8"))
 }
 
+/** A plugin's desktop GUI entry, bundled separately by Vite into `dist/gui-experimental.cjs`. */
+export const guiEntry = "gui.tsx"
+export const guiBundle = "gui-experimental.cjs"
+
+export function hasGui(directory: string): boolean {
+  return existsSync(join(directory, "src", guiEntry))
+}
+
 /** A plugin's source entrypoints: always the server's, plus the terminal side and RPC contract when it has them. */
 export function pluginEntries(directory: string): string[] {
   return ["index.ts", "tui.tsx", "rpc.ts"].filter((entry) => entry === "index.ts" || existsSync(join(directory, "src", entry)))

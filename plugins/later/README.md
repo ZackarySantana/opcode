@@ -12,7 +12,7 @@ Save the next idea without interrupting the current one. Keep one Later list acr
 
 ## Install
 
-Requires OpenCode **2.1.3 or newer in the 2.x line**.
+Requires OpenCode **2.2.0 or newer in the 2.x line**.
 
 ```sh
 opencode plugin add @lidtop/opencode-later

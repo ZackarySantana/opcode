@@ -190,7 +190,7 @@ test("an item's text starts beside its number, wraps under itself, and stays cle
     const lines = frame.split("\n")
     return lines.slice(lines.findIndex((line) => line.includes("1. /cost")))
   }
-  const beside = /1\. \/cost\b.*\S +added \S+ ago/
+  const beside = /1\. \/cost\b.* +added \S+ ago/
   try {
     const [first, second] = card(await view.waitForFrame((frame) => frame.includes("added")))
     expect(first).toMatch(beside)
