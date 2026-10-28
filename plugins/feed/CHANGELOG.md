@@ -1,5 +1,12 @@
 # @lidtop/opencode-feed
 
+## 0.5.0
+
+### Minor Changes
+
+- add0441: Add an OpenCode Desktop part: a titlebar pill while incidents are in progress, and a Feeds dialog (command palette and `/feed`) with Status, Upcoming, Releases, and Subscriptions sections, subscribing to presets or a custom URL, and unsubscribing. `/feed-refresh` fetches every feed now. It follows the same server side as the terminals.
+- 62c9603: Require OpenCode 2.2.0 and OpenTUI 0.7.
+
 ## 0.4.3
 
 ### Patch Changes

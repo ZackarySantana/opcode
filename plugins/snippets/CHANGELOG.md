@@ -1,5 +1,12 @@
 # @lidtop/opencode-snippets
 
+## 0.2.0
+
+### Minor Changes
+
+- 62c9603: Require OpenCode 2.2.0 and OpenTUI 0.7.
+- 99c0094: Add an OpenCode Desktop part: `/snippets` lists snippets to insert `@name` into the prompt or write a new one in a chat, and the command palette offers editing a snippet in chat and deleting one.
+
 ## 0.1.2
 
 ### Patch Changes
