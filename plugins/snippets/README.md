@@ -4,7 +4,7 @@ Stop retyping the prompts you use every day. Save reusable prompt text as snippe
 
 ## Install
 
-Requires OpenCode **2.1.3 or newer in the 2.x line**.
+Requires OpenCode **2.2.0 or newer in the 2.x line**.
 
 ```sh
 opencode plugin add @lidtop/opencode-snippets
@@ -19,7 +19,7 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 }
 ```
 
-**Where it runs.** The OpenCode server reads and writes snippet files and expands them; the terminal view asks the server for them. With a remote server, snippets live on that server's filesystem.
+**Where it runs.** The OpenCode server reads and writes snippet files and expands them; the terminal view and the desktop app ask the server for them. With a remote server, snippets live on that server's filesystem.
 
 ## Use
 
@@ -51,6 +51,16 @@ The list marks a global snippet **overridden** when a project snippet has the sa
 `/snippets new` (or `n` in `/snippets`) opens a new session for writing snippets with instructions for the agent already in the prompt (OpenCode may show them as a "pasted N lines" placeholder), followed by "The following message is what the user wants:". Type what you want after it and send. `/snippets new Never commit until I say so` sends the instructions right away, ending with "The user wants to create a snippet that Never commit until I say so". `e` in `/snippets` opens the same kind of session for the selected snippet. With the Sessions plugin loaded, its sidebar then offers **Back to** the session you came from. Before writing anything, the agent walks you through an example: the name and scope, the exact text, and a sample message that uses it. It creates or updates snippets with its snippet tools, and **you approve every write and delete** in OpenCode's permission prompt, which shows the name, scope, and text. The session uses the model selected in your prompt.
 
 The snippet tools exist only in these sessions. Other sessions never see them.
+
+### Desktop
+
+In the desktop app, from a session:
+
+- `/snippets` (or **Snippets** in the command palette) opens a searchable list of project snippets, then global ones, with their descriptions or text, aliases, and **overridden** or **skill conflict** marks. Picking one types `@name ` into the prompt; **New snippet…** at the top writes one in a new chat.
+- `/snippets new Never commit until I say so` opens the authoring session with that request right away. Without a request, the app asks what the snippet should do first.
+- **Edit Snippet in Chat** and **Delete Snippet** in the command palette pick a snippet, then open an authoring session asking what should change, or delete its file after confirmation.
+
+Authoring sessions open in a new tab on the session's server, with the model selected in your prompt, and work as in the terminal: you approve every write and delete. Snippets come from the session's server and directory.
 
 ## Files
 

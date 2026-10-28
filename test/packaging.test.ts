@@ -51,6 +51,12 @@ async function packAndInspect(stage: string) {
   await mkdir(dirname(installed), { recursive: true })
   await symlink(directory, installed)
   for (const [key, value] of Object.entries(manifest.exports ?? {})) {
+    // The desktop part: one CommonJS bundle the app loads itself, without types.
+    if (typeof value === "string") {
+      expect(key).toBe("./gui-experimental")
+      expect(existsSync(resolve(directory, value))).toBe(true)
+      continue
+    }
     const entry = value as { types: string; import: string; default: string }
     expect(entry.types).toEndWith(".d.ts")
     for (const target of Object.values(entry)) {
@@ -183,6 +189,21 @@ void [value, result, invalidValue, invalidResult]
     expect(existsSync(join(rebuilt, "dist/rpc.js"))).toBe(false)
   }, 120_000)
 
+  test("a desktop part ships as one CommonJS bundle that bundles private source and leaves the app's modules external", async () => {
+    const root = await fixture()
+    const gui = join(root, "plugins/context/src/gui.tsx")
+    await writeFile(gui, 'import { Command, Plugin } from "@opencode/plugin/gui"; import { createSignal } from "solid-js"; import { decorate } from "@opcode/core"; export default Plugin.define({ setup(ctx) { const [label] = createSignal(decorate("gui").value); ctx.add(Command, () => ({ id: "open", title: label(), run() {} })) } })')
+    const stage = await buildPlugin(root, "context")
+    const manifest = await manifestAt(stage)
+    expect(manifest.exports?.["./gui-experimental"]).toBe("./dist/gui-experimental.cjs")
+    const bundle = await readFile(join(stage, "dist/gui-experimental.cjs"), "utf8")
+    expect(bundle).toContain("bundled:")
+    expect([...bundle.matchAll(/require\("([^"]+)"\)/g)].map((match) => match[1]).sort()).toEqual(["@opencode/plugin/gui", "solid-js"])
+    // Node and Bun work belongs to the server part.
+    await writeFile(gui, 'import { Plugin } from "@opencode/plugin/gui"; import { readFileSync } from "node:fs"; export default Plugin.define({ setup() { readFileSync("x") } })')
+    await expect(buildPlugin(root, "context")).rejects.toThrow("does not run in an OpenCode Desktop window")
+  }, 120_000)
+
   test("a bundled host singleton without a peer declaration fails the build instead of shipping a copy", async () => {
     const root = await fixture()
     const plugin = await manifestAt(join(root, "plugins/context"))
@@ -284,7 +305,7 @@ describe("independent release policy", () => {
     await git("branch", "before-host-upgrade")
     const manifest = await manifestAt(root)
     for (const name of Object.keys(manifest.workspaces!.catalog!)) {
-      if (name.startsWith("@opencode/")) manifest.workspaces!.catalog![name] = "2.2.0"
+      if (name.startsWith("@opencode/")) manifest.workspaces!.catalog![name] = "9.9.9"
     }
     await writeFile(join(root, "package.json"), JSON.stringify(manifest))
     await commit()

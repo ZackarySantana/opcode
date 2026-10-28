@@ -13,5 +13,5 @@
     "types": ["bun"]
   },
   "include": ["packages/**/*.ts", "packages/**/*.tsx", "plugins/**/*.ts", "plugins/**/*.tsx", "scripts/**/*.ts", "test/**/*.ts"],
-  "exclude": ["**/dist", "node_modules", ".release"]
+  "exclude": ["**/dist", "node_modules", ".release", "plugins/*/src/gui.tsx", "plugins/*/src/gui/**"]
 }

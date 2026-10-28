@@ -10,7 +10,7 @@ See where your usage and time go: recorded costs and tokens across projects and 
 
 ## Install
 
-Requires OpenCode **2.1.3 or newer in the 2.x line**.
+Requires OpenCode **2.2.0 or newer in the 2.x line**.
 
 ```sh
 opencode plugin add @lidtop/opencode-cost
@@ -25,7 +25,7 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 }
 ```
 
-**Where it runs.** Install it globally so the server collector is available across projects. The server records usage and owns the database; the terminal dashboard queries it over plugin RPC (both parts use the ID `opcode-cost`). A client-only install in `cli.json` cannot supply that RPC service, so the dashboard needs the server plugin enabled at the connected location.
+**Where it runs.** Install it globally so the server collector is available across projects. The server records usage and owns the database; the terminal and desktop dashboards query it over plugin RPC (every part uses the ID `opcode-cost`). A client-only install in `cli.json` cannot supply that RPC service, so the dashboard needs the server plugin enabled at the connected location. OpenCode Desktop reads plugins only from `opencode.json(c)`.
 
 ## Use
 
@@ -48,6 +48,12 @@ Run `/cost` or select **Cost** in the command palette. It opens a dialog with fi
 Totals are never narrowed: the search narrows only the rows shown. The date range applies to every tab and is shown before the search box; reopening `/cost` starts again from the last 30 days. The view rereads the server ledger every five seconds while open and shortly after public usage updates. Date ranges use the **server's local calendar**, include today, and attribute usage to message creation time and turns to their start. A project is named after its most recently used directory and includes its recorded worktrees.
 
 **Tokens, and cost when there is any.** Amounts show cost and tokens (`$2.00  15 tok`), and bars follow cost. With no recorded cost in the range, as on a subscription, the cost card is dropped and everything is shown and sized by tokens. The rule covers the whole dialog, never single rows, so a free model beside paid ones reads `$0.00` with an empty bar.
+
+### Desktop
+
+In OpenCode Desktop, a titlebar pill shows **today's spend** on the app's own server (or today's tokens when nothing recorded a cost); click it, select **Cost** in the command palette, or run `/cost` to open the dashboard. It has the same sections as the terminal's tabs (Overview, Models, Projects, Daily, and Turns, as tables with bars) and the same date ranges, starting from the last 30 days. Click a turn's title to open its session. The pill and an open dashboard reread shortly after the server records usage (the server emits a throttled `updated` RPC event) and every minute; **Refresh** rereads at once.
+
+The desktop app does not import history: only the terminal does (see [Collection and history](#collection-and-history)), so usage from before the server plugin was enabled appears once a terminal has opened the project.
 
 ## Time
 
@@ -72,7 +78,7 @@ Limitations:
 
 The server records completed and failed assistant steps, including headless usage, completed compactions with model metadata, and the prompt and idle moments of root sessions. It filters the cross-location event stream against each session's directory, reconnects after the stream ends, and cancels outstanding work on unload.
 
-Historical import runs when the terminal plugin loads or changes location, and on `r`. OpenCode 2.1.3 exposes full message history only through the terminal client, so the terminal reads all assistant, compaction, user, and idle pages for **every session in the current project, including other worktrees**, extracts usage metadata and turn timestamps, and sends validated batches of at most 100 items to the server. The server derives project, session, title, and location identity from its own session lookup. Prompts and summaries are never sent.
+Historical import runs when the terminal plugin loads or changes location, and on `r`. A server plugin cannot list message history in OpenCode 2.2.0, so the terminal reads all assistant, compaction, user, and idle pages for **every session in the current project, including other worktrees**, extracts usage metadata and turn timestamps, and sends validated batches of at most 100 items to the server. The server derives project, session, title, and location identity from its own session lookup. Prompts and summaries are never sent.
 
 - **Safe to repeat:** imports are cancellable and idempotent, and each batch is atomic. Changing location cancels the previous import; a failure is shown only while its location is current. Retries scan again without double-counting, and old completion markers never permanently skip reconciliation. Projects never opened in a terminal are not imported until opened.
 - **Live wins:** history never overwrites a message collected live. For legacy or historical records, only a later completion timestamp replaces existing values, and incomplete snapshots cannot erase completed usage. Duplicate live updates replace existing values; older live events are ignored. A failed step that reports no usage keeps any usage already recorded for its message.

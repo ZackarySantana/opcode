@@ -1,3 +1,4 @@
+import { describeRpcError } from "@opcode/core/rpc"
 import type { LocationRef, OpenCodeClient } from "@opencode/client"
 import type { Activity, Dashboard, DateRange, ImportStatus, TimeDashboard, Usage } from "./domain.js"
 import { CostRpc } from "./rpc.js"
@@ -11,8 +12,11 @@ export interface CostService {
   completeImport(signal: AbortSignal): Promise<void>
 }
 
-/** Every call explicitly targets the same connected-server location. No local filesystem access. */
-export function createCostService(client: Pick<OpenCodeClient, "rpc">, location: LocationRef): CostService {
+/**
+ * Every call targets the same connected-server location, or the server's default without one: the ledger is
+ * shared by every location, so reads answer the same anywhere. No local filesystem access.
+ */
+export function createCostService(client: Pick<OpenCodeClient, "rpc">, location?: LocationRef): CostService {
   const rpc = client.rpc(CostRpc)
   return {
     dashboard: async (range, signal) => await rpc.dashboard({ range }, { location, signal }) as Dashboard,
@@ -22,4 +26,11 @@ export function createCostService(client: Pick<OpenCodeClient, "rpc">, location:
     importActivity: async (batch, signal) => { await rpc.importActivity(batch, { location, signal }) },
     completeImport: async (signal) => { await rpc.completeImport({}, { location, signal }) },
   }
+}
+
+export const describeError = (error: unknown) => describeRpcError(error, { name: "Cost", package: "@lidtop/opencode-cost" })
+
+/** A read whose failure is described for the user, saying what to do when the server lacks the plugin or runs another version. */
+export async function described<T>(read: Promise<T>): Promise<T> {
+  try { return await read } catch (error) { throw new Error(describeError(error)) }
 }

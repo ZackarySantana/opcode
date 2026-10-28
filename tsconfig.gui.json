@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "jsxImportSource": "solid-js"
+  },
+  // Always one input, so the project checks before any plugin has a desktop part.
+  "files": ["node_modules/@opencode/plugin/dist/gui/index.d.ts"],
+  "include": ["plugins/*/src/gui.tsx", "plugins/*/src/gui/**/*.ts", "plugins/*/src/gui/**/*.tsx"],
+  "exclude": ["**/dist", "node_modules", ".release"]
+}

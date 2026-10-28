@@ -10,7 +10,7 @@ Know what's down before you debug. Follow the status pages and release feeds you
 
 ## Install
 
-Requires OpenCode **2.1.3 or newer in the 2.x line**.
+Requires OpenCode **2.2.0 or newer in the 2.x line**.
 
 ```sh
 opencode plugin add @lidtop/opencode-feed
@@ -59,6 +59,12 @@ On Status, in-progress incidents come first, colored by urgency: red while inves
 The sidebar shows only what needs attention: up to five items by default (see **Sidebar items** below), then the two soonest scheduled items, with a count of the rest and a pointer to `/feed`, then any unreachable feeds. Operational status pages are left out; with nothing to list it's just the title. By default it leaves out release feeds, keeping it for incidents; see **Sidebar releases** below. Beside the title, a countdown shows the time to the next refresh, or "refreshing…" while feeds are being fetched. It is omitted when you have no subscriptions, unless the server can't be reached or can't read them, which it says; the plugin never forces it open. Click an item or scheduled maintenance there to open its link, as `enter` does in `/feed`; click a "+N more" line to open the dialog.
 
 Links open in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-open` (Linux); on WSL it tries `wslview`, `xdg-open`, then PowerShell. Only `http` and `https` links are opened.
+
+### Desktop
+
+In OpenCode Desktop, a titlebar pill shows while incidents are in progress ("2 incidents"); click it, select **Feeds** in the command palette, or run `/feed` to open the Feeds dialog. It has Status, Upcoming, and Releases sections grouped as in the terminal, using the same time window and Show resolved setting, and a **Subscriptions** section listing each subscribed feed's state with a button to unsubscribe (after a confirmation). Click an item to open its link in your browser. **Subscribe…** offers the presets you haven't subscribed to, or a custom URL, which then asks whether it is a status page or a release feed. **Refresh** in the dialog, `/feed-refresh`, and **Refresh feeds** fetch every feed now. Settings are changed in the terminal's Settings tab.
+
+The desktop app follows the same server side as the terminals, over the app's own server: subscriptions, settings, and feeds are shared with every terminal connected to it, and changes show everywhere right away. On Home, with no session open, it asks the server's default location. OpenCode Desktop reads plugins only from `opencode.json(c)`.
 
 ## Subscriptions
 

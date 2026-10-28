@@ -7,7 +7,7 @@ import { activityFromMessage, isUsageMessage, usageFromMessage } from "./message
 /** Only these message types carry usage or turn boundaries; the server filters, the client still checks. */
 const TYPES = ["assistant", "compaction", "user", "idle"] as const
 
-/** Full history is only exposed by the TUI's client in OpenCode 2.1.3. */
+/** A server plugin cannot list message history in OpenCode 2.2.0 (its `session` domain has no message listing), so a client reads it. */
 export async function importProject(
   client: Pick<OpenCodeClient, "session" | "message">,
   service: CostService,

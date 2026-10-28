@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { effectiveSnippets, formatSnippet, parseSnippet, takenAliases, type Snippet } from "../src/domain"
+import { authoringRequest, effectiveSnippets, formatSnippet, parseCommand, parseSnippet, takenAliases, type Snippet } from "../src/domain"
 
 const snippet = (name: string, scope: Snippet["scope"], aliases: string[] = []): Snippet => ({ name, scope, aliases, body: `${scope} ${name}`, path: `/${scope}/${name}.md` })
 
@@ -35,4 +35,16 @@ test("aliases another snippet would keep are reported, but a project alias may o
   // The snippet's own earlier aliases don't count against it, and project snippets don't shadow a global write.
   expect(owners(snippet("fresh", "project", ["old"]))).toEqual([])
   expect(owners(snippet("wide", "global", ["fx", "first", "rv"]))).toEqual([["rv", "/global/other.md"]])
+})
+
+test("/snippets arguments start authoring only after new, with the rest as the request", () => {
+  expect(parseCommand("new Never commit\nuntil I say so")).toEqual({ verb: "new", request: "Never commit\nuntil I say so" })
+  expect(parseCommand("/snippets new")).toEqual({ verb: "new", request: "" })
+  expect(parseCommand("")).toEqual({ verb: "open" })
+  expect(parseCommand("newer")).toEqual({ verb: "open" })
+})
+
+test("an authoring request names the snippet it changes", () => {
+  expect(authoringRequest({}, "says hi")).toEndWith("The user wants to create a snippet that says hi")
+  expect(authoringRequest({ name: "review", scope: "project" }, "be shorter")).toEndWith("The user wants this change to @review: be shorter")
 })

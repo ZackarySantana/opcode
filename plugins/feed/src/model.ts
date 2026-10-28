@@ -276,18 +276,40 @@ export function sidebarLayout(view: Timeline, limit: number): SidebarLayout {
   }
 }
 
-/** One-line state of a single feed for the subscription editor. */
-export function feedState(result: FetchResult | undefined, kind: FeedKind, now = Date.now()): { text: string; phase?: Phase } {
-  if (!result) return { text: "" }
-  if (result.status === "loading" && !result.feed) return { text: "fetching…" }
-  if (result.status === "error") return { text: `error: ${result.error}`, phase: "active" }
+/** Where a single feed stands, for each front end to word: its in-progress item, or a release feed's newest. */
+export type FeedCondition =
+  | { readonly kind: "none" }
+  | { readonly kind: "fetching" }
+  | { readonly kind: "error"; readonly error: string }
+  | { readonly kind: "live"; readonly item: Post }
+  | { readonly kind: "operational" }
+  | { readonly kind: "latest"; readonly item: Post }
+  | { readonly kind: "empty" }
+
+export function feedCondition(result: FetchResult | undefined, kind: FeedKind, now = Date.now()): FeedCondition {
+  if (!result) return { kind: "none" }
+  if (result.status === "loading" && !result.feed) return { kind: "fetching" }
+  if (result.status === "error") return { kind: "error", error: result.error }
   const items = result.feed!.items
   if (kind === "status") {
     const live = items.find((item) => inProgress(item.phase) && (item.published ?? 0) >= now - CURRENT_HORIZON)
-    return live ? { text: `${live.status ?? "Ongoing"}: ${live.title}`, phase: live.phase } : { text: "operational", phase: "resolved" }
+    return live ? { kind: "live", item: live } : { kind: "operational" }
   }
-  const latest = items[0]
-  return latest ? { text: `${age(latest.published, now)} ${latest.title}`.trim(), phase: "news" } : { text: "no items" }
+  return items[0] ? { kind: "latest", item: items[0] } : { kind: "empty" }
+}
+
+/** One-line state of a single feed for the subscription editor. */
+export function feedState(result: FetchResult | undefined, kind: FeedKind, now = Date.now()): { text: string; phase?: Phase } {
+  const condition = feedCondition(result, kind, now)
+  switch (condition.kind) {
+    case "none": return { text: "" }
+    case "fetching": return { text: "fetching…" }
+    case "error": return { text: `error: ${condition.error}`, phase: "active" }
+    case "live": return { text: `${condition.item.status ?? "Ongoing"}: ${condition.item.title}`, phase: condition.item.phase }
+    case "operational": return { text: "operational", phase: "resolved" }
+    case "latest": return { text: `${age(condition.item.published, now)} ${condition.item.title}`.trim(), phase: "news" }
+    case "empty": return { text: "no items" }
+  }
 }
 
 export function windowShort(hours: number): string {

@@ -1,6 +1,6 @@
 import { Rpc } from "@opencode/plugin/rpc"
 import type { OpenCodeClient } from "@opencode/client"
-import { empty, failed, object } from "@opcode/core/rpc"
+import { describeRpcError, empty, failed, object } from "@opcode/core/rpc"
 import { MAX_NAME, PLUGIN_ID, scopes, type Scope } from "./domain"
 import type { SnippetEntry } from "./service"
 
@@ -35,3 +35,5 @@ export function snippetsRemote(client: OpenCodeClient, directory: string): Snipp
     remove: async (input) => (await rpc.remove(input, options()) as { removed: boolean }).removed,
   }
 }
+
+export const describeError = (error: unknown) => describeRpcError(error, { name: "Snippets", package: "@lidtop/opencode-snippets" })

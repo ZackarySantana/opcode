@@ -57,6 +57,22 @@ test("live usage takes precedence over history; equal versions correct, older ve
   expect(ledger.dashboard("all").total.cost).toBe(10)
 })
 
+test("committed writes notify; ignored live versions, failed batches, and reads do not", () => {
+  let writes = 0
+  const ledger = new CostLedger(":memory:", () => { writes++ })
+  ledgers.push(ledger)
+  ledger.recordLive(record, 10)
+  ledger.recordLive(record, 9)
+  expect(writes).toBe(1)
+  ledger.importBatch([{ ...record, messageID: "history" }])
+  expect(() => ledger.importBatch([{ ...record, messageID: "invalid", directory: null as unknown as string }])).toThrow("NOT NULL")
+  ledger.recordActivity({ sessionID: record.sessionID, projectID: record.projectID, directory: record.directory, createdAt: 0 }, [{ kind: "idle", at: 1 }])
+  ledger.dashboard("all")
+  ledger.time("all")
+  ledger.markImported(record.projectID, record.directory)
+  expect(writes).toBe(3)
+})
+
 test("later historical completions replace history, but equal completions do not", () => {
   const ledger = open()
   ledger.importBatch([record])
