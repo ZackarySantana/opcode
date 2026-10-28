@@ -1,7 +1,7 @@
 import { createRefresh, type RefreshState } from "@opcode/core/refresh"
 import type { Context } from "@opencode/plugin/gui"
 import { createEffect, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, type Accessor, type JSX } from "solid-js"
-import { createCostService } from "../client.js"
+import { createCostService, described } from "../client.js"
 import { DATE_RANGES, type DateRange } from "../domain.js"
 import type { Dimension, Ledger } from "../format.js"
 import { breakdownTable, isEmpty, overview, turnRows, type Text } from "./view.js"
@@ -28,7 +28,7 @@ export function CostDialog(props: Props) {
   const refresh = createRefresh(async (signal) => {
     const service = createCostService(ctx.client)
     const current = untrack(range)
-    const [usage, time] = await Promise.all([service.dashboard(current, signal), service.time(current, signal)])
+    const [usage, time] = await described(Promise.all([service.dashboard(current, signal), service.time(current, signal)]))
     return { usage, time }
   }, setRead, { delay: 100 })
   // Drop stale values only for a different range, not a background refresh.

@@ -1,3 +1,4 @@
+import { describeRpcError } from "@opcode/core/rpc"
 import type { LocationRef, OpenCodeClient } from "@opencode/client"
 import type { Activity, Dashboard, DateRange, ImportStatus, TimeDashboard, Usage } from "./domain.js"
 import { CostRpc } from "./rpc.js"
@@ -25,4 +26,11 @@ export function createCostService(client: Pick<OpenCodeClient, "rpc">, location?
     importActivity: async (batch, signal) => { await rpc.importActivity(batch, { location, signal }) },
     completeImport: async (signal) => { await rpc.completeImport({}, { location, signal }) },
   }
+}
+
+export const describeError = (error: unknown) => describeRpcError(error, { name: "Cost", package: "@lidtop/opencode-cost" })
+
+/** A read whose failure is described for the user, saying what to do when the server lacks the plugin or runs another version. */
+export async function described<T>(read: Promise<T>): Promise<T> {
+  try { return await read } catch (error) { throw new Error(describeError(error)) }
 }

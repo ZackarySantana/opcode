@@ -3,7 +3,7 @@ import { Command, Plugin, type MountedSession } from "@opencode/plugin/gui"
 import { authoringRequest, authoringSession, parseCommand, type Authoring } from "./domain"
 import { en } from "./gui/i18n"
 import { insertion, snippetOptions, type Choice } from "./gui/options"
-import { snippetsRemote } from "./rpc"
+import { describeError, snippetsRemote } from "./rpc"
 import type { SnippetEntry } from "./service"
 
 /** Snippets in the desktop app: pick one to type `@name ` into the prompt, write or edit one in a new chat, or delete one. */
@@ -24,7 +24,7 @@ export default Plugin.define({
     async function choose(session: MountedSession, title: string, create: boolean): Promise<Choice | undefined> {
       let rows: SnippetEntry[]
       try { rows = await remote(session).list() } catch (error) {
-        toast(ctx.t("toast.loadFailed"), "error", errorMessage(error))
+        toast(ctx.t("toast.loadFailed"), "error", describeError(error))
         return undefined
       }
       if (!rows.length && !create) { toast(ctx.t("toast.empty")); return undefined }
@@ -71,7 +71,7 @@ export default Plugin.define({
       try {
         const removed = await remote(session).remove({ name: row.name, scope: row.scope })
         toast(ctx.t(removed ? "delete.done" : "delete.gone", { name: row.name }), removed ? "success" : "default")
-      } catch (error) { toast(ctx.t("delete.failed", { name: row.name }), "error", errorMessage(error)) }
+      } catch (error) { toast(ctx.t("delete.failed", { name: row.name }), "error", describeError(error)) }
     }
 
     ctx.add(Command, (): Command => ({

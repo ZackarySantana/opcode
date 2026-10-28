@@ -1,7 +1,7 @@
 import { createRefresh, type RefreshState } from "@opcode/core/refresh"
 import { Command, createKeyed, Plugin, Style, TitlebarItem, type DialogHandle } from "@opencode/plugin/gui"
 import { createEffect, createSignal, on, onCleanup } from "solid-js"
-import { createCostService } from "./client.js"
+import { createCostService, described } from "./client.js"
 import type { Dashboard } from "./domain.js"
 import { CostDialog } from "./gui/dialog.js"
 import { en } from "./gui/i18n.js"
@@ -19,7 +19,7 @@ export default Plugin.define({
     const [revision, setRevision] = createSignal(0)
     const bump = () => { setRevision((value) => value + 1) }
     const [today, setToday] = createSignal<RefreshState<Dashboard>>({ loading: true })
-    const refresh = createRefresh((signal) => createCostService(ctx.client).dashboard("today", signal), setToday, { delay: 250 })
+    const refresh = createRefresh((signal) => described(createCostService(ctx.client).dashboard("today", signal)), setToday, { delay: 250 })
     createEffect(on(revision, () => refresh.schedule(), { defer: true }))
     // A restarted server comes back with a new client: subscribe again, and reread at once.
     createKeyed(() => ctx.client, (client) => {

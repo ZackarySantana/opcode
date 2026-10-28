@@ -52,7 +52,7 @@ The list marks a global snippet **overridden** when a project snippet has the sa
 
 The snippet tools exist only in these sessions. Other sessions never see them.
 
-### OpenCode Desktop
+### Desktop
 
 In the desktop app, from a session:
 

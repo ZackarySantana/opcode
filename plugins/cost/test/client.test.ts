@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { createCostService } from "../src/client.js"
+import { createCostService, described } from "../src/client.js"
 import { CostRpc } from "../src/rpc.js"
 import { usageFromMessage } from "../src/messages.js"
 import { message } from "./fixtures.js"
@@ -22,4 +22,10 @@ test("all dashboard/import operations use the connected client's RPC and explici
   expect(calls.map((call) => call.name)).toEqual(["dashboard", "time", "status", "importBatch", "completeImport"])
   expect(calls.slice(0, 2).map((call) => call.input)).toEqual([{ range: "7d" }, { range: "7d" }])
   for (const call of calls) expect(call.options).toEqual({ location, signal })
+})
+
+test("described reads say what to do when the server lacks the plugin, and pass other failures through", async () => {
+  await expect(described(Promise.reject({ type: "rpc.unavailable", message: "no" }))).rejects.toThrow("The OpenCode server isn't running Cost: add @lidtop/opencode-cost to the server's plugins.")
+  await expect(described(Promise.reject(new Error("disk full")))).rejects.toThrow("disk full")
+  expect(await described(Promise.resolve(1))).toBe(1)
 })
