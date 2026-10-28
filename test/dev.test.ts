@@ -57,7 +57,7 @@ test("preview loads both built entrypoints and separates plugin data without rew
   expect(await Bun.file(userConfig).text()).toBe("// existing project config\n{\"model\":\"example/model\"}")
   expect(environment.OPENCODE_CONFIG_CONTENT).toBe(JSON.stringify({ model: "example/model", plugins: ["another-plugin"] }))
   const entries = [...settings.plugins, ...cli.plugins].filter((entry: unknown): entry is { package: string; options: { database: string } } => !!entry && typeof entry === "object" && "package" in entry)
-  expect(entries).toHaveLength(10)
+  expect(entries).toHaveLength(9)
   for (const entry of entries) {
     const id = basename(entry.options.database, ".sqlite")
     expect(entry.options.database).toBe(join(preview.data, `${id}.sqlite`))
@@ -68,11 +68,10 @@ test("preview loads both built entrypoints and separates plugin data without rew
       expect(module.default.entry).toBe(name)
     }
   }
-  // Later's server side registers agent tools on the same database as its terminal side.
+  // Every plugin but the client-only one loads on the server.
   expect(settings.plugins.filter((entry: unknown) => typeof entry === "object")).toHaveLength(8)
-  expect(settings.plugins).toContainEqual(cli.plugins.find((entry: { package?: string }) => entry.package?.endsWith("/later")))
   // Client-local plugins load in the terminal process, with their options.
-  expect(cli.plugins.filter((entry: unknown) => typeof entry === "object")).toMatchObject(["later", "feed"].map((id) => ({
+  expect(cli.plugins.filter((entry: unknown) => typeof entry === "object")).toMatchObject(["feed"].map((id) => ({
     package: join(root, `.release/dev/plugins/${id}`), options: { database: join(preview.data, `${id}.sqlite`) },
   })))
 })
@@ -85,7 +84,7 @@ test("a second preview retains its items and configures only the selected plugin
   const second = await prepareDev(root, ["later"], {})
   expect(second.data).toBe(first.data)
   expect(await Bun.file(database).text()).toBe("existing preview data")
-  const entries = JSON.parse(second.environment.OPENCODE_CLI_CONFIG_CONTENT).plugins.filter((entry: unknown) => typeof entry === "object")
+  const entries = JSON.parse(second.environment.OPENCODE_CONFIG_CONTENT).plugins.filter((entry: unknown) => typeof entry === "object")
   expect(entries).toHaveLength(1)
   expect(entries[0].package).toBe(join(root, ".release/dev/plugins/later"))
 })

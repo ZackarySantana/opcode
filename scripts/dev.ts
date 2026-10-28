@@ -7,8 +7,8 @@ import { pluginEntries, pluginIDs, publicPackageName, repositoryRoot } from "./p
 type PluginID = typeof pluginIDs[number]
 // Client-local plugins load through the CLI config so their options reach the terminal process: a server-loaded
 // terminal side gets none. A plugin in both configs loads its terminal side once, from the CLI config.
-const clientLocal: readonly PluginID[] = ["later", "feed"]
-// Of those, the ones with nothing to do on the server. Later's server side registers its agent tools.
+const clientLocal: readonly PluginID[] = ["feed"]
+// Of those, the ones with nothing to do on the server.
 const clientOnly: readonly PluginID[] = ["feed"]
 type Environment = Record<string, string | undefined>
 const originals = ["opencode-context-tui", "opencode-cost", "opencode-later", "opencode-sessions-all"]

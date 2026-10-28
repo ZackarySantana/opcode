@@ -1,18 +1,16 @@
 import { errorMessage } from "@opcode/core"
+import type { SetTimer } from "@opcode/core/refresh"
 import { pasteIntoPrompt } from "@opcode/ui/paste"
 import { snapshotRoute } from "@opcode/ui/screen"
 import type { Context } from "@opencode/plugin/tui/context"
 import type { JSX } from "@opentui/solid/jsx-runtime"
-import { createSignal, type Signal } from "solid-js"
-import { sameItem, type LaterItem, type LaterSnapshot, type Settings } from "./domain"
-import type { LaterDatabase } from "./sqlite"
+import { createSignal } from "solid-js"
+import { LaterClient, type Remote } from "./client"
+import { sameItem, type LaterItem, type Settings } from "./domain"
 
-export const PREFIX = "opcode-later"
-
-/** OpenCode-specific orchestration: the latest list, the /later dialog, and its actions. It renders nothing itself. */
+/** OpenCode-specific orchestration: the server's list, the /later dialog, and its actions. It renders nothing itself. */
 export class LaterController {
-  private readonly state: Signal<LaterSnapshot>
-  private readonly settingsSignal: Signal<Settings>
+  private readonly client: LaterClient
   /** Owned here rather than by the dialog, so it reopens on the same tab and item after a native prompt replaced it. */
   readonly tab = createSignal(0)
   readonly focus = { active: createSignal<string>(), completed: createSignal<string>() }
@@ -21,16 +19,20 @@ export class LaterController {
   private asking = false
   private pasting = false
   private disposed = false
-  private pollError?: string
+  /** Why the list can't be read, toasted once until it changes. */
+  private problem?: string
   private readonly lifetime = new AbortController()
 
-  constructor(private readonly api: Context, private readonly database: LaterDatabase, private readonly render: (later: LaterController) => JSX.Element) {
-    this.state = createSignal(database.snapshot())
-    this.settingsSignal = createSignal(database.settings())
+  constructor(private readonly api: Context, remote: Remote, private readonly render: (later: LaterController) => JSX.Element, timer?: SetTimer) {
+    this.client = new LaterClient(remote, (message) => {
+      if (message && message !== this.problem && !this.disposed) this.toast(message, "error")
+      this.problem = message
+    }, timer)
+    this.client.start()
   }
 
-  snapshot = () => this.state[0]()
-  settings = () => this.settingsSignal[0]()
+  list = () => this.client.list()
+  settings = () => this.client.settings()
 
   /** Opens /later on its first tab and item. */
   open(): void {
@@ -42,7 +44,6 @@ export class LaterController {
 
   private show(): void {
     if (this.disposed) return
-    this.refresh()
     this.api.ui.dialog.show(() => this.render(this), () => { this.opened = false })
     this.opened = true
     this.api.ui.dialog.set({ size: "large", centered: true })
@@ -52,65 +53,50 @@ export class LaterController {
     if (this.disposed) return
     this.disposed = true
     this.lifetime.abort()
+    this.client.dispose()
     if (this.opened || this.asking) this.api.ui.dialog.clear()
   }
 
-  /** Picks up changes from other clients and the agent's tools, which share the database. */
-  poll(): void {
-    if (this.disposed) return
-    try {
-      if (this.database.revision() !== this.snapshot().revision) this.refresh()
-      this.pollError = undefined
-    } catch (error) {
-      const message = errorMessage(error)
-      if (message !== this.pollError) this.toast(message, "error")
-      this.pollError = message
-    }
-  }
-
   refresh(): void {
-    this.state[1](this.database.snapshot())
+    this.client.resync()
   }
 
   async updateSettings(change: Partial<Settings>): Promise<void> {
-    try {
-      // Read fresh: another terminal may have turned the tools off, and saving a stale "on" would skip the warning.
-      const current = this.database.settings()
-      const next = { ...current, ...change }
-      if (next.agentTools && !current.agentTools && await this.ask(() => this.api.ui.dialog.confirm({
-        title: "Turn on agent tools?",
-        message: "Adding the tools changes every open session's request, so each one's next message misses the prompt cache once.",
-      })) !== true) return
-      this.database.saveSettings(next)
-      this.settingsSignal[1](next)
-    } catch (error) { this.toast(errorMessage(error), "error") }
+    // The server keeps what this doesn't change, so changing the sidebar count never turns the tools back on.
+    if (change.agentTools && !this.settings().agentTools && await this.ask(() => this.api.ui.dialog.confirm({
+      title: "Turn on agent tools?",
+      message: "Adding the tools changes every open session's request, so each one's next message misses the prompt cache once.",
+    })) !== true) return
+    if (this.disposed) return
+    try { await this.client.updateSettings(change) } catch (error) { this.failed(error) }
   }
 
   async add(): Promise<void> {
     const text = await this.ask(() => this.api.ui.dialog.prompt({ title: "Add for later", placeholder: "What should you return to?" }))
-    if (text !== undefined) this.write(() => { this.focus.active[1](this.database.add(text)); return true })
+    if (text === undefined) return
+    try { this.focus.active[1](await this.client.add(text)) } catch (error) { this.failed(error) }
   }
 
   async edit(item: LaterItem): Promise<void> {
     const text = await this.ask(() => this.api.ui.dialog.prompt({ title: "Edit Later item", value: item.message }))
-    if (text !== undefined) this.write(() => this.database.edit(item, text))
+    if (text !== undefined) await this.write(() => this.client.edit(item, text))
   }
 
   /** Completes an active item, or restores a completed one to the end of the active list. */
-  toggle(item: LaterItem): boolean {
+  toggle(item: LaterItem): Promise<boolean> {
     return item.completedAt === undefined
-      ? this.write(() => this.database.complete(item), "Item moved to history.")
-      : this.write(() => this.database.restore(item), "Item restored to the end of the active list.")
+      ? this.write(() => this.client.complete(item), "Item moved to history.")
+      : this.write(() => this.client.restore(item), "Item restored to the end of the active list.")
   }
 
   async remove(item: LaterItem): Promise<boolean> {
     const confirmed = await this.ask(() => this.api.ui.dialog.confirm({ title: "Delete permanently?", message: item.message }))
-    return confirmed === true && this.write(() => this.database.delete(item), "Item deleted permanently.")
+    return confirmed === true && await this.write(() => this.client.delete(item), "Item deleted permanently.")
   }
 
-  move(item: LaterItem, offset: -1 | 1): void {
+  async move(item: LaterItem, offset: -1 | 1): Promise<void> {
     // Moving past either end changes nothing, which is not a conflict.
-    this.write(() => { this.database.move(item, offset); return true })
+    try { await this.client.move(item.id, offset) } catch (error) { this.failed(error) }
   }
 
   /** Closes the dialog, pastes the item into the prompt behind it without submitting, and completes it. */
@@ -126,8 +112,9 @@ export class LaterController {
     this.pasting = true
     let result
     try {
+      // The live list catches an edit elsewhere while the prompt mounts; completing checks the item again on the server.
       result = await pasteIntoPrompt(this.api, destination, item.message, () => !this.disposed,
-        () => sameItem(this.database.get(item.id), item), { signal: this.lifetime.signal })
+        () => sameItem(this.client.item(item.id), item), { signal: this.lifetime.signal })
     } catch (error) {
       if (!this.disposed) this.toast(errorMessage(error), "error")
       return
@@ -138,18 +125,17 @@ export class LaterController {
       return
     }
     if (result === "changed") {
-      this.refresh()
       this.stale()
       return
     }
     try {
-      const changed = this.database.complete(item)
-      this.refresh()
+      const changed = await this.client.complete(item)
+      if (this.disposed) return
       this.toast(changed
         ? "Pasted into the prompt and moved to history. Nothing was submitted."
         : "Text pasted, but the item changed and was not marked complete.", changed ? "success" : "warning")
     } catch (error) {
-      this.toast(`Text was pasted, but updating the list failed: ${errorMessage(error)}. Check /later before trying again.`, "error")
+      if (!this.disposed) this.toast(`Text was pasted, but updating the list failed: ${errorMessage(error)}. Check /later before trying again.`, "error")
     }
   }
 
@@ -165,18 +151,23 @@ export class LaterController {
     return answer
   }
 
-  /** A write the database refused because the item changed elsewhere is reported, never retried on newer content. */
-  private write(operation: () => boolean, success?: string): boolean {
+  /** A change the server refused because the item changed elsewhere is reported, never retried on newer content. */
+  private async write(send: () => Promise<boolean>, success?: string): Promise<boolean> {
+    if (this.disposed) return false
     try {
-      const changed = operation()
-      this.refresh()
+      const changed = await send()
+      if (this.disposed) return changed
       if (!changed) this.stale()
       else if (success) this.toast(success, "success")
       return changed
     } catch (error) {
-      this.toast(errorMessage(error), "error")
+      this.failed(error)
       return false
     }
+  }
+
+  private failed(error: unknown): void {
+    if (!this.disposed) this.toast(errorMessage(error), "error")
   }
 
   private stale(): void {

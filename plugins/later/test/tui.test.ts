@@ -5,23 +5,22 @@ import type { Context, KeymapCommand, KeymapLayer, Route, SlotClaim } from "@ope
 import { TextareaRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { testRender } from "@opentui/solid"
-import { join } from "node:path"
 import { createComponent, createComputed, createSignal, getOwner, onCleanup, type JSX } from "solid-js"
-import { mockTheme, tempDir } from "@opcode/ui/test-support/host"
-import { LaterDatabase } from "../src/sqlite"
+import { closeServers, eventually } from "@opcode/core/test-support/server"
+import { mockTheme } from "@opcode/ui/test-support/host"
+import { laterServer, messages, read, remote, rpcClient } from "./fixture"
 
 // Load JSX after installing the OpenTUI Solid transform. This file itself has no JSX.
 const { default: plugin } = await import("../src/tui")
 const cleanup: Array<() => void> = []
 afterEach(() => { for (const stop of cleanup.splice(0).reverse()) stop() })
+afterEach(closeServers)
 
-function harness(sidebarItems?: number) {
-  const directory = tempDir("opcode-later-tui-")
-  cleanup.push(directory.remove)
-  const path = join(directory.path, "later.sqlite")
-  const external = new LaterDatabase(path)
-  cleanup.push(() => external.close())
-  if (sidebarItems) external.saveSettings({ sidebarItems, agentTools: true })
+/** The terminal plugin on a fake server, with another terminal (`external`) on the same server. */
+async function harness(sidebarItems?: number) {
+  const { server } = laterServer()
+  const external = remote(server, "/elsewhere")
+  if (sidebarItems) await external.settings({ sidebarItems })
   const route: Route = { type: "home" }
   let prompt: string | undefined
   const [dialog, setDialog] = createSignal<{ render: () => JSX.Element; onClose?: () => void }>()
@@ -33,7 +32,8 @@ function harness(sidebarItems?: number) {
   const dispatch = async (id: string) => { await commands().find((command) => command.id === id && enabled(command))?.run() }
   const slots: SlotClaim[] = []
   const api = {
-    options: { database: path },
+    client: rpcClient(server),
+    location: { directory: "/home/me" },
     renderer: { isDestroyed: false, widthMethod: "unicode", once: () => {}, off: () => {}, requestRender: () => {} },
     theme: mockTheme(),
     ui: {
@@ -68,14 +68,21 @@ function harness(sidebarItems?: number) {
   const render = (children: () => JSX.Element, size: { width: number; height: number }) =>
     testRender(() => createComponent(PluginContextProvider, { value: context, get children() { return children() } }), size)
   return {
-    api, context, external, slots, stop, commands, dispatch, render,
+    api, context, external, slots,
+    /** The stored list. */
+    stored: () => read(server),
+    /** Adds an item from another terminal, and waits until it is announced. */
+    async add(text: string) {
+      const { state } = await external.add(text)
+      await eventually(() => expect(server.events.some((event) => (event.data as { revision: number }).revision === state.revision)).toBe(true))
+    }, stop, commands, dispatch, render,
     dialog,
     prompt: (value: string) => { prompt = value },
   }
 }
 
-test("/later opens the dialog, and unloading closes it and removes the sidebar", () => {
-  const h = harness()
+test("/later opens the dialog, and unloading closes it and removes the sidebar", async () => {
+  const h = await harness()
   expect(h.commands().find((command) => command.id === "opcode-later.open")).toMatchObject({ palette: true, slash: { name: "later" } })
   expect(h.slots[0]?.after).toBe("sidebar.content")
   h.dispatch("opcode-later.open")
@@ -86,12 +93,12 @@ test("/later opens the dialog, and unloading closes it and removes the sidebar",
 })
 
 test("the dialog adds, reorders, completes, deletes, and restores from its tabs, and keeps a sidebar setting", async () => {
-  const h = harness()
+  const h = await harness()
   h.dispatch("opcode-later.open")
   // The dialog's content is rendered again after each native prompt replaces it, as the host does.
   const view = await h.render(() => h.dialog()?.render(), { width: 110, height: 40 })
   const frame = (match: (frame: string) => boolean) => view.waitForFrame(match)
-  const items = () => h.external.snapshot().active.map((item) => item.message)
+  const items = async () => messages(await h.stored())
   try {
     expect(await frame((frame) => frame.includes("Nothing saved for later"))).toMatch(/Later[\s\S]*History[\s\S]*Settings/)
     for (const text of ["first", "second"]) {
@@ -101,12 +108,10 @@ test("the dialog adds, reorders, completes, deletes, and restores from its tabs,
     await frame((frame) => frame.includes("second"))
     // A new item is outlined, so shift+k moves it up.
     await h.dispatch("opcode-later.move.up")
-    expect(items()).toEqual(["second", "first"])
+    expect(await items()).toEqual(["second", "first"])
     await h.dispatch("opcode-later.complete")
-    // History lists newest first, and completions within one millisecond tie on random ids.
-    for (const completed = Date.now(); Date.now() === completed;) await Bun.sleep(1)
     await h.dispatch("opcode-later.complete")
-    expect(items()).toEqual([])
+    expect(await items()).toEqual([])
 
     await h.dispatch("opcode-later.next")
     await frame((frame) => frame.includes("COMPLETED") && frame.includes("second"))
@@ -114,12 +119,12 @@ test("the dialog adds, reorders, completes, deletes, and restores from its tabs,
     await h.dispatch("opcode-later.delete")
     expect(await frame((frame) => !frame.includes("first"))).toContain("COMPLETED")
     await h.dispatch("opcode-later.activate")
-    expect(items()).toEqual(["second"])
+    await eventually(async () => expect(await items()).toEqual(["second"]))
 
     await h.dispatch("opcode-later.next")
     await frame((frame) => frame.includes("Sidebar items"))
     await h.dispatch("opcode-later.adjust.next")
-    expect(h.external.settings().sidebarItems).toBe(10)
+    await eventually(async () => expect((await h.stored()).settings.sidebarItems).toBe(10))
     // Escape closes the dialog once the search box is empty; /later opens again on its first tab.
     await h.dispatch("opcode-later.close")
     expect(h.dialog()).toBeUndefined()
@@ -129,19 +134,15 @@ test("the dialog adds, reorders, completes, deletes, and restores from its tabs,
 })
 
 test("the sidebar mutes items, lists the configured number, and points to /later for the rest", async () => {
-  const h = harness(3)
+  const h = await harness(3)
   const slot = h.slots[0] as SlotClaim<"sidebar.content">
   const view = await h.render(() => slot.render({ sessionID: "any-session" }), { width: 42, height: 14 })
   try {
     await view.flush()
     expect(view.captureCharFrame()).not.toContain("Later")
-    for (let index = 1; index <= 6; index++) h.external.add(`item ${index}`, index)
-    // No command: setup's polling must pick up another client's items.
-    for (const deadline = Date.now() + 2000; Date.now() < deadline && !view.captureCharFrame().includes("+3 more");) {
-      await Bun.sleep(25)
-      await view.flush()
-    }
-    const frame = view.captureCharFrame()
+    for (let index = 1; index <= 6; index++) await h.add(`item ${index}`)
+    // No command: the terminal follows another client's changes.
+    const frame = await view.waitForFrame((frame) => frame.includes("+3 more"))
     expect(frame).toContain("item 3")
     expect(frame).not.toContain("item 4")
     const spans = view.captureSpans().lines.flatMap((line) => line.spans)
@@ -156,7 +157,7 @@ test("the sidebar mutes items, lists the configured number, and points to /later
 })
 
 test("real OpenTUI paste from the dialog preserves prompt text and never submits", async () => {
-  const h = harness()
+  const h = await harness()
   const view = await createTestRenderer({ width: 60, height: 12 })
   let submissions = 0
   const input = new TextareaRenderable(view.renderer, { id: "test-prompt", width: 60, height: 6, onSubmit: () => { submissions++ } })
@@ -165,24 +166,24 @@ test("real OpenTUI paste from the dialog preserves prompt text and never submits
   input.insertText("existing: ")
   Object.assign(h.api, { renderer: view.renderer })
   try {
-    h.external.add("café ☕\nadd tests")
+    await h.add("café ☕\nadd tests")
     h.dispatch("opcode-later.open")
     const dialog = await h.render(() => h.dialog()?.render(), { width: 100, height: 30 })
     try {
       await dialog.waitForFrame((frame) => frame.includes("café"))
       await h.dispatch("opcode-later.activate")
-      for (const deadline = Date.now() + 2000; Date.now() < deadline && h.external.snapshot().active.length;) await view.renderOnce()
+      for (const deadline = Date.now() + 2000; Date.now() < deadline && (await h.stored()).active.length;) await view.renderOnce()
     } finally { await dialog.dispose() }
     expect(h.dialog()).toBeUndefined()
     expect(input.plainText).toBe("existing: café ☕\nadd tests")
     expect(submissions).toBe(0)
-    expect(h.external.snapshot().completed).toHaveLength(1)
+    expect((await h.stored()).completed).toHaveLength(1)
   } finally { await view.dispose() }
 })
 
 test("an item's text starts beside its number, wraps under itself, and stays clear of the age", async () => {
-  const h = harness()
-  h.external.add("/cost the cost column should show tokens too, alongside dollars, for every model in the list")
+  const h = await harness()
+  await h.add("/cost the cost column should show tokens too, alongside dollars, for every model in the list")
   h.dispatch("opcode-later.open")
   const view = await h.render(() => h.dialog()?.render(), { width: 60, height: 20 })
   const card = (frame: string) => {
