@@ -1,5 +1,11 @@
 # @lidtop/opencode-context
 
+## 0.4.0
+
+### Minor Changes
+
+- 62c9603: Require OpenCode 2.2.0 and OpenTUI 0.7.
+
 ## 0.3.5
 
 ### Patch Changes

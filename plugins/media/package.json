@@ -1,6 +1,6 @@
 {
   "name": "@lidtop/opencode-media",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "OpenCode agent tools that generate speech, sound, and images with your OpenRouter key",
   "keywords": [
     "opencode",

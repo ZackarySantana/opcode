@@ -1,5 +1,12 @@
 # @lidtop/opencode-cost
 
+## 0.4.0
+
+### Minor Changes
+
+- 57063c7: Add an OpenCode Desktop part: a titlebar pill with today's spend, and a Cost dashboard (command palette and `/cost`) with the terminal's totals, models, projects, days, and longest turns. The server emits a throttled `updated` RPC event when it records usage.
+- 62c9603: Require OpenCode 2.2.0 and OpenTUI 0.7.
+
 ## 0.3.3
 
 ### Patch Changes
