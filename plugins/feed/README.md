@@ -60,6 +60,12 @@ The sidebar shows only what needs attention: up to five items by default (see **
 
 Links open in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-open` (Linux); on WSL it tries `wslview`, `xdg-open`, then PowerShell. Only `http` and `https` links are opened.
 
+### Desktop
+
+In OpenCode Desktop, a titlebar pill shows while incidents are in progress ("2 incidents"); click it, select **Feeds** in the command palette, or run `/feed` to open the Feeds dialog. It has Status, Upcoming, and Releases sections grouped as in the terminal, using the same time window and Show resolved setting, and a **Subscriptions** section listing each subscribed feed's state with a button to unsubscribe (after a confirmation). Click an item to open its link in your browser. **Subscribe…** offers the presets you haven't subscribed to, or a custom URL, which then asks whether it is a status page or a release feed. **Refresh** in the dialog, `/feed-refresh`, and **Refresh feeds** fetch every feed now. Settings are changed in the terminal's Settings tab.
+
+The desktop app follows the same server side as the terminals, over the app's own server: subscriptions, settings, and feeds are shared with every terminal connected to it, and changes show everywhere right away. On Home, with no session open, it asks the server's default location. OpenCode Desktop reads plugins only from `opencode.json(c)`.
+
 ## Subscriptions
 
 Each subscription is a **status page** or a **release feed**:
