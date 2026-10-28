@@ -1,12 +1,10 @@
-import type { OpenCodeClient } from "@opencode/client"
 import { Rpc } from "@opencode/plugin/rpc"
-import { ignoreChoices, orderChoices, refreshChoices, sidebarItemChoices, type PullRequestsState, type SettingsChange } from "./model"
-
-export const PLUGIN_ID = "opcode-gh-pr-status"
+import { ignoreChoices, orderChoices, PLUGIN_ID, refreshChoices, sidebarItemChoices, type SettingsChange } from "./model"
 
 const object = (properties: Record<string, unknown>, required: string[]) => ({ type: "object" as const, properties, required, additionalProperties: false })
 const text = { type: "string" } as const
 const flag = { type: "boolean" } as const
+const count = { type: "integer", minimum: 0 } as const
 const empty = object({}, [])
 // Undeclared handler errors reach clients only as a generic rpc.internal failure.
 const errors = { failed: empty }
@@ -15,12 +13,14 @@ const choices = {
   sidebarItems: { type: "integer", enum: sidebarItemChoices }, refreshMinutes: { type: "integer", enum: refreshChoices },
 }
 const settings = object({ ...choices, team: text }, Object.keys(choices))
+/** `PullRequestsState` in model.ts. */
 const state = object({
-  server: text, revision: { type: "integer", minimum: 0 }, settings, refreshing: flag, error: text, nextRefresh: { type: "number" },
-  // The server's own parse of gh's output, sent as is.
+  server: text, started: { type: "number" }, revision: count, settings, refreshing: flag, error: text, nextRefreshIn: { type: "number" },
+  // The server's own parse of gh's output: not validated field by field.
   snapshot: { type: "object" },
-}, ["server", "revision", "settings", "refreshing"])
+}, ["server", "started", "revision", "settings", "refreshing"])
 
+/** The terminal's contract with the server plugin, which owns the pull requests and settings every terminal shows. */
 export const GhPrStatusRpc = Rpc.define({
   id: PLUGIN_ID,
   methods: {
@@ -37,44 +37,19 @@ export const GhPrStatusRpc = Rpc.define({
     },
   },
   events: {
-    /** The state after each change, from one location instance of the server process. */
+    /** The full state after each change. */
     changed: { schema: state },
   },
 })
 
+/** `update`'s input. */
+export interface UpdateInput {
+  readonly settings: SettingsChange
+}
+
+/** `feedback`'s output. */
 export interface FormattedFeedback {
   readonly number: number
   readonly text?: string
   readonly summary: string
-}
-
-/** The server's pull request state, as a terminal reaches it. */
-export interface Remote {
-  state(signal?: AbortSignal): Promise<PullRequestsState>
-  update(change: SettingsChange): Promise<PullRequestsState>
-  refresh(): Promise<PullRequestsState>
-  /** For the branch checked out in `directory` on the server. */
-  feedback(directory: string, signal: AbortSignal): Promise<FormattedFeedback>
-  /** Each published state, live only: states published while disconnected are missed. */
-  changes(signal: AbortSignal): AsyncIterable<PullRequestsState>
-}
-
-/**
- * The state is the same in every location, so calls go to the terminal's own. The client is read for each call, since
- * it changes when the server restarts.
- */
-export function createRemote(client: () => Pick<OpenCodeClient, "rpc">, location: () => { directory: string }): Remote {
-  const rpc = () => client().rpc(GhPrStatusRpc)
-  const call = (signal?: AbortSignal) => ({ location: location(), signal })
-  return {
-    state: async (signal) => await rpc().state({}, call(signal)) as PullRequestsState,
-    update: async (change) => await rpc().update({ settings: change }, call()) as PullRequestsState,
-    refresh: async () => await rpc().refresh({}, call()) as PullRequestsState,
-    feedback: async (directory, signal) => await rpc().feedback({}, { location: { directory }, signal }) as FormattedFeedback,
-    changes: (signal) => ({
-      async *[Symbol.asyncIterator]() {
-        for await (const event of rpc().events.subscribe("changed", { signal })) yield event.data as unknown as PullRequestsState
-      },
-    }),
-  }
 }

@@ -7,17 +7,15 @@ import { usePalette, type KeyHint } from "@opcode/ui"
 import { usePlugin } from "@opencode/plugin/tui"
 import { createMemo, createSignal, Show } from "solid-js"
 import type { PullRequestsClient } from "./client"
-import { matches, onTeam, ordered, refreshChoices, sidebarItemChoices, teamChoices, type Entry, type Order, type Search, type Settings } from "./model"
-import { PLUGIN_ID } from "./rpc"
+import { matches, onTeam, ordered, PLUGIN_ID, refreshChoices, sidebarItemChoices, teamChoices, type Entry, type Order, type Search, type Settings } from "./model"
 import { card } from "./style"
 
-export const PREFIX = PLUGIN_ID
 export const TITLE = "Pull requests"
 
 export function PullRequestsDialog(props: { prs: PullRequestsClient }) {
   const current = createMemo(() => props.prs.view())
   return (
-    <TabbedDialog prefix={PREFIX} refreshing={props.prs.refreshing()} refresh={() => props.prs.refresh()} tabs={[
+    <TabbedDialog prefix={PLUGIN_ID} refreshing={props.prs.refreshing()} refresh={() => props.prs.refresh()} tabs={[
       { label: "Mine", placeholder: "search your pull requests", render: () => (
         <PullList prs={props.prs} searches={[props.prs.snapshot()?.mine]} groups={[
           { title: "NEEDS YOU", entries: current().mine.filter((entry) => entry.pending) },

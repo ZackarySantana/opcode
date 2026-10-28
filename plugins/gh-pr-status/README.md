@@ -23,7 +23,7 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 }
 ```
 
-**Where it runs.** The server side runs `gh`, refreshes on the schedule, and keeps your settings; the sidebar and `/ghpr` in the terminal show what it has, over plugin RPC (both parts use the ID `opcode-gh-pr-status`). Configure it where the server reads plugins (this config, or the remote server's), not in `cli.json`: a terminal-only install has no server side to ask. `gh` must be installed and signed in where the OpenCode server runs, which is a remote machine when you connect to one.
+**Where it runs.** The server side runs `gh`, refreshes on the schedule, and keeps your settings; the sidebar and `/ghpr` in the terminal show what it has, over plugin RPC (both parts use the ID `opcode-gh-pr-status`). Configure it where the server reads plugins (this config, or the remote server's), not in `cli.json`: a terminal-only install has no server side to ask, and the sidebar and `/ghpr` say to add it to the server's plugins. `gh` must be installed and signed in where the OpenCode server runs, which is a remote machine when you connect to one.
 
 **One source of truth.** Every terminal connected to the same server shows the same pull requests and settings. The server polls GitHub once for all of them, however many terminals or projects are open, and a change to a setting or the team filter, or a refresh, shows in every terminal right away.
 

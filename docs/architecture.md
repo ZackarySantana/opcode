@@ -88,6 +88,28 @@ replace a custom dialog, so Later passes its own tab and focus signals, and Snip
 its focus signal, to come back on the same tab and item. It is a separate workspace so
 that changing it releases only its consumers, not every consumer of `@opcode/ui`.
 
+## Server-owned shared state
+
+GH PR Status is the template for state that every terminal on a server shares, such as settings and data polled from
+an outside service:
+
+- **One service per server process.** The host loads a server plugin's files afresh for each location (it clears their
+  module cache), so module-level variables are per location. Every location instance joins one service kept in the
+  process's globals, keyed by plugin ID and package version, so reloaded code starts its own service instead of
+  joining one built by other code. The first to join starts it and the last to leave stops it.
+- **Ports, not members.** The service gets storage and a way to announce changes as ports, which use the oldest
+  member's and fail over to the next. Plugin storage is the same in every location, and clients receive every
+  location's events, so one announcement per change saves the traffic of one per location.
+- **Full state in one event.** The `changed` event carries the whole state, with the service's ID, start time, and a
+  revision. Clients keep the newest: a later-started service's, else a later revision. They tolerate duplicates and
+  late arrivals.
+- **Re-read on reconnect.** Events are live only, so a client reads the whole state on start, after each reconnect,
+  after a failed call, and when the next refresh is long overdue, which means announcements stopped.
+- **Optimistic settings.** A client shows its pending setting changes over the server's settings, sends them in order,
+  and drops each once answered, so quick changes build on each other and a refused one is undone.
+- **Time left, not wall-clock times.** Countdowns travel as milliseconds remaining, which the client counts from
+  receipt on its own clock.
+
 `@opcode/core` contains small host-independent utilities, including the XDG
 state directory and owner-only WAL SQLite setup shared by Cost, Later, and
 Sessions, live-subscription reconnection, superseding refreshes, and the refresh schedule

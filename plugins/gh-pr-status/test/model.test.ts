@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { fetchSnapshot, parseResponse, type Runner } from "../src/gh"
-import { defaultSettings, HIDDEN_TEAM, sidebarEntries, view, type Order, type Snapshot } from "../src/model"
+import { defaultSettings, HIDDEN_TEAM, readChange, readSettings, sidebarEntries, view, type Order, type Snapshot } from "../src/model"
 import { NOW, pr, response, team, teams, user } from "./fixtures"
 
 const snapshot: Snapshot = { ...parseResponse(response, ""), teams: ["acme/web", "acme/api"] }
@@ -118,4 +118,14 @@ test("gh's own message explains a failure, and results GitHub withheld are count
   expect(result.teams).toEqual([])
   expect(result.requested).toMatchObject({ hidden: 1, reason: expect.stringContaining("single sign-on") })
   expect(result.mine.hidden).toBe(0)
+})
+
+test("stored settings read over the defaults: a field that isn't one of its choices, or is missing, keeps its default", () => {
+  expect(readSettings(undefined)).toEqual(defaultSettings)
+  expect(readSettings("corrupt")).toEqual(defaultSettings)
+  expect(readSettings({ order: "oldest", ignoreDays: 3, sidebarMine: "no", sidebarItems: 10, team: "acme/web", retired: true }))
+    .toEqual({ ...defaultSettings, order: "oldest", sidebarItems: 10, team: "acme/web" })
+  expect(readSettings({ team: "" })).toEqual(defaultSettings)
+  // A change keeps only valid fields, and null to clear the team.
+  expect(readChange({ order: "sideways", sidebarTeams: false, team: null, extra: 1 })).toEqual({ sidebarTeams: false, team: null })
 })

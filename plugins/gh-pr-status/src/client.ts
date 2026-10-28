@@ -1,17 +1,59 @@
 import { createSerialQueue, errorMessage } from "@opcode/core"
 import { consumeLive } from "@opcode/core/live"
 import { setTimer, type SetTimer } from "@opcode/core/refresh"
-import type { Context } from "@opencode/plugin/tui/context"
+import type { OpenCodeClient } from "@opencode/client"
 import { createSignal } from "solid-js"
 import { defaultSettings, newer, readSettings, view, type PullRequestsState, type Settings, type SettingsChange } from "./model"
-import type { Remote } from "./rpc"
+import { GhPrStatusRpc, type FormattedFeedback } from "./rpc"
 
 /** How long to wait before reading again after the server couldn't be reached. */
 const RETRY = 30_000
+/** How long past its next refresh a state may go without news before the terminal reads again. */
+const OVERDUE = 60_000
+
+/** The server's pull request state, as a terminal reaches it. */
+export interface Remote {
+  state(signal?: AbortSignal): Promise<PullRequestsState>
+  update(change: SettingsChange): Promise<PullRequestsState>
+  refresh(): Promise<PullRequestsState>
+  /** For the branch checked out in `directory` on the server. */
+  feedback(directory: string, signal: AbortSignal): Promise<FormattedFeedback>
+  /** Each published state, live only: states published while disconnected are missed. */
+  changes(signal: AbortSignal): AsyncIterable<PullRequestsState>
+}
+
+/**
+ * The state is the same in every location, so calls go to the terminal's current one, and feedback to the session's.
+ * The client is looked up for each call, since it changes when the server restarts.
+ */
+export function createRemote(client: () => Pick<OpenCodeClient, "rpc">, location: () => { directory: string }): Remote {
+  const rpc = () => client().rpc(GhPrStatusRpc)
+  const call = (signal?: AbortSignal) => ({ location: location(), signal })
+  return {
+    state: async (signal) => await rpc().state({}, call(signal)) as PullRequestsState,
+    update: async (change) => await rpc().update({ settings: change }, call()) as PullRequestsState,
+    refresh: async () => await rpc().refresh({}, call()) as PullRequestsState,
+    feedback: async (directory, signal) => await rpc().feedback({}, { location: { directory }, signal }) as FormattedFeedback,
+    changes: (signal) => ({
+      async *[Symbol.asyncIterator]() {
+        for await (const event of rpc().events.subscribe("changed", { signal })) yield event.data as unknown as PullRequestsState
+      },
+    }),
+  }
+}
+
+/** Why a call failed, saying what to do when the server doesn't run the plugin's server side. */
+export function describeError(error: unknown): string {
+  const type = error && typeof error === "object" && "type" in error ? error.type : undefined
+  if (type === "rpc.unavailable") return "The OpenCode server isn't running GH PR Status: add @lidtop/opencode-gh-pr-status to the server's plugins."
+  if (type === "rpc.method_not_found") return "The OpenCode server runs another version of GH PR Status: update @lidtop/opencode-gh-pr-status there."
+  return errorMessage(error)
+}
 
 /** The server's pull requests and settings, kept live, with the local clock that ages them. Renders nothing. */
 export class PullRequestsClient {
-  private readonly current = createSignal<PullRequestsState>()
+  /** The latest state, and when its next refresh starts on this terminal's clock. */
+  private readonly current = createSignal<{ state: PullRequestsState; nextRefresh?: number }>()
   /** Changes sent but not yet answered, shown over the server's settings so quick changes build on each other. */
   private readonly pending = createSignal<readonly SettingsChange[]>([])
   /** Why the last call failed, until the next state arrives. */
@@ -21,24 +63,25 @@ export class PullRequestsClient {
   private readonly sends = createSerialQueue()
   private cancelClock?: () => void
   private cancelRetry?: () => void
+  /** The overdue refresh time already read again for, so it is read once. */
+  private overdue?: number
 
   constructor(private readonly remote: Remote, private readonly timer: SetTimer = setTimer) {}
 
-  snapshot = () => this.current[0]()?.snapshot
-  error = () => this.problem[0]() ?? this.current[0]()?.error
-  refreshing = () => this.current[0]()?.refreshing ?? false
-  settings = (): Settings => this.pending[0]().reduce<Settings>((settings, change) => readSettings({ ...settings, ...change }), this.current[0]()?.settings ?? defaultSettings)
+  snapshot = () => this.current[0]()?.state.snapshot
+  error = () => this.problem[0]() ?? this.current[0]()?.state.error
+  refreshing = () => this.current[0]()?.state.refreshing ?? false
+  settings = (): Settings => this.pending[0]().reduce<Settings>((settings, change) => readSettings({ ...settings, ...change }), this.current[0]()?.state.settings ?? defaultSettings)
   /** Ages are relative to this, so views re-render as time passes. */
   now = () => this.clock[0]()
-  /** When the server's next automatic refresh starts. */
+  /** When the server's next automatic refresh starts, on this terminal's clock. */
   nextRefresh = () => this.current[0]()?.nextRefresh
   /** The snapshot's lists, without the pull requests inactive longer than the ignore setting. */
   view = () => view(this.snapshot(), this.settings().ignoreDays, this.now())
 
   /** Follows the server's changes, reading the whole state whenever it may have missed one. */
   start(): void {
-    const tick = () => { this.clock[1](Date.now()); this.cancelClock = this.timer(tick, 60_000) }
-    this.cancelClock = this.timer(tick, 60_000)
+    this.cancelClock = this.timer(() => this.tick(), 60_000)
     void consumeLive({
       signal: this.lifetime.signal,
       subscribe: (signal) => this.remote.changes(signal),
@@ -71,18 +114,35 @@ export class PullRequestsClient {
     this.cancelRetry?.()
   }
 
+  /**
+   * Ages move on each minute. A refresh long overdue means news stopped, such as when the server unloaded the plugin
+   * from every location: reading again starts it there.
+   */
+  private tick() {
+    const now = Date.now()
+    this.clock[1](now)
+    const next = this.nextRefresh()
+    if (next !== undefined && next !== this.overdue && !this.refreshing() && now > next + OVERDUE) {
+      this.overdue = next
+      void this.read()
+    }
+    this.cancelClock = this.timer(() => this.tick(), 60_000)
+  }
+
   /** Server states can arrive twice or out of order: once from a call and once from the event, from any location. */
   private apply(state: PullRequestsState) {
     if (this.lifetime.signal.aborted) return
     this.problem[1](undefined)
-    if (newer(state, this.current[0]())) this.current[1](state)
+    if (!newer(state, this.current[0]()?.state)) return
+    this.current[1]({ state, ...state.nextRefreshIn === undefined ? {} : { nextRefresh: Date.now() + state.nextRefreshIn } })
   }
 
   private async read() {
     this.cancelRetry?.()
     try { this.apply(await this.remote.state(this.lifetime.signal)) } catch (error) {
       if (this.lifetime.signal.aborted) return
-      this.problem[1](errorMessage(error))
+      this.problem[1](describeError(error))
+      this.cancelRetry?.()
       this.cancelRetry = this.timer(() => void this.read(), RETRY)
     }
   }
@@ -90,25 +150,6 @@ export class PullRequestsClient {
   /** A failed call may have missed changes: read them, and say what failed. */
   private async failed(error: unknown) {
     await this.read()
-    if (!this.lifetime.signal.aborted) this.problem[1](errorMessage(error))
-  }
-}
-
-/** Sends the review feedback on the open session's pull request to that session, as your prompt. */
-export async function sendFeedback(api: Pick<Context, "client" | "ui">, remote: Pick<Remote, "feedback">, signal: AbortSignal): Promise<void> {
-  const route = api.ui.router.current()
-  if (route.type !== "session") return api.ui.toast.show({ variant: "warning", message: "Open a session first: /ghpr-comments sends to the open session." })
-  const { sessionID } = route
-  api.ui.toast.show({ message: "Fetching review comments..." })
-  try {
-    // The session's directory, not the terminal's, picks the branch; the server reads it there.
-    const session = await api.client.session.get({ sessionID }, { signal })
-    const { number, text, summary } = await remote.feedback(session.location.directory, signal)
-    const title = `PR #${number}`
-    if (!text) return api.ui.toast.show({ title, message: `No review comments to send. ${summary}` })
-    await api.client.session.prompt({ sessionID, text }, { signal })
-    api.ui.toast.show({ variant: "success", title, message: `Sent review comments. ${summary}` })
-  } catch (error) {
-    if (!signal.aborted) api.ui.toast.show({ variant: "error", title: "Review comments", message: errorMessage(error) })
+    if (!this.lifetime.signal.aborted) this.problem[1](describeError(error))
   }
 }

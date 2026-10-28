@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 
-import { expect, test } from "bun:test"
+import { afterEach, expect, test } from "bun:test"
 import { mockTheme } from "@opcode/ui/test-support/host"
 import { PluginContextProvider } from "@opencode/plugin/tui"
 import type { Context, KeymapCommand, KeymapLayer } from "@opencode/plugin/tui/context"
@@ -9,7 +9,9 @@ import { createComputed, onCleanup } from "solid-js"
 import { PullRequestsClient } from "../src/client"
 import { PullRequestsDialog } from "../src/dialog"
 import { defaultSettings } from "../src/model"
-import { eventually, fakeServer, ghRunner, stopped } from "./host"
+import { closeServers, eventually, fakeServer, ghRunner, stopped } from "./host"
+
+afterEach(closeServers)
 
 test("/ghpr pages through your pull requests, your reviews, and your teams', and saves its settings and the team filter", async () => {
   const server = fakeServer({ run: ghRunner().run })
@@ -86,6 +88,5 @@ test("/ghpr pages through your pull requests, your reviews, and your teams', and
   } finally {
     await view.dispose()
     prs.dispose()
-    await server.close()
   }
 })

@@ -1,5 +1,7 @@
 import { matchesText } from "@opcode/tabs/format"
 
+export const PLUGIN_ID = "opcode-gh-pr-status"
+
 /** A requested reviewer: a user's login, or a team as "org/slug". Hidden when the token can't see who it is. */
 export type Reviewer =
   | { readonly kind: "user" | "team"; readonly name: string; readonly requestedAt?: number }
@@ -104,41 +106,52 @@ export const refreshChoices: readonly number[] = [1, 2, 5, 10, 15, 30]
 /** A change to some settings; a null team clears the Teams tab's filter. */
 export type SettingsChange = Partial<Omit<Settings, "team">> & { readonly team?: string | null }
 
+const fieldChoices: { readonly [Key in Exclude<keyof Settings, "team">]: readonly Settings[Key][] } = {
+  order: orderChoices, ignoreDays: ignoreChoices, sidebarMine: [true, false], sidebarTeams: [true, false],
+  sidebarItems: sidebarItemChoices, refreshMinutes: refreshChoices,
+}
+
+/** The fields of `value` that are one of their choices; a team is a name, or null to clear it. Anything else is left out. */
+export function readChange(value: unknown): SettingsChange {
+  const input: Record<string, unknown> = value && typeof value === "object" ? { ...value } : {}
+  const change: Record<string, unknown> = {}
+  for (const [key, choices] of Object.entries(fieldChoices)) if ((choices as readonly unknown[]).includes(input[key])) change[key] = input[key]
+  if (input.team === null || typeof input.team === "string" && input.team) change.team = input.team
+  return change
+}
+
 /**
  * Settings from stored JSON, whatever its shape: each field that isn't one of its choices keeps its default, so stored
  * data from any version reads. The team is left out unless set, as JSON has no undefined.
  */
 export function readSettings(stored: unknown): Settings {
-  const value = stored && typeof stored === "object" ? stored as Record<string, unknown> : {}
-  const pick = <T>(key: keyof Settings, choices: readonly T[], fallback: T) => choices.includes(value[key] as T) ? value[key] as T : fallback
-  const settings: Settings = {
-    order: pick("order", orderChoices, defaultSettings.order),
-    ignoreDays: pick("ignoreDays", ignoreChoices, defaultSettings.ignoreDays),
-    sidebarMine: pick("sidebarMine", [true, false], defaultSettings.sidebarMine),
-    sidebarTeams: pick("sidebarTeams", [true, false], defaultSettings.sidebarTeams),
-    sidebarItems: pick("sidebarItems", sidebarItemChoices, defaultSettings.sidebarItems),
-    refreshMinutes: pick("refreshMinutes", refreshChoices, defaultSettings.refreshMinutes),
-  }
-  return typeof value.team === "string" && value.team ? { ...settings, team: value.team } : settings
+  const { team, ...change } = readChange(stored)
+  return { ...defaultSettings, ...change, ...team ? { team } : {} }
 }
 
 /** What the server shares with every client: the settings, and the latest refresh from GitHub and when the next starts. */
 export interface PullRequestsState {
-  /** This server process's service; revisions count from 0 again in another. */
+  /** The server process's service that produced it. */
   readonly server: string
-  /** Rises with each change, so a client keeps the newest state it has seen. */
+  /** When that service started, on the server's clock, so a client prefers the newest service, such as after a restart. */
+  readonly started: number
+  /** Rises with each change within a service, so a client keeps the newest state it has seen. */
   readonly revision: number
   readonly settings: Settings
   readonly snapshot?: Snapshot
   /** Why the last refresh failed; the snapshot before it stays. */
   readonly error?: string
   readonly refreshing: boolean
-  readonly nextRefresh?: number
+  /** How long until the next automatic refresh when the state was made: clients count from receipt, whatever their clock. */
+  readonly nextRefreshIn?: number
 }
 
-/** Whether `next` replaces `current`: a state from another server process always does, an older one never does. */
-export const newer = (next: PullRequestsState, current: PullRequestsState | undefined) =>
-  !current || next.server !== current.server || next.revision > current.revision
+/** Whether `next` replaces `current`: a later service's state does, and within one service a later revision. */
+export function newer(next: PullRequestsState, current: PullRequestsState | undefined): boolean {
+  if (!current) return true
+  if (next.server !== current.server) return next.started >= current.started
+  return next.revision > current.revision
+}
 
 /** A request GitHub matched to you without naming the team, which your token can't see. */
 export const HIDDEN_TEAM = "hidden team"

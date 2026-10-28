@@ -5,9 +5,9 @@ import { openLink } from "@opcode/tabs/open"
 import { Section, usePalette } from "@opcode/ui"
 import { usePlugin } from "@opencode/plugin/tui"
 import { createMemo, For, Show } from "solid-js"
-import { PREFIX, TITLE } from "./dialog"
+import { TITLE } from "./dialog"
 import type { PullRequestsClient } from "./client"
-import { sidebarEntries } from "./model"
+import { PLUGIN_ID, sidebarEntries } from "./model"
 import { sidebarItem } from "./style"
 
 /** Review requests waiting on you and your open pull requests, as one list; /ghpr has everything else. */
@@ -25,7 +25,7 @@ export function Sidebar(props: { prs: PullRequestsClient }) {
             <For each={entries().slice(0, limit())}>{(entry) => (
               <SidebarItem item={sidebarItem(entry, props.prs.now(), palette)} open={() => openLink(api, TITLE, entry.pr.url)} />
             )}</For>
-            <Show when={entries().length > limit()}><More count={entries().length - limit()} pointer="/ghpr" command={`${PREFIX}.open`} /></Show>
+            <Show when={entries().length > limit()}><More count={entries().length - limit()} pointer="/ghpr" command={`${PLUGIN_ID}.open`} /></Show>
             <Show when={props.prs.error()}>{(error) => <text minWidth={0} wrapMode="word" fg={palette.error}>! {error()}</text>}</Show>
           </box>
         </Show>

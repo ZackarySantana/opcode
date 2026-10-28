@@ -1,8 +1,9 @@
 import type { SetTimer } from "@opcode/core/refresh"
+import type { Remote } from "../src/client"
 import type { Runner } from "../src/gh"
 import { serverPlugin } from "../src/index"
 import type { PullRequestsState, SettingsChange } from "../src/model"
-import type { FormattedFeedback, Remote } from "../src/rpc"
+import type { FormattedFeedback } from "../src/rpc"
 import { response, teams } from "./fixtures"
 
 type Handler = (input: unknown, call: { signal: AbortSignal; error(type: string, message: string, data: unknown): unknown }) => Promise<unknown>
@@ -20,6 +21,17 @@ export function ghRunner() {
 /** Timers that never fire, so only calls refresh. */
 export const stopped: SetTimer = () => () => {}
 
+/** Timers that fire only when the test says, by delay. */
+export function manualTimers() {
+  const pending = new Set<{ run: () => void; ms: number }>()
+  const timer: SetTimer = (run, ms) => { const entry = { run, ms }; pending.add(entry); return () => pending.delete(entry) }
+  return {
+    timer,
+    pending: (ms: number) => [...pending].filter((entry) => entry.ms === ms).length,
+    fire(ms: number) { for (const entry of [...pending].filter((entry) => entry.ms === ms)) { pending.delete(entry); entry.run() } },
+  }
+}
+
 /** What the transport carries: JSON, which can't hold undefined, so the host's validation would reject it. */
 function transported<T>(value: T, path = "value"): T {
   if (value === undefined) throw new Error(`${path} is undefined`)
@@ -27,16 +39,34 @@ function transported<T>(value: T, path = "value"): T {
   return value === null || typeof value !== "object" ? value : JSON.parse(JSON.stringify(value))
 }
 
+const servers = new Set<{ close(): Promise<void> }>()
+/**
+ * Unloads every location of every fake server, so the process-wide service never outlives a test. Each test file
+ * registers it with `afterEach`: this module loads once for every file.
+ */
+export async function closeServers() {
+  for (const server of [...servers]) await server.close()
+  servers.clear()
+}
+
 /**
  * The server plugin as the host runs it: an instance per location, started by the first call there, all sharing the
- * plugin's storage. Every subscriber receives every location's events, live only.
+ * plugin's storage. Every subscriber receives every location's events, live only. `faults` makes storage, or one
+ * location's storage and events, fail.
  */
 export function fakeServer(options: { run: Runner; stored?: Map<string, unknown>; options?: Record<string, unknown>; timer?: SetTimer }) {
   const stored = options.stored ?? new Map<string, unknown>()
-  const storage = {
-    get: async (key: string) => stored.has(key) ? transported(stored.get(key)) : undefined,
-    set: async (key: string, value: unknown) => { stored.set(key, transported(value)) },
-  }
+  const faults = { get: false, set: false, locations: new Set<string>() }
+  const storage = (directory: string) => ({
+    get: async (key: string) => {
+      if (faults.get || faults.locations.has(directory)) throw new Error("disk read failed")
+      return stored.has(key) ? transported(stored.get(key)) : undefined
+    },
+    set: async (key: string, value: unknown) => {
+      if (faults.set || faults.locations.has(directory)) throw new Error("disk full")
+      stored.set(key, transported(value))
+    },
+  })
   const plugin = serverPlugin(options.run, options.timer ?? stopped)
   const instances = new Map<string, Promise<{ handlers: Record<string, Handler>; cleanup: () => Promise<void> | void }>>()
   const subscribers = new Set<{ push(state: PullRequestsState): void; end(): void }>()
@@ -49,12 +79,13 @@ export function fakeServer(options: { run: Runner; stored?: Map<string, unknown>
       let handlers: Record<string, Handler> = {}
       let disposed = false
       const ctx = {
-        location: { directory }, options: options.options ?? {}, storage,
+        location: { directory }, options: options.options ?? {}, storage: storage(directory),
         rpc: { register: async (_definition: unknown, registered: Record<string, Handler>) => {
           handlers = registered
           return {
             events: { emit: async (_name: string, data: PullRequestsState) => {
               if (disposed) throw new Error("Plugin unloaded")
+              if (faults.locations.has(directory)) throw new Error("Host gone")
               const state = transported(data)
               events.push({ directory, state })
               for (const subscriber of subscribers) subscriber.push(state)
@@ -71,9 +102,10 @@ export function fakeServer(options: { run: Runner; stored?: Map<string, unknown>
   const call = async <T>(directory: string, method: string, input: unknown, signal = new AbortController().signal) =>
     transported(await (await instance(directory)).handlers[method]!(input, { signal, error: (type, message) => ({ type, message }) }) as T)
 
-  return {
+  const server = {
     stored,
     events,
+    faults,
     /** A terminal whose location is `directory`. */
     remote(directory = "/home/me"): Remote {
       return {
@@ -99,8 +131,6 @@ export function fakeServer(options: { run: Runner; stored?: Map<string, unknown>
         }),
       }
     },
-    /** Starts the instance for `directory`, as a call there would. */
-    load: async (directory: string) => { await instance(directory) },
     /** Ends every subscription, as a dropped connection does. */
     disconnect() { for (const subscriber of subscribers) subscriber.end() },
     async unload(directory: string) {
@@ -108,8 +138,10 @@ export function fakeServer(options: { run: Runner; stored?: Map<string, unknown>
       instances.delete(directory)
       await (await loaded)?.cleanup()
     },
-    async close() { for (const directory of [...instances.keys()]) await this.unload(directory) },
+    async close() { for (const directory of [...instances.keys()]) await server.unload(directory) },
   }
+  servers.add(server)
+  return server
 }
 
 /** Waits until `check` passes, for work that settles over a few turns. */
