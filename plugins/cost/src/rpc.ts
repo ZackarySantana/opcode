@@ -106,5 +106,6 @@ export const CostRpc = Rpc.define({
     },
     completeImport: { input: empty, output: empty, errors: failed },
   },
-  events: {},
+  // Throttled: the ledger recorded usage or activity, live or imported. Readers reread what they show.
+  events: { updated: { schema: empty } },
 })

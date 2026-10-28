@@ -12,7 +12,8 @@ import type { ScrollBoxRenderable } from "@opentui/core"
 import type { JSX } from "@opentui/solid/jsx-runtime"
 import { createEffect, createMemo, createSignal, Index, on, onCleanup, Show, untrack, type Accessor, type Signal } from "solid-js"
 import { createCostService } from "./client.js"
-import { DATE_RANGES, localDay, rangeLabel, type Breakdown, type Dashboard, type DateRange, type LongTurn, type TimeDashboard } from "./domain.js"
+import { DATE_RANGES, rangeLabel, type DateRange, type LongTurn } from "./domain.js"
+import { formatDuration, formatStart, formatTokens, isPriced, joinBreakdown, type Dimension, type Ledger } from "./format.js"
 
 export const PREFIX = "opcode-cost"
 
@@ -34,9 +35,6 @@ export interface CostHost {
   importState(): ImportState
   refresh(): void
 }
-
-/** Usage and time for one date range, read together so every tab shows the same moment. */
-interface Ledger { usage: Dashboard; time: TimeDashboard }
 
 /** What every tab shares while the dialog is open. */
 interface Shared {
@@ -236,8 +234,7 @@ function Overview(props: { ledger: Ledger }) {
   const tab = useTab()
   const usage = () => props.ledger.usage.total
   const time = () => props.ledger.time.total
-  // One rule for the whole dialog: with no recorded cost (subscriptions report $0), every figure is tokens.
-  const priced = () => usage().cost > 0
+  const priced = () => isPriced(props.ledger.usage)
   const groups = (): Stat[][] => [
     [
       ...priced() ? [{ label: "TOTAL COST", value: formatMoney(usage().cost), detail: `${formatCount(usage().messages)} recorded messages` }] : [],
@@ -275,31 +272,16 @@ function Overview(props: { ledger: Ledger }) {
   )
 }
 
-type Dimension = "models" | "projects" | "daily"
-
-/** Usage and time joined by ID: usage order first, then rows with only turns. Bars follow cost, or tokens without any recorded cost. */
 function entries(ledger: Ledger, dimension: Dimension): Entry[] {
-  const usage = new Map(ledger.usage[dimension].map((row) => [row.id, row]))
-  const time = new Map(ledger.time[dimension].map((row) => [row.id, row]))
-  const priced = ledger.usage.total.cost > 0
-  const value = (row: Breakdown | undefined) => row ? priced ? row.cost : row.tokens : 0
-  const max = Math.max(0, ...[...usage.values()].map(value))
-  const ids = [...new Set([...usage.keys(), ...time.keys()])]
-  // Dates are newest first.
-  if (dimension === "daily") ids.sort((a, b) => b.localeCompare(a))
-  return ids.map((id) => {
-    const cost = usage.get(id)
-    const turns = time.get(id)
-    const label = cost?.label ?? turns!.label
-    return {
-      key: id, label, search: label, share: max > 0 ? value(cost) / max : 0,
-      amount: !cost ? "" : priced ? `${formatMoney(cost.cost)}  ${formatTokens(cost.tokens)} tok` : `${formatTokens(cost.tokens)} tok`,
-      detail: [
-        cost && `${formatCount(cost.messages)} msg`,
-        turns && `${formatDuration(turns.agent)} agent  ${formatCount(turns.turns)} turns  ${formatDuration(turns.wait)} wait`,
-      ].filter(Boolean).join("  "),
-    }
-  })
+  const priced = isPriced(ledger.usage)
+  return joinBreakdown(ledger, dimension).map(({ id, label, usage: cost, time: turns, share }) => ({
+    key: id, label, search: label, share,
+    amount: !cost ? "" : priced ? `${formatMoney(cost.cost)}  ${formatTokens(cost.tokens)} tok` : `${formatTokens(cost.tokens)} tok`,
+    detail: [
+      cost && `${formatCount(cost.messages)} msg`,
+      turns && `${formatDuration(turns.agent)} agent  ${formatCount(turns.turns)} turns  ${formatDuration(turns.wait)} wait`,
+    ].filter(Boolean).join("  "),
+  }))
 }
 
 const turnEntry = (turn: LongTurn, open: () => void): Entry => ({
@@ -331,24 +313,4 @@ function Bar(props: { share: number }) {
   const palette = usePalette()
   const filled = () => props.share > 0 ? Math.min(BAR, Math.max(1, Math.round(props.share * BAR))) : 0
   return <><span style={{ fg: palette.accent }}>{"#".repeat(filled())}</span><span style={{ fg: palette.track }}>{"-".repeat(BAR - filled())}</span></>
-}
-
-const tokens = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 })
-
-function formatTokens(value: number) {
-  return tokens.format(value)
-}
-
-function formatDuration(milliseconds: number) {
-  const seconds = Math.round(milliseconds / 1000)
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor(seconds % 3600 / 60)
-  if (hours) return `${hours}h ${String(minutes).padStart(2, "0")}m`
-  if (minutes) return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`
-  return `${seconds}s`
-}
-
-function formatStart(at: number) {
-  const date = new Date(at)
-  return `${localDay(at)} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`
 }

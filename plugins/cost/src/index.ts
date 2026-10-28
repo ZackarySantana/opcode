@@ -8,14 +8,19 @@ import { CostLedger, databasePath } from "./ledger.js"
 import { createLiveCollector } from "./live.js"
 import { timedSession } from "./messages.js"
 import { CostRpc } from "./rpc.js"
+import { createThrottle } from "./throttle.js"
 
 /** An import sends a session's batches consecutively; reuse its authorization briefly rather than per batch. */
 const SESSION_REUSE_MILLISECONDS = 30_000
+/** At most one `updated` event per interval, however fast steps or import batches arrive. */
+const UPDATE_INTERVAL = 2_000
 
 export default Plugin.define({
   id: "opcode-cost",
   async setup(ctx) {
-    const ledger = new CostLedger(databasePath(ctx.options.database))
+    // Writes only notify once the RPC is registered; earlier writes have no subscriber to reach.
+    let written = () => {}
+    const ledger = new CostLedger(databasePath(ctx.options.database), () => written())
     const controller = new AbortController()
     // Host reads run concurrently. Ledger calls are synchronous and follow an abort check, so close()
     // only has to abort, then wait for in-flight work to settle before closing the database.
@@ -45,8 +50,9 @@ export default Plugin.define({
       return session
     }
     const live = createLiveCollector(ctx, ledger)
+    let registration: Awaited<ReturnType<typeof ctx.rpc.register<typeof CostRpc>>>
     try {
-      await ctx.rpc.register(CostRpc, {
+      registration = await ctx.rpc.register(CostRpc, {
         dashboard: (input, call) => guarded(call, () => run(call.signal, async () => ledger.dashboard(parseRange(input)))),
         time: (input, call) => guarded(call, () => run(call.signal, async () => ledger.time(parseRange(input)))),
         status: (_input, call) => guarded(call, () => run(call.signal, async () => ({
@@ -77,6 +83,10 @@ export default Plugin.define({
       ledger.close()
       throw error
     }
+    const updates = createThrottle(() => {
+      registration.events.emit("updated", {}).catch((error: unknown) => console.warn(`opcode-cost: update event failed: ${errorMessage(error)}`))
+    }, UPDATE_INTERVAL)
+    written = updates.notify
     // Public subscriptions are live-only. Reconnect, but never pretend this replays missed usage.
     // consumeLive handles one event at a time, so live writes keep event order.
     const events = consumeLive({
@@ -92,6 +102,7 @@ export default Plugin.define({
       controller.abort()
       try { await events } finally {
         await Promise.allSettled(pending)
+        updates.dispose()
         live.clear()
         ledger.close()
       }

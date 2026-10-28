@@ -11,8 +11,11 @@ export interface CostService {
   completeImport(signal: AbortSignal): Promise<void>
 }
 
-/** Every call explicitly targets the same connected-server location. No local filesystem access. */
-export function createCostService(client: Pick<OpenCodeClient, "rpc">, location: LocationRef): CostService {
+/**
+ * Every call targets the same connected-server location, or the server's default without one: the ledger is
+ * shared by every location, so reads answer the same anywhere. No local filesystem access.
+ */
+export function createCostService(client: Pick<OpenCodeClient, "rpc">, location?: LocationRef): CostService {
   const rpc = client.rpc(CostRpc)
   return {
     dashboard: async (range, signal) => await rpc.dashboard({ range }, { location, signal }) as Dashboard,

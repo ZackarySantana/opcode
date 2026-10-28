@@ -56,7 +56,8 @@ type Sums = Pick<Breakdown, "cost" | "messages" | "tokens">
 export class CostLedger {
   private readonly db: Database
 
-  constructor(path: string) {
+  /** `written` runs after each committed usage or activity write. */
+  constructor(path: string, private readonly written: () => void = () => {}) {
     this.db = openDatabase(path, (db) => db.run(schema))
   }
 
@@ -64,12 +65,14 @@ export class CostLedger {
 
   /** Without `usage`, a new row starts from the record but an existing row keeps its recorded usage. */
   recordLive(record: UsageRecord, version: number, options: { usage?: boolean } = {}) {
-    this.db.transaction(() => {
+    const recorded = this.db.transaction(() => {
       const prior = this.db.query<{ version: number }, [string]>("SELECT version FROM opcode_cost_live WHERE message_id = ?").get(record.messageID)
-      if (prior && prior.version > version) return
+      if (prior && prior.version > version) return false
       this.write(record, options.usage === false ? identity : `${identity}, ${usage}`)
       this.db.query("INSERT INTO opcode_cost_live VALUES (?, ?) ON CONFLICT(message_id) DO UPDATE SET version=excluded.version").run(record.messageID, version)
+      return true
     }).immediate()
+    if (recorded) this.written()
   }
 
   importBatch(records: UsageRecord[]) {
@@ -87,6 +90,7 @@ export class CostLedger {
           .run(record.projectID, record.directory, record.messageID, record.sessionID)
       }
     }).immediate()
+    this.written()
   }
 
   private write(record: UsageRecord, update: string) {
@@ -107,6 +111,7 @@ export class CostLedger {
       const insert = this.db.query("INSERT OR IGNORE INTO activity VALUES (?, ?, ?)")
       for (const item of activity) insert.run(session.sessionID, item.at, item.kind)
     }).immediate()
+    this.written()
   }
 
   lastImport(projectID: string) {

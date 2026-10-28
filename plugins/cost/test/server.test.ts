@@ -13,6 +13,11 @@ type Handlers = Record<string, (input: unknown, context: Call) => Promise<unknow
 // Mirrors the host's declared-error factory; undeclared throws would reach clients as a generic failure.
 const call: Call = { signal: new AbortController().signal, error: (type, message) => Object.assign(new Error(message), { type }) }
 
+/** The host's registration; its events record what the server emits. */
+function registration(emitted: string[] = []) {
+  return { events: { emit: async (name: string) => { emitted.push(name) } } }
+}
+
 function waitForAbort(signal: AbortSignal) {
   if (signal.aborted) return Promise.resolve()
   return new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
@@ -23,7 +28,7 @@ test("server RPC owns storage, derives identities, allows same-project worktrees
   let streamSignal!: AbortSignal
   const cleanup = await serverPlugin.setup({
     options: { database: ":memory:" }, location,
-    rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value } },
+    rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value; return registration() } },
     event: { subscribe: ({ signal }: { signal: AbortSignal }) => {
       streamSignal = signal
       return (async function* (): AsyncIterable<OpenCodeEvent> { await waitForAbort(signal) })()
@@ -50,6 +55,30 @@ test("server RPC owns storage, derives identities, allows same-project worktrees
   await expect(handlers.dashboard!({ range: "all" }, call)).rejects.toThrow()
 })
 
+test("recorded usage emits a throttled updated event; reads and completions do not", async () => {
+  let handlers!: Handlers
+  const emitted: string[] = []
+  const cleanup = await serverPlugin.setup({
+    options: { database: ":memory:" }, location,
+    rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value; return registration(emitted) } },
+    event: { subscribe: ({ signal }: { signal: AbortSignal }) => (async function* (): AsyncIterable<OpenCodeEvent> { await waitForAbort(signal) })() },
+    session: { get: async () => session },
+  } as never)
+  if (!cleanup) throw new Error("Missing cleanup")
+  try {
+    await handlers.dashboard!({ range: "all" }, call)
+    await handlers.completeImport!({}, call)
+    expect(emitted).toEqual([])
+    const usage = usageFromMessage(message)
+    await handlers.importBatch!({ sessionID: session.id, records: [usage] }, call)
+    expect(emitted).toEqual(["updated"])
+    // A burst within the interval waits to coalesce into one later event.
+    await handlers.importBatch!({ sessionID: session.id, records: [{ ...usage, messageID: "second" }] }, call)
+    await handlers.importActivity!({ sessionID: session.id, activity: [{ kind: "idle", at: usage.completedAt! }] }, call)
+    expect(emitted).toEqual(["updated"])
+  } finally { await cleanup() }
+})
+
 test("server lifetime cancels a pending RPC read before writing, then closes the ledger", async () => {
   const directory = mkdtempSync(join(tmpdir(), "opcode-cost-server-"))
   const database = join(directory, "cost.sqlite")
@@ -59,7 +88,7 @@ test("server lifetime cancels a pending RPC read before writing, then closes the
   let readSignal!: AbortSignal
   const cleanup = await serverPlugin.setup({
     options: { database }, location,
-    rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value } },
+    rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value; return registration() } },
     event: { subscribe: ({ signal }: { signal: AbortSignal }) => (async function* (): AsyncIterable<OpenCodeEvent> { await waitForAbort(signal) })() },
     session: { get: async (_input: unknown, { signal }: { signal: AbortSignal }) => {
       readSignal = signal
@@ -89,7 +118,7 @@ test("a slow host read does not block other RPC calls, and one import authorizes
   const slow = Promise.withResolvers<void>()
   const cleanup = await serverPlugin.setup({
     options: { database: ":memory:" }, location,
-    rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value } },
+    rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value; return registration() } },
     event: { subscribe: ({ signal }: { signal: AbortSignal }) => (async function* (): AsyncIterable<OpenCodeEvent> { await waitForAbort(signal) })() },
     session: { get: async ({ sessionID }: { sessionID: string }) => {
       gets++
@@ -117,7 +146,7 @@ test("server live collection reaches the same RPC dashboard as imported records"
   const ready = new Promise<void>((resolve) => { drained = resolve })
   const cleanup = await serverPlugin.setup({
     options: { database: ":memory:" }, location,
-    rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value } },
+    rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value; return registration() } },
     event: { subscribe: ({ signal }: { signal: AbortSignal }) => (async function* () {
       yield event("session.step.started", { sessionID: session.id, assistantMessageID: message.id, agent: "build", model: message.model, started: message.time.created })
       yield event("session.step.ended", { sessionID: session.id, assistantMessageID: message.id, cost: 3, tokens, finish: "stop" })
@@ -138,7 +167,7 @@ test("authorized fork imports cannot replace an existing source ID but can persi
   let handlers!: Handlers
   const cleanup = await serverPlugin.setup({
     options: { database: ":memory:" }, location,
-    rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value } },
+    rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value; return registration() } },
     event: { subscribe: ({ signal }: { signal: AbortSignal }) => (async function* (): AsyncIterable<OpenCodeEvent> { await waitForAbort(signal) })() },
     session: { get: async ({ sessionID }: { sessionID: string }) => sessionID === "fork"
       ? { ...session, id: "fork", parentID: session.id, location: { directory: "/work/fork" } }
@@ -172,7 +201,7 @@ test("server-authorized cross-project session moves preserve IDs and do not bloc
     const cleanup = await serverPlugin.setup({
       options: { database },
       location: { ...location, directory: target, project: { ...location.project, id: projectID } },
-      rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value } },
+      rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value; return registration() } },
       event: { subscribe: ({ signal }: { signal: AbortSignal }) => (async function* (): AsyncIterable<OpenCodeEvent> { await waitForAbort(signal) })() },
       session: { get: async () => actualSession },
     } as never)
