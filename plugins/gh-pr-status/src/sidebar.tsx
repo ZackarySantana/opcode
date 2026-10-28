@@ -7,14 +7,14 @@ import { usePlugin } from "@opencode/plugin/tui"
 import { createMemo, For, Show } from "solid-js"
 import { PREFIX, TITLE } from "./dialog"
 import type { PullRequestsController } from "./host"
-import { sidebarEntries, view } from "./model"
+import { sidebarEntries } from "./model"
 import { sidebarItem } from "./style"
 
 /** Review requests waiting on you and your open pull requests, as one list; /ghpr has everything else. */
 export function Sidebar(props: { prs: PullRequestsController }) {
   const api = usePlugin()
   const palette = usePalette()
-  const entries = createMemo(() => sidebarEntries(view(props.prs.snapshot()), props.prs.settings()))
+  const entries = createMemo(() => sidebarEntries(props.prs.view(), props.prs.settings()))
   const limit = () => props.prs.settings().sidebarItems
   const countdown = useRefreshCountdown(() => props.prs.refreshing(), () => props.prs.nextRefresh())
   return (

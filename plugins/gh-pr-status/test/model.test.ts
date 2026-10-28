@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { fetchSnapshot, parseResponse, type Runner } from "../src/gh"
 import { defaultSettings, HIDDEN_TEAM, sidebarEntries, view, type Order, type Snapshot } from "../src/model"
-import { pr, response, team, teams, user } from "./fixtures"
+import { NOW, pr, response, team, teams, user } from "./fixtures"
 
 const snapshot: Snapshot = { ...parseResponse(response, ""), teams: ["acme/web", "acme/api"] }
 const summary = (entries: readonly { label: string; pr: { number: number }; teams: readonly string[] }[]) => entries.map((entry) => [entry.pr.number, entry.label, entry.teams])
@@ -14,7 +14,7 @@ test("your pull requests show what blocks them first; review requests split into
   // Conflicts outrank failing checks, and approval waits on you to merge.
   expect(summary(current.mine).map(([number, label]) => [number, label])).toEqual([[1, "Conflicts"], [2, "Approved"], [3, "Draft"], [4, "Awaiting review"]])
   // A pull request requesting you and your team is yours to review, and also your team's. Teams you're not on drop out.
-  expect(summary(current.reviewing)).toEqual([[10, "Review requested", ["acme/web"]], [20, "You approved", []]])
+  expect(summary(current.reviewing)).toEqual([[10, "Review requested", ["acme/web"]], [20, "You approved", []], [21, "You commented", []]])
   expect(summary(current.teams)).toEqual([[10, "Review requested", ["acme/web"]], [11, "Team: web", ["acme/web"]], [12, "Team: api", ["acme/api"]], [13, "Team review", [HIDDEN_TEAM]]])
 })
 
@@ -82,6 +82,30 @@ test("a review request you've reviewed since no longer waits on you, though GitH
   expect(summary(current.reviewing)).toEqual([[33, "Review requested", []], [30, "You approved", []], [31, "You approved", []]])
   expect(summary(current.teams)).toEqual([[31, "You approved", ["acme/web"]], [32, "Team: web", ["acme/web"]], [34, "You approved", [HIDDEN_TEAM]]])
   expect(sidebarEntries(current, defaultSettings).map((entry) => [entry.pr.number, entry.label])).toEqual([[33, "Review requested"], [32, "Team: web"]])
+})
+
+test("ignoring inactive pull requests leaves out every one with no activity in that long, however long ago it opened", () => {
+  const days = (count: number) => count * 24
+  const searched: Snapshot = { ...parseResponse(searches(
+    [
+      pr(10, "Cache build artifacts", { author: "alice", updated: days(3), requested: [{ reviewer: user("me"), hours: days(3) }] }),
+      pr(11, "Speed up CI", { author: "bob", updated: days(20), requested: [{ reviewer: team("acme/web"), hours: days(20) }] }),
+    ],
+    [pr(20, "Docs for webhooks", { author: "erin", opened: days(200), updated: days(100), review: { state: "APPROVED", hours: days(100) } })],
+    [
+      pr(1, "Fix login redirect", { opened: days(400), updated: days(10) }),
+      pr(2, "Add dark mode", { opened: days(400), updated: days(400) }),
+    ],
+  ), ""), teams: ["acme/web"] }
+  const listed = (ignoreDays: number) => {
+    const lists = view(searched, ignoreDays, NOW)
+    return { mine: numbers(lists.mine), reviewing: numbers(lists.reviewing), teams: numbers(lists.teams) }
+  }
+  expect(listed(7)).toEqual({ mine: [], reviewing: [10], teams: [] })
+  expect(listed(14)).toEqual({ mine: [1], reviewing: [10], teams: [] })
+  expect(listed(30)).toEqual({ mine: [1], reviewing: [10], teams: [11] })
+  expect(listed(365)).toEqual({ mine: [1], reviewing: [10, 20], teams: [11] })
+  expect(listed(0)).toEqual({ mine: [1, 2], reviewing: [10, 20], teams: [11] })
 })
 
 test("gh's own message explains a failure, and results GitHub withheld are counted", async () => {

@@ -27,7 +27,7 @@ const query = `query {
   ${Object.entries(searches).map(([alias, search]) => `${alias}: search(query: ${JSON.stringify(search)}, type: ISSUE, first: ${LIMIT}) { nodes { ...pr } }`).join("\n  ")}
 }
 fragment pr on PullRequest {
-  url number title isDraft createdAt reviewDecision mergeable
+  url number title isDraft createdAt updatedAt reviewDecision mergeable
   author { login }
   repository { nameWithOwner }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
@@ -44,6 +44,7 @@ interface RawPullRequest {
   title: string
   isDraft: boolean
   createdAt: string
+  updatedAt: string
   reviewDecision: string | null
   mergeable: string
   author: { login: string } | null
@@ -81,7 +82,7 @@ function parsePullRequest(raw: RawPullRequest): PullRequest {
   const state = raw.commits.nodes[0]?.commit.statusCheckRollup?.state
   return {
     url: raw.url, number: raw.number, title: raw.title, repository: raw.repository.nameWithOwner, author: raw.author?.login ?? "ghost",
-    draft: raw.isDraft, createdAt: Date.parse(raw.createdAt), conflicts: raw.mergeable === "CONFLICTING",
+    draft: raw.isDraft, createdAt: Date.parse(raw.createdAt), updatedAt: Date.parse(raw.updatedAt), conflicts: raw.mergeable === "CONFLICTING",
     decision: decisions.find((decision) => decision === raw.reviewDecision),
     checks: state ? checks[state as keyof typeof checks] : undefined,
     requested,

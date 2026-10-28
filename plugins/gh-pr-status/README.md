@@ -32,7 +32,7 @@ Run `/ghpr` or select **Pull requests** in the command palette. The dialog has f
 - **Mine:** your open pull requests. The ones that need you come first, then the ones waiting on others, then drafts.
 - **Reviewing:** pull requests requesting your review by name, then open ones you've already reviewed. Requests only for your teams are on Teams.
 - **Teams:** review requests for your teams, with every requested reviewer listed. Press `f` to show one team; the choice is saved until you pick **All your teams** there.
-- **Settings:** the order of pull requests, what the sidebar shows, and how often it refreshes.
+- **Settings:** the order of pull requests, which inactive ones to leave out, what the sidebar shows, and how often it refreshes.
 
 Each pull request shows its status, author, repository and number, when it came to you, and who is requested and when: you first, then your teams, then everyone else. It came to you when your review, or your team's, was requested; for your own, when a reviewer first commented or requested changes; otherwise when it opened.
 
@@ -80,10 +80,13 @@ GitHub sometimes withholds results. A pull request in an organization that enfor
 | Setting | Choices | Default |
 | --- | --- | --- |
 | Order | Smart, Newest, Oldest | Smart |
+| Ignore inactive | Off, 7 days, 14 days, 1 month, 3 months, 1 year | 1 month |
 | Sidebar team reviews | No, Yes | Yes |
 | Sidebar own PRs | No, Yes | Yes |
 | Sidebar items | 3, 5, 10, 15, 20 | 5 |
 | Refresh every | 1m, 2m, 5m, 10m, 15m, 30m | 5m |
+
+**Ignore inactive** leaves a pull request out of every tab and the sidebar once it has gone that long without activity on GitHub, such as a push, comment, review, or review request, however long ago it opened. Off lists them all.
 
 Review requests for you always appear in the sidebar. **Sidebar team reviews** adds your teams' review requests, narrowed to the Teams tab's filter; **Sidebar own PRs** adds your pull requests that need you. Each refresh runs one GraphQL search per list, up to 50 open pull requests each.
 

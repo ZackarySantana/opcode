@@ -14,6 +14,8 @@ export interface PullRequest {
   readonly author: string
   readonly draft: boolean
   readonly createdAt: number
+  /** Its last activity on GitHub, such as a push, comment, review, or review request. */
+  readonly updatedAt: number
   readonly conflicts: boolean
   readonly decision?: "APPROVED" | "REVIEW_REQUIRED"
   readonly checks?: "passing" | "failing" | "running"
@@ -81,6 +83,8 @@ export type Order = "smart" | "newest" | "oldest"
 
 export interface Settings {
   readonly order: Order
+  /** Pull requests with no activity in this many days are left out everywhere; 0 keeps them all. */
+  readonly ignoreDays: number
   /** Your open pull requests, in the sidebar. */
   readonly sidebarMine: boolean
   /** Review requests for your teams, in the sidebar, narrowed to `team` when set. */
@@ -91,8 +95,9 @@ export interface Settings {
   readonly team?: string
 }
 
-export const defaultSettings: Settings = { order: "smart", sidebarMine: true, sidebarTeams: true, sidebarItems: 5, refreshMinutes: 5 }
+export const defaultSettings: Settings = { order: "smart", ignoreDays: 30, sidebarMine: true, sidebarTeams: true, sidebarItems: 5, refreshMinutes: 5 }
 export const orderChoices: readonly Order[] = ["smart", "newest", "oldest"]
+export const ignoreChoices: readonly number[] = [0, 7, 14, 30, 90, 365]
 export const sidebarItemChoices: readonly number[] = [3, 5, 10, 15, 20]
 export const refreshChoices: readonly number[] = [1, 2, 5, 10, 15, 30]
 
@@ -175,14 +180,17 @@ export interface View {
   readonly teams: readonly Entry[]
 }
 
-export function view(snapshot: Snapshot | undefined): View {
+/** Leaves out pull requests with no activity in the `ignoreDays` before `now`; 0 keeps them all. */
+export function view(snapshot: Snapshot | undefined, ignoreDays = 0, now = Date.now()): View {
   if (!snapshot) return { mine: [], reviewing: [], teams: [] }
-  const requests = snapshot.requested.prs.filter((pr) => pr.author !== snapshot.viewer).flatMap((pr) => requested(pr, snapshot) ?? [])
+  const after = ignoreDays ? now - ignoreDays * 86_400_000 : -Infinity
+  const active = (search: Search) => search.prs.filter((pr) => pr.updatedAt >= after)
+  const requests = active(snapshot.requested).filter((pr) => pr.author !== snapshot.viewer).flatMap((pr) => requested(pr, snapshot) ?? [])
   const direct = requests.filter((entry) => entry.direct)
   const byName = new Set(direct.map((entry) => entry.pr.url))
   return {
-    mine: snapshot.mine.prs.map(authored),
-    reviewing: [...direct, ...snapshot.reviewed.prs.filter((pr) => !byName.has(pr.url)).map(reviewed)],
+    mine: active(snapshot.mine).map(authored),
+    reviewing: [...direct, ...active(snapshot.reviewed).filter((pr) => !byName.has(pr.url)).map(reviewed)],
     teams: requests.filter((entry) => entry.teams.length),
   }
 }

@@ -5,7 +5,7 @@ import { createSignal, type Signal } from "solid-js"
 import type { Context } from "@opencode/plugin/tui/context"
 import { formatFeedback } from "./comments"
 import { fetchFeedback, fetchSnapshot, runGh, type Runner } from "./gh"
-import type { Settings, Snapshot } from "./model"
+import { view, type Settings, type Snapshot } from "./model"
 import type { SettingsDatabase } from "./sqlite"
 
 /** Owns the latest snapshot from gh, the settings, and the refresh schedule. Renders nothing. */
@@ -30,6 +30,8 @@ export class PullRequestsController {
   now = () => this.schedule.now()
   nextRefresh = () => this.schedule.next()
   start = () => this.schedule.start()
+  /** The snapshot's lists, without the pull requests inactive longer than the ignore setting. */
+  view = () => view(this.snapshot(), this.settings().ignoreDays, this.now())
 
   /** Every refresh, automatic or not, restarts the countdown. */
   refresh(): void {

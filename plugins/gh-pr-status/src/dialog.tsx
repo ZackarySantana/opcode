@@ -7,14 +7,14 @@ import { usePalette, type KeyHint } from "@opcode/ui"
 import { usePlugin } from "@opencode/plugin/tui"
 import { createMemo, createSignal, Show } from "solid-js"
 import type { PullRequestsController } from "./host"
-import { matches, onTeam, ordered, refreshChoices, sidebarItemChoices, teamChoices, view, type Entry, type Order, type Search, type Settings } from "./model"
+import { matches, onTeam, ordered, refreshChoices, sidebarItemChoices, teamChoices, type Entry, type Order, type Search, type Settings } from "./model"
 import { card } from "./style"
 
 export const PREFIX = "opcode-gh-pr-status"
 export const TITLE = "Pull requests"
 
 export function PullRequestsDialog(props: { prs: PullRequestsController }) {
-  const current = createMemo(() => view(props.prs.snapshot()))
+  const current = createMemo(() => props.prs.view())
   return (
     <TabbedDialog prefix={PREFIX} refreshing={props.prs.refreshing()} refresh={() => props.prs.refresh()} tabs={[
       { label: "Mine", placeholder: "search your pull requests", render: () => (
@@ -105,6 +105,11 @@ const yesNo = [{ value: false, label: "No" }, { value: true, label: "Yes" }]
 
 const orders: { value: Order; label: string }[] = [{ value: "smart", label: "Smart" }, { value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }]
 
+const ignores = [
+  { value: 0, label: "Off" }, { value: 7, label: "7 days" }, { value: 14, label: "14 days" },
+  { value: 30, label: "1 month" }, { value: 90, label: "3 months" }, { value: 365, label: "1 year" },
+]
+
 const settingRows = (team: string | undefined) => [
   {
     id: "order", label: "Order",
@@ -113,6 +118,13 @@ const settingRows = (team: string | undefined) => [
     current: (settings) => settings.order,
     update: (order) => ({ order }),
   } satisfies SettingRow<Settings, Order>,
+  {
+    id: "ignore", label: "Ignore inactive",
+    description: "Leave out pull requests with no activity, such as a push, comment, or review, in this long.",
+    choices: ignores,
+    current: (settings) => settings.ignoreDays,
+    update: (ignoreDays) => ({ ignoreDays }),
+  } satisfies SettingRow<Settings, number>,
   {
     id: "teams", label: "Sidebar team reviews",
     description: `Whether review requests for your teams appear in the sidebar, narrowed to the Teams tab's filter (${team ?? "all your teams"}). Requests for you always do.`,
