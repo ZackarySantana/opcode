@@ -144,10 +144,10 @@ test("a refused change shows the server's settings when the server moved on mean
   expect(client.error()).toBe("disk full")
 })
 
-test("calls go to the terminal's current location, feedback to the session's, through the client of the moment", async () => {
+test("calls go to the current location, or none on the desktop's Home, feedback to the session's, through the client of the moment", async () => {
   const calls: { client: number; method: string; input: unknown; location: unknown }[] = []
   let current = 0
-  let directory = "/home/me"
+  let directory: string | undefined = "/home/me"
   const makeClient = (id: number) => ({
     rpc: (definition: typeof GhPrStatusRpc) => {
       expect(definition).toBe(GhPrStatusRpc)
@@ -165,17 +165,19 @@ test("calls go to the terminal's current location, feedback to the session's, th
     },
   })
   const clientsByID = [makeClient(0), makeClient(1)]
-  const remote = createRemote(() => clientsByID[current] as never, () => ({ directory }))
+  const remote = createRemote(() => clientsByID[current] as never, () => directory === undefined ? undefined : { directory } as never)
   await remote.state()
   current = 1
   directory = "/work/web"
   await remote.update({ team: null })
+  // The server answers a call without a location from its default.
+  directory = undefined
   await remote.refresh()
   expect(await remote.feedback("/work/session", new AbortController().signal)).toEqual({ number: 7, summary: "s" })
   expect(calls).toEqual([
     { client: 0, method: "state", input: {}, location: { directory: "/home/me" } },
     { client: 1, method: "update", input: { settings: { team: null } }, location: { directory: "/work/web" } },
-    { client: 1, method: "refresh", input: {}, location: { directory: "/work/web" } },
+    { client: 1, method: "refresh", input: {}, location: undefined },
     { client: 1, method: "feedback", input: {}, location: { directory: "/work/session" } },
   ])
   const received: PullRequestsState[] = []

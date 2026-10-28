@@ -65,9 +65,15 @@ The sidebar lists review requests waiting on you, your teams' (narrowed to the t
 
 Links open in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-open` (Linux); on WSL it tries `wslview`, `xdg-open`, then PowerShell.
 
+### Desktop
+
+In OpenCode Desktop, a pill above a session's composer counts the pull requests waiting on you, colored by the most urgent. Its menu lists them as the sidebar does (following the sidebar settings, team filter, and **Sidebar items**, then "N more in Pull requests", which opens the full list); pick one to open it in your browser. When pull requests can't be read, the pill turns red and its first row says why; pick it to refresh.
+
+Select **Pull requests** in the command palette, or run `/ghpr`, to search every pull request, grouped as the terminal's tabs group them, and open one. **Refresh pull requests** refreshes now. Settings and the team filter are changed in a terminal; the desktop app follows them. The desktop app asks the app's own server, at the routed session's location or the server's default on Home.
+
 ## Send review comments to the agent
 
-Run `/ghpr-comments` in a session (or select **Send PR review comments** in the command palette) to send the review feedback on the pull request for the branch checked out in the session's directory, as `gh pr view` finds it there on the server; it stops if that pull request isn't open. It arrives as your prompt in that session: instructions to verify each comment against the code and come back with an action for it (reply why not, or change the code and what that changes), then the pull request and its comments, each anchored to its file and line with links.
+Run `/ghpr-comments` in a session (or select **Send PR review comments** in the command palette) to send the review feedback on the pull request for the branch checked out in the session's directory, as `gh pr view` finds it there on the server; it stops if that pull request isn't open. It arrives as your prompt in that session (in OpenCode Desktop, it goes into the session's composer for you to review and send): instructions to verify each comment against the code and come back with an action for it (reply why not, or change the code and what that changes), then the pull request and its comments, each anchored to its file and line with links.
 
 It sends the unresolved review threads someone else started, with your replies in them, plus others' review summaries and pull request comments. It leaves out resolved threads, threads you started, your own review summaries and comments, pending reviews, and anything from bots. An outdated thread stays, marked with the line it was on and the end of its diff. Long comments are cut at 1,500 characters, a long thread keeps its first comment and last three replies, and the whole message stops at about 40,000 characters; the message and the toast count what was left out. When nothing is left, nothing is sent. It reads the first 100 threads, reviews, and comments, and the first 100 comments in a thread. It only reads from GitHub.
 

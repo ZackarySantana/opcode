@@ -3,12 +3,12 @@ import { createPending } from "@opcode/core/pending"
 import { setTimer, type SetTimer } from "@opcode/core/refresh"
 import { describeRpcError } from "@opcode/core/rpc"
 import { createClock } from "@opcode/tabs/clock"
-import type { OpenCodeClient } from "@opencode/client"
+import type { LocationRef, OpenCodeClient } from "@opencode/client"
 import { createSignal } from "solid-js"
 import { defaultSettings, readSettings, view, type PullRequestsState, type Settings, type SettingsChange } from "./model"
 import { GhPrStatusRpc, type FormattedFeedback } from "./rpc"
 
-/** The server's pull request state, as a terminal reaches it. */
+/** The server's pull request state, as a terminal or the desktop app reaches it. */
 export interface Remote {
   state(signal?: AbortSignal): Promise<PullRequestsState>
   update(change: SettingsChange): Promise<PullRequestsState>
@@ -20,10 +20,10 @@ export interface Remote {
 }
 
 /**
- * The state is the same in every location, so calls go to the terminal's current one, and feedback to the session's.
- * The client is looked up for each call, since it changes when the server restarts.
+ * The state is the same in every location, so calls go to the front end's current one, or the server's default without
+ * one, and feedback to the session's. The client is looked up for each call, since it changes when the server restarts.
  */
-export function createRemote(client: () => Pick<OpenCodeClient, "rpc">, location: () => { directory: string }): Remote {
+export function createRemote(client: () => Pick<OpenCodeClient, "rpc">, location: () => LocationRef | undefined): Remote {
   const rpc = () => client().rpc(GhPrStatusRpc)
   const call = (signal?: AbortSignal) => ({ location: location(), signal })
   return {
