@@ -1,5 +1,13 @@
 # @lidtop/opencode-later
 
+## 0.3.2
+
+### Patch Changes
+
+- 5ccffe8: Shared code moved into helpers every plugin bundles: the refresh schedule now also works outside the terminal, and there are new helpers for state shared by a server's projects, RPC contracts and handlers, and following a server's state. For Context, Feed, Later, and Media nothing changes. In Cost, Review, Snippets, and Sessions, a call the terminal aborted is no longer reported as a failure. In Sessions, every project open on a server now shares one search index connection and one writer per database file, rather than possibly one per project.
+- 23e2ac6: Later now keeps its list on the OpenCode server, so every terminal connected to it and the agent in every project share one list and its settings, and a change anywhere shows in every sidebar and `/later` dialog right away. With a remote server, the agent's tools now change the list in your sidebar rather than a separate one on that machine. Configure the plugin where the server reads plugins (`opencode.json(c)`, not `cli.json`). The `database` option is gone: the list lives in the server's plugin storage. The list saved by earlier versions is not carried over; re-add the items you want to keep, then you can delete `opencode-later/later.sqlite` in the terminal's OpenCode state directory.
+- e91635a: Shared code that Feed and GH PR Status use moved into helpers every plugin bundles: the minute clock that ages views, and sending changes to the server in order while showing them at once. Nothing changes for any plugin.
+
 ## 0.3.1
 
 ### Patch Changes
