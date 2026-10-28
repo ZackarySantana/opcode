@@ -99,10 +99,10 @@ test("the server's unreadable saved feeds show as the problem", async () => {
   await eventually(() => expect(client.error()).toBe("The saved feeds can't be read right now: disk read failed"))
 })
 
-test("calls go to the terminal's current location, through the client of the moment", async () => {
+test("calls go to the current location, or the server's default without one, through the client of the moment", async () => {
   const calls: { client: number; method: string; input: unknown; location: unknown }[] = []
   let current = 0
-  let directory = "/home/me"
+  let directory: string | undefined = "/home/me"
   const makeClient = (id: number) => ({
     rpc: (definition: typeof FeedRpc) => {
       expect(definition).toBe(FeedRpc)
@@ -120,18 +120,20 @@ test("calls go to the terminal's current location, through the client of the mom
     },
   })
   const clientsByID = [makeClient(0), makeClient(1)]
-  const remote = createRemote(() => clientsByID[current] as never, () => ({ directory }))
+  const remote = createRemote(() => clientsByID[current] as never, () => directory ? { directory } : undefined)
   await remote.state()
   current = 1
   directory = "/work/web"
   await remote.update({ windowHours: 6 })
   await remote.subscribe(npm, "release")
   await remote.unsubscribe(npm)
+  // A desktop window on Home has no location.
+  directory = undefined
   await remote.refresh()
-  const at = (client: number, method: string, input: unknown) => ({ client, method, input, location: { directory: client ? "/work/web" : "/home/me" } })
+  const at = (client: number, method: string, input: unknown, location?: string) => ({ client, method, input, location: location && { directory: location } })
   expect(calls).toEqual([
-    at(0, "state", {}), at(1, "update", { settings: { windowHours: 6 } }), at(1, "subscribe", { url: npm, kind: "release" }),
-    at(1, "unsubscribe", { url: npm }), at(1, "refresh", {}),
+    at(0, "state", {}, "/home/me"), at(1, "update", { settings: { windowHours: 6 } }, "/work/web"), at(1, "subscribe", { url: npm, kind: "release" }, "/work/web"),
+    at(1, "unsubscribe", { url: npm }, "/work/web"), at(1, "refresh", {}),
   ])
   const received: FeedsState[] = []
   for await (const changed of remote.changes(new AbortController().signal)) received.push(changed)

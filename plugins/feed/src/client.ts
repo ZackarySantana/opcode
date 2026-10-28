@@ -20,8 +20,11 @@ export interface Remote {
   changes(signal: AbortSignal): AsyncIterable<FeedsState>
 }
 
-/** The feeds are the same in every location, so calls go to the terminal's current one, through the client of the moment. */
-export function createRemote(client: () => Pick<OpenCodeClient, "rpc">, location: () => { directory: string }): Remote {
+/**
+ * The feeds are the same in every location, so calls go to the current one, through the client of the moment. Without
+ * one, such as in a desktop window on Home, they go to the server's default location.
+ */
+export function createRemote(client: () => Pick<OpenCodeClient, "rpc">, location: () => { directory: string } | undefined): Remote {
   const rpc = () => client().rpc(FeedRpc)
   const call = (signal?: AbortSignal) => ({ location: location(), signal })
   return {
