@@ -1,6 +1,8 @@
 import { Rpc } from "@opencode/plugin/rpc"
 import type { OpenCodeClient } from "@opencode/client"
+import { versionedSchema } from "@opcode/core/follow"
 import { empty, failed, object } from "@opcode/core/rpc"
+import type { AgentsState, Attention, ObserveInput } from "./agents"
 import type { MessageRecord, RefreshOutput, SearchInput, SearchOutput } from "./domain"
 import { MAX_QUERY, MAX_SNIPPET } from "./regex"
 
@@ -24,10 +26,35 @@ const resultProperties = {
 const errors = { ...failed, missing: empty, stale: empty }
 export type SessionErrorType = keyof typeof errors
 
+const text = { type: "string" } as const
+const ids = { type: "array", items: id } as const
+const row = object({
+  id, state: { type: "string", enum: ["needs-you", "failed", "finished", "retrying", "working"] }, read: { type: "boolean" },
+  agents: { type: "integer", minimum: 0 }, since: number, title: text, directory: text,
+}, ["id", "state", "read", "agents", "since", "title", "directory"])
+/** `AgentsState` in agents.ts. */
+const agents = object({ ...versionedSchema, rows: { type: "array", items: row }, observe: { type: "integer", minimum: 0 }, error: text }, ["server", "started", "revision", "rows"])
+
 export const SessionsRpc = Rpc.define({
   id: "opcode-sessions",
-  events: {},
+  events: {
+    /** The Agents list after each change. */
+    agents: { schema: agents },
+    /** A transition terminals may alert for. */
+    attention: { schema: object({ kind: { type: "string", enum: ["permission", "form", "finished", "failed"] }, sessionID: id, root: id, title: text }, ["kind", "sessionID"]) },
+  },
   methods: {
+    /** The Agents list every terminal shows, the same in every location. */
+    agents: { input: empty, output: agents, errors: failed },
+    /** A terminal's observation of running sessions and their requests, which the state's `observe` asks for. */
+    observe: {
+      input: object({
+        server: text, since: { type: "integer", minimum: 0 }, running: ids,
+        requests: { type: "object", additionalProperties: id }, listed: { type: "array", items: text },
+      }, ["server", "since", "running", "requests", "listed"]),
+      output: agents,
+      errors: failed,
+    },
     search: {
       errors,
       input: object({ query: { type: "string", maxLength: MAX_QUERY }, projectID: id, showSubagents: { type: "boolean" }, limit: { type: "integer", minimum: 1, maximum: 200 } }, ["query", "showSubagents"]),
@@ -78,6 +105,33 @@ export function sessionsRemote(client: OpenCodeClient, directory: string): Sessi
     begin: async (input, signal) => await rpc.begin(input, options(signal)) as { current?: boolean; token?: string },
     import: async (input, signal) => await rpc.import(input, options(signal)) as { accepted: number },
     finish: async (input, signal) => { await rpc.finish(input, options(signal)) },
+  }
+}
+
+/** The server's Agents list, as a terminal reaches it. */
+export interface AgentsRemote {
+  state(signal?: AbortSignal): Promise<AgentsState>
+  observe(input: ObserveInput, signal?: AbortSignal): Promise<AgentsState>
+  /** Each announced state, live only. */
+  changes(signal: AbortSignal): AsyncIterable<AgentsState>
+  /** Each transition to alert for, live only. */
+  attention(signal: AbortSignal): AsyncIterable<Attention>
+}
+
+/** The list is the same in every location, so calls go to the terminal's. */
+export function agentsRemote(client: Pick<OpenCodeClient, "rpc">, directory: string): AgentsRemote {
+  const rpc = client.rpc(SessionsRpc)
+  const options = (signal?: AbortSignal) => ({ location: { directory }, signal })
+  const events = <T>(name: "agents" | "attention", signal: AbortSignal): AsyncIterable<T> => ({
+    async *[Symbol.asyncIterator]() {
+      for await (const event of rpc.events.subscribe(name, { signal })) yield event.data as unknown as T
+    },
+  })
+  return {
+    state: async (signal) => await rpc.agents({}, options(signal)) as AgentsState,
+    observe: async (input, signal) => await rpc.observe(input, options(signal)) as AgentsState,
+    changes: (signal) => events("agents", signal),
+    attention: (signal) => events("attention", signal),
   }
 }
 

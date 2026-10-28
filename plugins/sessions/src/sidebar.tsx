@@ -4,8 +4,8 @@ import { More, SidebarItem, useClick, type Item } from "@opcode/tabs"
 import { age } from "@opcode/tabs/format"
 import { Section, usePalette } from "@opcode/ui"
 import { createSignal, For, onCleanup, Show } from "solid-js"
-import type { AgentState } from "./inbox"
-import type { Inbox, InboxRow } from "./inbox-host"
+import type { AgentRow, AgentState } from "./inbox"
+import type { Inbox } from "./inbox-host"
 import { projectName } from "./domain"
 
 type Palette = ReturnType<typeof usePalette>
@@ -14,13 +14,13 @@ const STATE_LABELS: Record<AgentState, string> = {
   "needs-you": "needs you", failed: "failed", finished: "finished", retrying: "retrying", working: "working",
 }
 
-const rowDetail = (row: InboxRow) =>
+const rowDetail = (row: AgentRow) =>
   [projectName(row.directory), row.agents ? `${row.agents} ${row.agents === 1 ? "agent" : "agents"}` : ""].filter(Boolean).join(" · ")
 
 /** State, project, and subagents, as one line. */
-export const rowSummary = (row: InboxRow) => `${STATE_LABELS[row.state]} · ${rowDetail(row)}`
+export const rowSummary = (row: AgentRow) => `${STATE_LABELS[row.state]} · ${rowDetail(row)}`
 
-function rowItem(row: InboxRow, number: number, now: number, palette: Palette): Item {
+function rowItem(row: AgentRow, number: number, now: number, palette: Palette): Item {
   const [glyph, color] = ({
     "needs-you": ["●", palette.warning], failed: ["✗", palette.error], finished: ["✓", palette.success],
     retrying: ["↻", palette.warning], working: ["○", palette.value],

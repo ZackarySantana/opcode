@@ -6,6 +6,7 @@ import { existsSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { SessionsRpc } from "../src/rpc"
+import type { AgentsState } from "../src/agents"
 import type { SearchOutput } from "../src/domain"
 
 const installed = join(homedir(), ".opencode", "bin", "opencode")
@@ -120,6 +121,12 @@ test.skipIf(!executable)("[requires OpenCode binary] populated legacy SQLite row
     expect(matched.rows.map((row) => row.id)).toEqual(["legacy-root"])
     const rootsOnly = await rpc.search({ query: "", showSubagents: false }, options) as SearchOutput
     expect(rootsOnly.rows.map((row) => row.id)).toEqual(["legacy-root", "legacy-partial", "legacy-provider-only", "legacy-empty"])
+    // The Agents list and an observation pass the real host's input and output validation.
+    const agents = await rpc.agents({}, options) as AgentsState
+    expect(agents).toMatchObject({ rows: [], observe: expect.any(Number) })
+    const observed = await rpc.observe({ server: agents.server, since: agents.revision, running: [], requests: { "permission:per_fixture": "ses_fixture" }, listed: [root] }, options) as AgentsState
+    expect(observed).toMatchObject({ server: agents.server, rows: [] })
+    expect(Object.hasOwn(observed, "observe")).toBe(false)
     const persisted = new Database(database, { readonly: true })
     try {
       expect(persisted.query("SELECT parent_id FROM sessions WHERE id='legacy-root'").get()).toEqual({ parent_id: null })

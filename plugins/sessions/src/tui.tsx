@@ -5,7 +5,7 @@ import type { Context } from "@opencode/plugin/tui/context"
 import { createBrowser } from "./browser"
 import { SessionsDialog } from "./dialog"
 import { createInbox, inboxOptions, type Inbox } from "./inbox-host"
-import { sessionsRemote } from "./rpc"
+import { agentsRemote, sessionsRemote } from "./rpc"
 import { InboxSidebar, rowSummary } from "./sidebar"
 
 /** Names already used by other commands are left alone; the first free one becomes the primary slash name. */
@@ -61,7 +61,7 @@ export default Plugin.define({
     const model = createBrowser(client, sessionsRemote(client, location.directory))
     const options = inboxOptions(api.options.inbox)
     // Disabled: no slot, no listeners, and the browser navigates without a back trail.
-    const inbox = options && createInbox(api, options)
+    const inbox = options && createInbox(api, options, agentsRemote(client, location.directory))
     // A dialog is not a route: the back trail records the session the browser was opened over.
     const open = inbox ? inbox.open : (sessionID: string) => api.ui.router.navigate({ type: "session", sessionID })
     const names = availableSlashNames(api, ["sessions", "sessions-all", "all-sessions"])

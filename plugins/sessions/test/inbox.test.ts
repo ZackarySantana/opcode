@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { OpenCodeEvent } from "@opencode/client"
-import { activeRoots, applyEvent, backEntry, emptyProjection, nextExpiry, observeRoute, popHistory, pushHistory, reorder } from "../src/inbox"
+import { activeRoots, applyEvent, applyObservation, backEntry, decidedBy, emptyProjection, forgetInactive, nextExpiry, observeRoute, popHistory, pushHistory, reorder } from "../src/inbox"
 
 const event = (type: string, data: object, created = 0, directory = "/work/alpha") => ({ type, data, created, location: { directory } }) as unknown as OpenCodeEvent
 const created = (sessionID: string, parentID?: string, directory = "/work/alpha") => event("session.created", { sessionID, parentID, title: `Session ${sessionID}`, location: { directory } }, 1, directory)
@@ -75,6 +75,35 @@ test("a location shutdown stops its sessions without touching other locations", 
   applyEvent(projection, event("permission.asked", { id: "per_1", sessionID: "a", action: "bash", resources: [] }))
   applyEvent(projection, event("location.shutdown", {}, 50, "/work/alpha"))
   expect(states(projection)).toEqual([{ id: "b", state: "working", agents: 0 }])
+})
+
+test("an observation corrects status and requests, except where events since decided them", () => {
+  const projection = emptyProjection()
+  for (const value of [created("a"), created("b"), created("c"), created("d", undefined, "/work/beta"), status("a", "busy"), status("b", "retry")]) applyEvent(projection, value)
+  // Asked while the service still listened: an unlisted location's request stays while its session runs.
+  for (const value of [event("permission.asked", { id: "per_a", sessionID: "a", action: "bash", resources: [] }), event("permission.asked", { id: "per_d", sessionID: "d", action: "bash", resources: [] })]) applyEvent(projection, value)
+  // After the observation was made, "c" went idle and "a"'s request was answered.
+  const late = [status("c", "idle"), event("permission.replied", { sessionID: "a", requestID: "per_a", reply: "once" })]
+  const decided = new Set(late.flatMap((value) => decidedBy(projection, value)))
+  for (const value of late) applyEvent(projection, value)
+
+  applyObservation(projection, {
+    running: ["b", "c", "d"], requests: { "permission:per_a": "a", "form:frm_b": "b" }, listed: ["/work/alpha"],
+  }, (key) => decided.has(key))
+  // "a" stopped unseen; "b" keeps retrying; "c"'s idle is newer than the observation; "d" runs, its location unlisted.
+  expect(projection.status).toEqual({ b: "retry", d: "busy" })
+  expect(projection.requests).toEqual({ "form:frm_b": "b", "permission:per_d": "d" })
+  applyObservation(projection, { running: ["b"], requests: {}, listed: [] }, () => false)
+  expect(projection).toMatchObject({ status: { b: "retry" }, requests: {} })
+})
+
+test("forgetting keeps every session the list shows or waits on, with its ancestors", () => {
+  const projection = emptyProjection()
+  for (const value of [created("busy"), created("child", "busy"), created("grandchild", "child"), created("idle"), created("idle-child", "idle"), created("done"), created("asks"), created("asking", "asks")]) applyEvent(projection, value)
+  for (const value of [status("grandchild", "busy"), event("session.idle", { sessionID: "done" }, 20), event("form.created", { form: { id: "frm_1", sessionID: "asking", title: "Pick", fields: [] } })]) applyEvent(projection, value)
+  forgetInactive(projection)
+  expect(Object.keys(projection.sessions).sort()).toEqual(["asking", "asks", "busy", "child", "done", "grandchild"])
+  expect(states(projection)).toEqual([{ id: "busy", state: "working", agents: 1 }, { id: "asks", state: "needs-you", agents: 0 }, { id: "done", state: "finished", agents: 0 }])
 })
 
 test("activation order is stable while states change; new roots follow, oldest first", () => {
