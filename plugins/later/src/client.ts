@@ -28,10 +28,7 @@ export interface Remote {
  */
 export function createRemote(client: () => Pick<OpenCodeClient, "rpc">, location: () => { directory: string } | undefined): Remote {
   const rpc = () => client().rpc(LaterRpc)
-  const call = (signal?: AbortSignal) => {
-    const where = location()
-    return where ? { location: where, signal } : { signal }
-  }
+  const call = (signal?: AbortSignal) => ({ location: location(), signal })
   // Items go back as they came, without fields JSON can't carry.
   const item = (item: LaterItem) => toJson(item) as never
   return {
