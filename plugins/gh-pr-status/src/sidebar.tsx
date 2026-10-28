@@ -6,12 +6,12 @@ import { Section, usePalette } from "@opcode/ui"
 import { usePlugin } from "@opencode/plugin/tui"
 import { createMemo, For, Show } from "solid-js"
 import { PREFIX, TITLE } from "./dialog"
-import type { PullRequestsController } from "./host"
+import type { PullRequestsClient } from "./client"
 import { sidebarEntries } from "./model"
 import { sidebarItem } from "./style"
 
 /** Review requests waiting on you and your open pull requests, as one list; /ghpr has everything else. */
-export function Sidebar(props: { prs: PullRequestsController }) {
+export function Sidebar(props: { prs: PullRequestsClient }) {
   const api = usePlugin()
   const palette = usePalette()
   const entries = createMemo(() => sidebarEntries(props.prs.view(), props.prs.settings()))

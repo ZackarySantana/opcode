@@ -69,10 +69,10 @@ test("preview loads both built entrypoints and separates plugin data without rew
     }
   }
   // Later's server side registers agent tools on the same database as its terminal side.
-  expect(settings.plugins.filter((entry: unknown) => typeof entry === "object")).toHaveLength(7)
+  expect(settings.plugins.filter((entry: unknown) => typeof entry === "object")).toHaveLength(8)
   expect(settings.plugins).toContainEqual(cli.plugins.find((entry: { package?: string }) => entry.package?.endsWith("/later")))
   // Client-local plugins load in the terminal process, with their options.
-  expect(cli.plugins.filter((entry: unknown) => typeof entry === "object")).toMatchObject(["later", "feed", "gh-pr-status"].map((id) => ({
+  expect(cli.plugins.filter((entry: unknown) => typeof entry === "object")).toMatchObject(["later", "feed"].map((id) => ({
     package: join(root, `.release/dev/plugins/${id}`), options: { database: join(preview.data, `${id}.sqlite`) },
   })))
 })

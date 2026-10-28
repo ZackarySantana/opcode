@@ -101,6 +101,45 @@ export const ignoreChoices: readonly number[] = [0, 7, 14, 30, 90, 365]
 export const sidebarItemChoices: readonly number[] = [3, 5, 10, 15, 20]
 export const refreshChoices: readonly number[] = [1, 2, 5, 10, 15, 30]
 
+/** A change to some settings; a null team clears the Teams tab's filter. */
+export type SettingsChange = Partial<Omit<Settings, "team">> & { readonly team?: string | null }
+
+/**
+ * Settings from stored JSON, whatever its shape: each field that isn't one of its choices keeps its default, so stored
+ * data from any version reads. The team is left out unless set, as JSON has no undefined.
+ */
+export function readSettings(stored: unknown): Settings {
+  const value = stored && typeof stored === "object" ? stored as Record<string, unknown> : {}
+  const pick = <T>(key: keyof Settings, choices: readonly T[], fallback: T) => choices.includes(value[key] as T) ? value[key] as T : fallback
+  const settings: Settings = {
+    order: pick("order", orderChoices, defaultSettings.order),
+    ignoreDays: pick("ignoreDays", ignoreChoices, defaultSettings.ignoreDays),
+    sidebarMine: pick("sidebarMine", [true, false], defaultSettings.sidebarMine),
+    sidebarTeams: pick("sidebarTeams", [true, false], defaultSettings.sidebarTeams),
+    sidebarItems: pick("sidebarItems", sidebarItemChoices, defaultSettings.sidebarItems),
+    refreshMinutes: pick("refreshMinutes", refreshChoices, defaultSettings.refreshMinutes),
+  }
+  return typeof value.team === "string" && value.team ? { ...settings, team: value.team } : settings
+}
+
+/** What the server shares with every client: the settings, and the latest refresh from GitHub and when the next starts. */
+export interface PullRequestsState {
+  /** This server process's service; revisions count from 0 again in another. */
+  readonly server: string
+  /** Rises with each change, so a client keeps the newest state it has seen. */
+  readonly revision: number
+  readonly settings: Settings
+  readonly snapshot?: Snapshot
+  /** Why the last refresh failed; the snapshot before it stays. */
+  readonly error?: string
+  readonly refreshing: boolean
+  readonly nextRefresh?: number
+}
+
+/** Whether `next` replaces `current`: a state from another server process always does, an older one never does. */
+export const newer = (next: PullRequestsState, current: PullRequestsState | undefined) =>
+  !current || next.server !== current.server || next.revision > current.revision
+
 /** A request GitHub matched to you without naming the team, which your token can't see. */
 export const HIDDEN_TEAM = "hidden team"
 

@@ -9,7 +9,7 @@
 | Later | Ordered active items, completed history, and settings | Client-local SQLite, also opened by server-side agent tools; isolated prompt-paste bridge | Later/History/Settings dialog, native edit/confirmation dialogs, sidebar |
 | Sessions | Searchable user/assistant text and session metadata; active sessions projected from server state | Server-owned SQLite, live events, RPC; client history import; client-side snapshot plus live events for active sessions | Browser, filters, preview, active-sessions sidebar, `/go` |
 | Feed | Subscriptions, settings, and an interpreted timeline of feed items | Client-local SQLite, feed fetching | Status/Upcoming/Releases/Subscribe/Settings dialog, feed picker, sidebar |
-| GH PR Status | Pull requests classified by what waits on you, settings, and a saved team filter | Client-local SQLite, `gh` GraphQL and REST calls | Mine/Reviewing/Teams/Settings dialog, team picker, sidebar |
+| GH PR Status | Pull requests classified by what waits on you, settings, and a saved team filter | One server-process service shared by every location: server plugin storage, the refresh schedule, `gh` GraphQL and REST calls, RPC with a change event; terminals follow it live | Mine/Reviewing/Teams/Settings dialog, team picker, sidebar |
 | Snippets | Global and project snippet files, precedence, and `@name` mentions | Server-owned files, skill registration, prompt/context hooks, authoring tools, RPC | Dialog with previews, prompt paste bridge, authoring sessions |
 | Media | Project-relative output paths, image naming, PCM-to-WAV framing | OpenRouter media API with the `openrouter` integration credential; agent tools | None: server-only agent tools |
 | Review | Patch rows and segments, line comments that follow their text, delivery states, viewed-by-patch-hash, the review message, names and definitions per language, usages arranged against the diff | Host session/VCS diffs and inbox; synced terminal storage; server plugin storage, prompt/context hooks, a reply tool, RPC; language servers from OpenCode's `lsp` config in a server-side pool, ripgrep / `git grep` | Session panel with the file tree or paths and the diff, inline comment editor, usages list, search, comments list, read-only file view, options menu |
@@ -81,7 +81,7 @@ Persistence, domain actions, and their cancellable I/O remain plugin-specific.
 `@opcode/tabs` holds what Feed, GH PR Status, and Later share: the tabbed dialog with one
 search box and Escape that undoes one step at a time, grouped item cards that
 open on enter or click, the picker, the Settings tab, sidebar items with "+N
-more" lines, the refresh countdown beside a section title, the refresh schedule, and the browser
+more" lines, the refresh countdown beside a section title, the refresh schedule as signals, and the browser
 launcher. Sessions uses its dialog, picker, and sidebar items too, Cost its tabbed
 dialog and picker, and Snippets its tabbed dialog and item cards. Native prompts
 replace a custom dialog, so Later passes its own tab and focus signals, and Snippets
@@ -90,7 +90,8 @@ that changing it releases only its consumers, not every consumer of `@opcode/ui`
 
 `@opcode/core` contains small host-independent utilities, including the XDG
 state directory and owner-only WAL SQLite setup shared by Cost, Later, and
-Sessions. Domain models stay in
+Sessions, live-subscription reconnection, superseding refreshes, and the refresh schedule
+that GH PR Status's server runs and `@opcode/tabs` wraps. Domain models stay in
 their plugin. Share recurring behavior after it appears, rather than building a
 general plugin framework or repository abstraction.
 

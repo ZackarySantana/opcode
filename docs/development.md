@@ -20,7 +20,7 @@ built-in `/sessions` command). Relaunch after editing code to rebuild.
 Preview plugin databases persist in `.release/dev/data`, separate from the
 original plugins' databases. The launcher temporarily replaces the four
 originals and uses the preview extensions instead of your CLI-only plugin list.
-Later, Feed, and GH PR Status are configured on the CLI side so their client-local database
+Later and Feed are configured on the CLI side so their client-local database
 options reach the TUI. Later is configured on the server side too, with the same
 database, for its agent tools; OpenCode still loads its TUI once.
 

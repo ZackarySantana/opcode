@@ -6,14 +6,15 @@ import { openLink } from "@opcode/tabs/open"
 import { usePalette, type KeyHint } from "@opcode/ui"
 import { usePlugin } from "@opencode/plugin/tui"
 import { createMemo, createSignal, Show } from "solid-js"
-import type { PullRequestsController } from "./host"
+import type { PullRequestsClient } from "./client"
 import { matches, onTeam, ordered, refreshChoices, sidebarItemChoices, teamChoices, type Entry, type Order, type Search, type Settings } from "./model"
+import { PLUGIN_ID } from "./rpc"
 import { card } from "./style"
 
-export const PREFIX = "opcode-gh-pr-status"
+export const PREFIX = PLUGIN_ID
 export const TITLE = "Pull requests"
 
-export function PullRequestsDialog(props: { prs: PullRequestsController }) {
+export function PullRequestsDialog(props: { prs: PullRequestsClient }) {
   const current = createMemo(() => props.prs.view())
   return (
     <TabbedDialog prefix={PREFIX} refreshing={props.prs.refreshing()} refresh={() => props.prs.refresh()} tabs={[
@@ -39,7 +40,7 @@ export function PullRequestsDialog(props: { prs: PullRequestsController }) {
 
 /** Grouped pull requests, each group in the chosen order; enter or a click opens one. Lists the refresh error and anything GitHub withheld above them. */
 function PullList(props: {
-  prs: PullRequestsController
+  prs: PullRequestsClient
   groups: readonly { title: string; entries: readonly Entry[] }[]
   /** The searches the tab draws on, for what they withheld. */
   searches: readonly (Search | undefined)[]
@@ -78,7 +79,7 @@ function PullList(props: {
 }
 
 /** Review requests for your teams; f filters to one team, and the filter is saved. */
-function Teams(props: { prs: PullRequestsController; entries: readonly Entry[] }) {
+function Teams(props: { prs: PullRequestsClient; entries: readonly Entry[] }) {
   const tab = useTab()
   const [picking, setPicking] = createSignal(false)
   const team = () => props.prs.settings().team
@@ -92,7 +93,7 @@ function Teams(props: { prs: PullRequestsController; entries: readonly Entry[] }
   return (
     <Show when={!picking()} fallback={
       <Picker options={options()} all="All your teams" noun="teams" action="filter" initial={team()}
-        pick={(team) => { props.prs.updateSettings({ team }); setPicking(false) }} close={() => setPicking(false)} />
+        pick={(team) => { props.prs.updateSettings({ team: team ?? null }); setPicking(false) }} close={() => setPicking(false)} />
     }>
       <PullList prs={props.prs} searches={[props.prs.snapshot()?.requested]} handlers={{ prefix: team, pick: () => setPicking(true) }}
         groups={[{ title: "AWAITING REVIEW", entries: onTeam(props.entries, team()) }]}

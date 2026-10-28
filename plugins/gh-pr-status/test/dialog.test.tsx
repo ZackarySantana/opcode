@@ -6,18 +6,14 @@ import { PluginContextProvider } from "@opencode/plugin/tui"
 import type { Context, KeymapCommand, KeymapLayer } from "@opencode/plugin/tui/context"
 import { testRender } from "@opentui/solid"
 import { createComputed, onCleanup } from "solid-js"
-import type { Runner } from "../src/gh"
+import { PullRequestsClient } from "../src/client"
 import { PullRequestsDialog } from "../src/dialog"
-import { PullRequestsController } from "../src/host"
 import { defaultSettings } from "../src/model"
-import { SettingsDatabase } from "../src/sqlite"
-import { response, teams } from "./fixtures"
-
-const runner: Runner = async (args) => ({ stdout: args.includes("graphql") ? response : teams, stderr: "", status: 0 })
+import { eventually, fakeServer, ghRunner, stopped } from "./host"
 
 test("/ghpr pages through your pull requests, your reviews, and your teams', and saves its settings and the team filter", async () => {
-  const database = new SettingsDatabase(":memory:")
-  const prs = new PullRequestsController(database, runner)
+  const server = fakeServer({ run: ghRunner().run })
+  const prs = new PullRequestsClient(server.remote(), stopped)
   // Layers leave with their owner, as in the host, so a stale command from an unmounted tab or picker can't run.
   const layers = new Set<() => KeymapLayer>()
   const dispatch = (id: string) => [...layers].map((layer) => layer()).sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
@@ -39,7 +35,7 @@ test("/ghpr pages through your pull requests, your reviews, and your teams', and
       },
     },
   } as unknown as Context
-  prs.refresh()
+  prs.start()
   const view = await testRender(() => <PluginContextProvider value={host}><PullRequestsDialog prs={prs} /></PluginContextProvider>, { width: 110, height: 44 })
   const frame = async (text: string) => view.waitForFrame((frame) => frame.includes(text))
   try {
@@ -81,7 +77,8 @@ test("/ghpr pages through your pull requests, your reviews, and your teams', and
     const web = await frame("acme/web ›")
     expect(web).toContain("Speed up CI")
     expect(web).not.toContain("New billing API")
-    expect(database.settings()).toEqual({ ...defaultSettings, ignoreDays: 0, team: "acme/web" })
+    // Saved on the server, for every terminal.
+    await eventually(() => expect(server.stored.get("settings")).toEqual({ ...defaultSettings, ignoreDays: 0, team: "acme/web" }))
 
     // The saved filter isn't a step back: esc closes the dialog.
     dispatch("opcode-gh-pr-status.close")
@@ -89,6 +86,6 @@ test("/ghpr pages through your pull requests, your reviews, and your teams', and
   } finally {
     await view.dispose()
     prs.dispose()
-    database.close()
+    await server.close()
   }
 })
