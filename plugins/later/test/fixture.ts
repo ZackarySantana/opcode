@@ -50,7 +50,10 @@ export function laterServer(options: { stored?: Map<string, unknown>; timer?: Se
   }
 }
 
-/** What `client.rpc` gives a terminal: calls in the location it passes, and every location's events. */
+/** Where the server runs a call that names no location. */
+const serverDirectory = "/server"
+
+/** What `client.rpc` gives a terminal: calls in the location it passes, or the server's own, and every location's events. */
 export function rpcClient(server: ReturnType<typeof fakeServer>): Pick<OpenCodeClient, "rpc"> {
   const events = {
     subscribe: (name: string, { signal }: { signal: AbortSignal }) => ({
@@ -61,14 +64,15 @@ export function rpcClient(server: ReturnType<typeof fakeServer>): Pick<OpenCodeC
   }
   const rpc = new Proxy({}, {
     get: (_target, method: string) => method === "events" ? events
-      : (input: unknown, options: { location: { directory: string }; signal?: AbortSignal }) => server.call(options.location.directory, method, input, options.signal),
+      : (input: unknown, options: { location?: { directory: string }; signal?: AbortSignal }) =>
+        server.call(options.location?.directory ?? serverDirectory, method, input, options.signal),
   })
   return { rpc: () => rpc } as never
 }
 
-/** A terminal whose location is `directory`. */
-export function remote(server: ReturnType<typeof fakeServer>, directory = "/home/me"): Remote {
-  return createRemote(() => rpcClient(server), () => ({ directory }))
+/** A terminal whose location is `directory`, or a caller without one when it is null. */
+export function remote(server: ReturnType<typeof fakeServer>, directory: string | null = "/home/me"): Remote {
+  return createRemote(() => rpcClient(server), () => directory === null ? undefined : { directory })
 }
 
 /** The stored list, as the server reads it. */

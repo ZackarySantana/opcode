@@ -63,6 +63,12 @@ Paste-and-complete works only when `/later` was opened over home or a session. I
 
 OpenCode V2 has no prompt-text setter or paste acknowledgement, so the item is marked complete after the paste is dispatched, not after anything runs. Review the prompt before submitting it yourself. This is not an exclusive task queue: two clients can still paste the same item.
 
+### Desktop
+
+In OpenCode Desktop, Later is a side panel tab: open it from the **+** menu before the side panel tabs (it shows the active count), select **Later** in the command palette, or run `/later` to toggle it. Add items in the field at the top. Each active item has **Use** and a menu to edit, move up or down, complete, or delete it (after confirmation); **Show history** lists completed items to restore, edit, or delete. While the list has items, a "N for later" pill above the prompt lists them too.
+
+**Use**, and picking a row in the pill, inserts the item into the prompt, focuses it, and marks the item complete. **It never submits the prompt.** An item that changed elsewhere since the list was read is not inserted; one that changes before it is completed stays active, and a toast says so. The desktop app follows the same list as every terminal, live, on the app's own server; while that server can't read the list, the tab says why.
+
 ## Agent tools
 
 When the server side is loaded (an `opencode.json(c)` entry), the agent can manage the list when you ask, for example "add a Later item to bump the SDK" or "complete the Later item about docs":

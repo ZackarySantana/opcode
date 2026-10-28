@@ -22,10 +22,16 @@ export interface Remote {
   changes(signal: AbortSignal): AsyncIterable<LaterState>
 }
 
-/** The list is the same in every location, so calls go to the terminal's current one. The client changes when the server restarts. */
-export function createRemote(client: () => Pick<OpenCodeClient, "rpc">, location: () => { directory: string }): Remote {
+/**
+ * The list is the same in every location, so calls go to the caller's current one, or the server's default without
+ * one. The client changes when the server restarts.
+ */
+export function createRemote(client: () => Pick<OpenCodeClient, "rpc">, location: () => { directory: string } | undefined): Remote {
   const rpc = () => client().rpc(LaterRpc)
-  const call = (signal?: AbortSignal) => ({ location: location(), signal })
+  const call = (signal?: AbortSignal) => {
+    const where = location()
+    return where ? { location: where, signal } : { signal }
+  }
   // Items go back as they came, without fields JSON can't carry.
   const item = (item: LaterItem) => toJson(item) as never
   return {
