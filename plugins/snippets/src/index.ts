@@ -1,5 +1,6 @@
 import { Plugin, Skill } from "@opencode/plugin"
 import { errorMessage } from "@opcode/core"
+import { guarded } from "@opcode/core/rpc"
 import { authoringOf, PLUGIN_ID, type Authoring, type Scope } from "./domain"
 import { SnippetsRpc } from "./rpc"
 import { SnippetService } from "./service"
@@ -64,7 +65,3 @@ export default Plugin.define({
     return () => registration.dispose()
   },
 })
-
-async function guarded<T>(call: { error(type: "failed", message: string, data: Record<string, never>): unknown }, action: () => Promise<T>): Promise<T> {
-  try { return await action() } catch (error) { throw call.error("failed", errorMessage(error), {}) }
-}

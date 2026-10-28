@@ -1,9 +1,10 @@
 import { afterEach, expect, test } from "bun:test"
-import { createComputed, createRoot } from "solid-js"
+import { closeServers, eventually, fakeServer, manualTimers, stopped } from "@opcode/core/test-support/server"
 import { createRemote, PullRequestsClient, type Remote } from "../src/client"
+import { serverPlugin } from "../src/index"
 import { defaultSettings, type PullRequestsState, type SettingsChange } from "../src/model"
 import { GhPrStatusRpc } from "../src/rpc"
-import { closeServers, eventually, fakeServer, ghRunner, manualTimers, stopped } from "./host"
+import { ghRunner, remote } from "./host"
 
 afterEach(closeServers)
 
@@ -18,9 +19,9 @@ const follow = (remote: Remote, timer = stopped) => {
 
 test("terminals show each other's changes, and catch up on one they missed while disconnected", async () => {
   const gh = ghRunner()
-  const server = fakeServer({ run: gh.run })
-  const first = follow(server.remote("/home/me"))
-  const second = follow(server.remote("/work/web"))
+  const server = fakeServer({ plugin: serverPlugin(gh.run, stopped) })
+  const first = follow(remote(server, "/home/me"))
+  const second = follow(remote(server, "/work/web"))
   await eventually(() => expect(second.snapshot()?.viewer).toBe("me"))
   expect(gh.searches).toHaveLength(1)
 
@@ -89,22 +90,6 @@ function scriptedRemote(initial: PullRequestsState) {
 const state = (server: string, started: number, revision: number, rest: Partial<Omit<PullRequestsState, "settings">> & { settings?: Partial<PullRequestsState["settings"]> } = {}): PullRequestsState =>
   ({ server, started, revision, refreshing: false, ...rest, settings: { ...defaultSettings, ...rest.settings } })
 
-test("a terminal keeps the newest state through duplicates and late arrivals, and moves to a service started later", async () => {
-  const scripted = scriptedRemote(state("a", 100, 1))
-  const client = follow(scripted.remote)
-  const orders: string[] = []
-  createRoot(() => createComputed(() => { const order = client.settings().order; if (orders.at(-1) !== order) orders.push(order) }))
-  await eventually(() => expect(scripted.reads).toBe(1))
-  scripted.announce(state("a", 100, 3, { settings: { order: "oldest" } }))
-  scripted.announce(state("a", 100, 2, { settings: { order: "newest" } }))
-  // An older service, such as a previous version's still loaded somewhere, is not followed.
-  scripted.announce(state("old", 50, 9, { settings: { order: "newest" } }))
-  scripted.announce(state("a", 100, 3, { settings: { order: "oldest" } }))
-  scripted.announce(state("b", 200, 0, { settings: { order: "smart", sidebarItems: 20 } }))
-  await eventually(() => expect(client.settings().sidebarItems).toBe(20))
-  expect(orders).toEqual(["smart", "oldest", "smart"])
-})
-
 test("the countdown counts the time left from when the state arrived, whatever the server's clock", async () => {
   const scripted = scriptedRemote(state("a", Date.now() + 86_400_000, 1, { nextRefreshIn: 90_000 }))
   const client = follow(scripted.remote)
@@ -157,25 +142,6 @@ test("a refused change shows the server's settings when the server moved on mean
   scripted.updates[0]!.answer.reject({ type: "failed", message: "disk full" })
   await eventually(() => expect(client.settings()).toEqual({ ...defaultSettings, order: "newest", sidebarItems: 3 }))
   expect(client.error()).toBe("disk full")
-})
-
-test("a terminal whose first read fails says why, and reads again later", async () => {
-  const timers = manualTimers()
-  const scripted = scriptedRemote(state("a", 1, 1, { snapshot: { viewer: "me", teams: [], mine: { prs: [], hidden: 0 }, requested: { prs: [], hidden: 0 }, reviewed: { prs: [], hidden: 0 } } }))
-  scripted.nextRead = async () => { throw { type: "rpc.internal", message: "Server restarting" } }
-  const client = follow(scripted.remote, timers.timer)
-  await eventually(() => expect(client.error()).toBe("Server restarting"))
-  expect(timers.pending(30_000)).toBe(1)
-  timers.fire(30_000)
-  await eventually(() => expect(client.snapshot()?.viewer).toBe("me"))
-  expect(client.error()).toBeUndefined()
-})
-
-test("without the server plugin, a terminal says to add it", async () => {
-  const scripted = scriptedRemote(state("a", 1, 1))
-  scripted.nextRead = async () => { throw { type: "rpc.unavailable", message: "RPC opcode-gh-pr-status is not available" } }
-  const client = follow(scripted.remote)
-  await eventually(() => expect(client.error()).toBe("The OpenCode server isn't running GH PR Status: add @lidtop/opencode-gh-pr-status to the server's plugins."))
 })
 
 test("calls go to the terminal's current location, feedback to the session's, through the client of the moment", async () => {

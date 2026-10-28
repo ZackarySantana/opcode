@@ -1,9 +1,9 @@
 import type { ToolContext } from "@opencode/plugin/promise/tool"
+import { object } from "@opcode/core/rpc"
 import { TOOL_NAME } from "./message"
 import type { ReviewRecords } from "./records"
 import { replyStatuses, type ReplyStatus } from "./review"
 
-const object = (properties: Record<string, unknown>, required: string[]) => ({ type: "object", properties, required, additionalProperties: false })
 
 /** One small tool, listed only in sessions that were sent review comments. */
 export function replyTool(records: ReviewRecords, now: () => number = Date.now) {

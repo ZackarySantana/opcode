@@ -2,6 +2,7 @@ import { Plugin } from "@opencode/plugin"
 import { isSessionNotFoundError, type OpenCodeEvent } from "@opencode/client"
 import { errorMessage } from "@opcode/core"
 import { consumeLive, sleep } from "@opcode/core/live"
+import { guarded } from "@opcode/core/rpc"
 import { acquireIndex, databasePath } from "./index-store"
 import { SessionsRpc, type SessionErrorType } from "./rpc"
 import { MissingSessionError, SessionsService, StaleSessionError } from "./service"
@@ -87,11 +88,11 @@ export default Plugin.define({
     let registration
     try {
       registration = await context.rpc.register(SessionsRpc, {
-        search: async (input, call) => guarded(call, () => service.search(input as SearchInput, call.signal)),
-        refresh: async (_input, call) => guarded(call, () => service.refresh(call.signal)),
-        begin: async (input, call) => guarded(call, () => service.begin(input as { sessionID: string; updatedAt: number }, call.signal)),
-        import: async (input, call) => guarded(call, () => service.import(input as { token: string; messages: MessageRecord[] }, call.signal)),
-        finish: async (input, call) => guarded(call, async () => { await service.finish(input as { token: string; complete?: boolean }); return {} }),
+        search: async (input, call) => guarded(call, () => service.search(input as SearchInput, call.signal), errorType),
+        refresh: async (_input, call) => guarded(call, () => service.refresh(call.signal), errorType),
+        begin: async (input, call) => guarded(call, () => service.begin(input as { sessionID: string; updatedAt: number }, call.signal), errorType),
+        import: async (input, call) => guarded(call, () => service.import(input as { token: string; messages: MessageRecord[] }, call.signal), errorType),
+        finish: async (input, call) => guarded(call, async () => { await service.finish(input as { token: string; complete?: boolean }); return {} }, errorType),
       })
     } catch (error) { controller.abort(); lease.release(); throw error }
     const initial = (async () => {
@@ -123,8 +124,4 @@ export default Plugin.define({
 function errorType(error: unknown): SessionErrorType {
   if (error instanceof StaleSessionError) return "stale"
   return error instanceof MissingSessionError || isSessionNotFoundError(error) ? "missing" : "failed"
-}
-
-async function guarded<T>(call: { error(type: SessionErrorType, message: string, data: Record<string, never>): unknown }, action: () => Promise<T>): Promise<T> {
-  try { return await action() } catch (error) { throw call.error(errorType(error), errorMessage(error), {}) }
 }

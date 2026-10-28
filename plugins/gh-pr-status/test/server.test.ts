@@ -1,19 +1,21 @@
 import { afterEach, expect, spyOn, test } from "bun:test"
+import { closeServers, eventually, fakeServer, manualTimers, stopped } from "@opcode/core/test-support/server"
 import type { Runner } from "../src/gh"
+import { serverPlugin } from "../src/index"
 import { defaultSettings, type PullRequestsState } from "../src/model"
-import { joinShared } from "../src/registry"
-import type * as ServiceModule from "../src/service"
 import { PullRequestsService, type Ports } from "../src/service"
-import { closeServers, eventually, fakeServer, ghRunner, stopped } from "./host"
+import { ghRunner, remote } from "./host"
 
 afterEach(closeServers)
+
+const announced = (server: ReturnType<typeof fakeServer>) => server.events.map((event) => ({ directory: event.directory, state: event.data as PullRequestsState }))
 
 test("every location shares one service: one poll, settings saved once for all, and each change announced once", async () => {
   const gh = ghRunner()
   const warn = spyOn(console, "warn")
-  const server = fakeServer({ run: gh.run, stored: new Map([["settings", { order: "oldest", ignoreDays: 3, team: "acme/web" }]]) })
+  const server = fakeServer({ plugin: serverPlugin(gh.run, stopped), stored: new Map([["settings", { order: "oldest", ignoreDays: 3, team: "acme/web" }]]) })
   try {
-    const home = server.remote("/home/me"), web = server.remote("/work/web")
+    const home = remote(server, "/home/me"), web = remote(server, "/work/web")
     expect((await home.state()).settings).toEqual({ ...defaultSettings, order: "oldest", team: "acme/web" })
     await eventually(async () => expect((await web.state()).snapshot?.viewer).toBe("me"))
     expect(gh.searches).toHaveLength(1)
@@ -30,18 +32,18 @@ test("every location shares one service: one poll, settings saved once for all, 
     await eventually(() => expect(gh.searches).toHaveLength(2))
     // Clients receive every location's events, so two loaded locations still announce each change once.
     await eventually(async () => expect((await home.state()).refreshing).toBe(false))
-    const revisions = server.events.map((event) => event.state.revision)
+    const revisions = announced(server).map((event) => event.state.revision)
     expect(new Set(revisions).size).toBe(revisions.length)
-    expect(server.events.at(-1)?.state).toMatchObject({ ...await home.state(), nextRefreshIn: expect.any(Number) })
+    expect(announced(server).at(-1)?.state).toMatchObject({ ...await home.state(), nextRefreshIn: expect.any(Number) })
     // Starting up announces through a registered instance, without a warning.
     expect(warn).not.toHaveBeenCalled()
 
     // The location that announced changes unloads; another takes over, and the service keeps its state.
-    const announcer = server.events.at(-1)!.directory
+    const announcer = announced(server).at(-1)!.directory
     await server.unload(announcer)
     const other = announcer === "/home/me" ? web : home
     await other.update({ order: "newest" })
-    expect(server.events.at(-1)).toMatchObject({ directory: announcer === "/home/me" ? "/work/web" : "/home/me", state: { settings: { order: "newest" } } })
+    expect(announced(server).at(-1)).toMatchObject({ directory: announcer === "/home/me" ? "/work/web" : "/home/me", state: { settings: { order: "newest" } } })
     expect(gh.searches).toHaveLength(2)
 
     // Once every location unloads the service stops; the next starts later, from the saved settings, and polls again.
@@ -56,30 +58,51 @@ test("every location shares one service: one poll, settings saved once for all, 
 })
 
 test("a location whose storage and events fail, while still loaded, doesn't stop a change being saved and announced", async () => {
-  const server = fakeServer({ run: ghRunner().run })
-  const home = server.remote("/home/me"), web = server.remote("/work/web")
+  const server = fakeServer({ plugin: serverPlugin(ghRunner().run, stopped) })
+  const home = remote(server, "/home/me"), web = remote(server, "/work/web")
   await home.state()
   await web.state()
   server.faults.locations.add("/home/me")
   await web.update({ order: "newest" })
   expect(server.stored.get("settings")).toMatchObject({ order: "newest" })
-  expect(server.events.at(-1)).toMatchObject({ directory: "/work/web", state: { settings: { order: "newest" } } })
+  expect(announced(server).at(-1)).toMatchObject({ directory: "/work/web", state: { settings: { order: "newest" } } })
 })
 
-test("a change that can't be saved fails with the reason and changes nothing; unreadable settings start at the defaults", async () => {
+test("unreadable saved settings serve the defaults, refuse changes rather than overwrite them, and load once readable", async () => {
   const gh = ghRunner()
+  const timers = manualTimers()
   const warn = spyOn(console, "warn").mockImplementation(() => {})
   try {
-    const server = fakeServer({ run: gh.run, stored: new Map([["settings", { order: "oldest" }]]) })
+    const server = fakeServer({ plugin: serverPlugin(gh.run, timers.timer), stored: new Map([["settings", { order: "oldest" }]]) })
     server.faults.get = true
-    const home = server.remote()
+    const home = remote(server)
     expect((await home.state()).settings).toEqual(defaultSettings)
     expect(gh.searches).toHaveLength(1)
-    expect(warn).toHaveBeenCalledTimes(1)
+    await expect(home.update({ order: "newest" })).rejects.toMatchObject({ type: "failed", message: expect.stringContaining("can't be read") })
+    expect(server.stored.get("settings")).toEqual({ order: "oldest" })
 
+    // Read again on a timer, and announced.
+    server.faults.get = false
+    timers.fire(10_000)
+    await eventually(() => expect(announced(server).at(-1)?.state.settings).toEqual({ ...defaultSettings, order: "oldest" }))
+    expect((await home.update({ sidebarItems: 3 })).settings).toEqual({ ...defaultSettings, order: "oldest", sidebarItems: 3 })
+
+    // A change that can't be saved fails with the reason and changes nothing.
     server.faults.set = true
     await expect(home.update({ order: "newest" })).rejects.toEqual({ type: "failed", message: "disk full" })
-    expect((await home.state()).settings).toEqual(defaultSettings)
+    expect((await home.state()).settings).toEqual({ ...defaultSettings, order: "oldest", sidebarItems: 3 })
+  } finally { warn.mockRestore() }
+})
+
+test("a change made while the saved settings couldn't be read tries reading them first", async () => {
+  const warn = spyOn(console, "warn").mockImplementation(() => {})
+  try {
+    const server = fakeServer({ plugin: serverPlugin(ghRunner().run, stopped), stored: new Map([["settings", { order: "oldest" }]]) })
+    server.faults.get = true
+    const home = remote(server)
+    await home.state()
+    server.faults.get = false
+    expect((await home.update({ sidebarItems: 3 })).settings).toEqual({ ...defaultSettings, order: "oldest", sidebarItems: 3 })
   } finally { warn.mockRestore() }
 })
 
@@ -103,33 +126,6 @@ test("a stopped service announces nothing more and refuses changes", async () =>
   expect(service.state().settings).toEqual(defaultSettings)
 })
 
-test("each location's own copy of the code joins the one service in the process", async () => {
-  const load = (copy: string) => import(`../src/service.ts?copy=${copy}`) as Promise<typeof ServiceModule>
-  const [a, b] = await Promise.all([load("a"), load("b")])
-  const run: Runner = async () => ({ stdout: "", stderr: "", status: 1 })
-  const first = a.joinService(recordingPorts().ports, (ports) => new a.PullRequestsService(ports, run, stopped))
-  const second = b.joinService(recordingPorts().ports, () => { throw new Error("Only the first to join starts the service") })
-  try { expect(second.service).toBe(first.service) } finally {
-    second.leave()
-    first.leave()
-  }
-})
-
-test("code of another version starts its own shared value, and the last member to leave stops it", () => {
-  const stopped: string[] = []
-  const lifecycle = (name: string) => ({ start: () => name, stop: (value: string) => { stopped.push(value) } })
-  const old = joinShared("test.service@1", "a", lifecycle("old"))
-  const same = joinShared("test.service@1", "b", lifecycle("unused"))
-  const next = joinShared("test.service@2", "c", lifecycle("new"))
-  expect([old.value, same.value, next.value]).toEqual(["old", "old", "new"])
-  old.leave()
-  expect(stopped).toEqual([])
-  same.leave()
-  next.leave()
-  expect(stopped).toEqual(["old", "new"])
-  expect(joinShared("test.service@1", "d", lifecycle("restarted")).value).toBe("restarted")
-})
-
 test("review feedback is fetched in the asking location, formatted with the server's commentsPrompt option", async () => {
   const directories: (string | undefined)[] = []
   const view = JSON.stringify({ number: 42, title: "Cache", url: "https://github.com/acme/web/pull/42", headRefName: "cache", state: "OPEN" })
@@ -142,10 +138,10 @@ test("review feedback is fetched in the asking location, formatted with the serv
     if (cwd === "/work/main") return { stdout: "", stderr: "no pull requests found for branch \"main\"\n", status: 1 }
     return { stdout: args[0] === "pr" ? view : args.includes("graphql") && cwd ? feedback : "", stderr: "", status: 0 }
   }
-  const server = fakeServer({ run, options: { commentsPrompt: "Check {branch} (#{pr})." } })
+  const server = fakeServer({ plugin: serverPlugin(run, stopped), options: { commentsPrompt: "Check {branch} (#{pr})." } })
   const signal = new AbortController().signal
-  const sent = await server.remote().feedback("/work/web", signal)
+  const sent = await remote(server).feedback("/work/web", signal)
   expect(directories).toEqual(["/work/web"])
   expect(sent).toMatchObject({ number: 42, summary: "Included 1 comment.", text: expect.stringMatching(/^Check cache \(#42\)\.\n/) })
-  await expect(server.remote().feedback("/work/main", signal)).rejects.toEqual({ type: "failed", message: "no pull requests found for branch \"main\"" })
+  await expect(remote(server).feedback("/work/main", signal)).rejects.toEqual({ type: "failed", message: "no pull requests found for branch \"main\"" })
 })

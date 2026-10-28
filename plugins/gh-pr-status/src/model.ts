@@ -1,3 +1,4 @@
+import type { Versioned } from "@opcode/core/follow"
 import { matchesText } from "@opcode/tabs/format"
 
 export const PLUGIN_ID = "opcode-gh-pr-status"
@@ -130,13 +131,7 @@ export function readSettings(stored: unknown): Settings {
 }
 
 /** What the server shares with every client: the settings, and the latest refresh from GitHub and when the next starts. */
-export interface PullRequestsState {
-  /** The server process's service that produced it. */
-  readonly server: string
-  /** When that service started, on the server's clock, so a client prefers the newest service, such as after a restart. */
-  readonly started: number
-  /** Rises with each change within a service, so a client keeps the newest state it has seen. */
-  readonly revision: number
+export interface PullRequestsState extends Versioned {
   readonly settings: Settings
   readonly snapshot?: Snapshot
   /** Why the last refresh failed; the snapshot before it stays. */
@@ -144,13 +139,6 @@ export interface PullRequestsState {
   readonly refreshing: boolean
   /** How long until the next automatic refresh when the state was made: clients count from receipt, whatever their clock. */
   readonly nextRefreshIn?: number
-}
-
-/** Whether `next` replaces `current`: a later service's state does, and within one service a later revision. */
-export function newer(next: PullRequestsState, current: PullRequestsState | undefined): boolean {
-  if (!current) return true
-  if (next.server !== current.server) return next.started >= current.started
-  return next.revision > current.revision
 }
 
 /** A request GitHub matched to you without naming the team, which your token can't see. */

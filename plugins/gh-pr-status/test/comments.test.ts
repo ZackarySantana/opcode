@@ -1,9 +1,11 @@
 import { afterEach, expect, test } from "bun:test"
+import { closeServers, fakeServer, stopped } from "@opcode/core/test-support/server"
 import type { Context } from "@opencode/plugin/tui/context"
 import { formatFeedback, type Feedback } from "../src/comments"
 import { fetchFeedback, type Runner } from "../src/gh"
+import { serverPlugin } from "../src/index"
 import { sendFeedback } from "../src/send-feedback"
-import { closeServers, fakeServer } from "./host"
+import { remote } from "./host"
 
 afterEach(closeServers)
 
@@ -107,19 +109,19 @@ test("/ghpr-comments has the server read the open session's directory and sends 
   const directories: (string | undefined)[] = []
   let feedback = response
   // The server's own pull request searches run without a directory.
-  const server = fakeServer({ run: async (args, signal, cwd) => cwd ? runner(directories, feedback)(args, signal, cwd) : { stdout: "", stderr: "", status: 1 } })
-  await sendFeedback(api, server.remote(), signal)
+  const server = fakeServer({ plugin: serverPlugin(async (args, signal, cwd) => cwd ? runner(directories, feedback)(args, signal, cwd) : { stdout: "", stderr: "", status: 1 }, stopped) })
+  await sendFeedback(api, remote(server), signal)
   expect(toasts).toEqual(["Open a session first: /ghpr-comments sends to the open session."])
 
   route = { type: "session", sessionID: "ses_1" }
-  await sendFeedback(api, server.remote("/home/me"), signal)
+  await sendFeedback(api, remote(server, "/home/me"), signal)
   expect(directories).toEqual(["/work/web", "/work/web"])
   expect(prompts).toHaveLength(1)
   expect(prompts[0]).toMatchObject({ sessionID: "ses_1", text: expect.stringMatching(/^The branch cache-artifacts got reviewed/) })
   expect(toasts.at(-1)).toStartWith("Sent review comments.")
 
   feedback = JSON.stringify({ data: { viewer: { login: "me" }, repository: { pullRequest: { reviewThreads: { nodes: [] }, reviews: { nodes: [] }, comments: { nodes: [] } } } } })
-  await sendFeedback(api, server.remote(), signal)
+  await sendFeedback(api, remote(server), signal)
   expect(prompts).toHaveLength(1)
   expect(toasts.at(-1)).toBe("No review comments to send. Included nothing.")
 })

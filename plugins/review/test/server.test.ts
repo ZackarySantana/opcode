@@ -34,7 +34,7 @@ async function setup(failing = { get: false, set: false }) {
   }
   const prompt = (sessionID: string, metadata?: Record<string, unknown>) => hooks.get("prompt")!({ sessionID, prompt: { text: "" }, metadata })
   const reply = (sessionID: string, replies: unknown[]) => tool.execute({ replies }, { sessionID } as ToolContext)
-  const replies = async (sessionID: string) => (await handlers.replies!({ sessionID }, { error: (type: string, message: string) => ({ type, message }) }) as { replies: Record<string, unknown> }).replies
+  const replies = async (sessionID: string) => (await handlers.replies!({ sessionID }, { signal: new AbortController().signal, error: (type: string, message: string) => ({ type, message }) }) as { replies: Record<string, unknown> }).replies
   return { listed, prompt, reply, replies, failing }
 }
 

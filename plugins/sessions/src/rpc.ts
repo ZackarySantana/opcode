@@ -1,5 +1,6 @@
 import { Rpc } from "@opencode/plugin/rpc"
 import type { OpenCodeClient } from "@opencode/client"
+import { empty, failed, object } from "@opcode/core/rpc"
 import type { MessageRecord, RefreshOutput, SearchInput, SearchOutput } from "./domain"
 import { MAX_QUERY, MAX_SNIPPET } from "./regex"
 
@@ -19,9 +20,8 @@ const resultProperties = {
   messageCount: number, providerID: id, modelID: id, modelCount: number,
   cost: number, input: number, output: number, reasoning: number, cacheRead: number, cacheWrite: number,
 } as const
-const object = (properties: Record<string, unknown>, required: string[]) => ({ type: "object", properties, required, additionalProperties: false })
 /** `missing`: deleted or never existed. `stale`: changed since the caller's revision; retry later. */
-const errors = { failed: object({}, []), missing: object({}, []), stale: object({}, []) }
+const errors = { ...failed, missing: empty, stale: empty }
 export type SessionErrorType = keyof typeof errors
 
 export const SessionsRpc = Rpc.define({
@@ -37,7 +37,7 @@ export const SessionsRpc = Rpc.define({
         truncated: { type: "boolean" },
       }, ["rows", "projects", "truncated"]),
     },
-    refresh: { input: object({}, []), output: object({ sessions: number, deferred: number, failed: number }, ["sessions", "deferred", "failed"]), errors },
+    refresh: { input: empty, output: object({ sessions: number, deferred: number, failed: number }, ["sessions", "deferred", "failed"]), errors },
     begin: {
       errors,
       input: object({ sessionID: id, updatedAt: number }, ["sessionID", "updatedAt"]),
@@ -49,7 +49,7 @@ export const SessionsRpc = Rpc.define({
       input: object({ token: id, messages: { type: "array", minItems: 1, maxItems: MAX_BATCH_MESSAGES, items: object(messageProperties, Object.keys(messageProperties).filter((key) => !["providerID", "modelID"].includes(key))) } }, ["token", "messages"]),
       output: object({ accepted: number }, ["accepted"]),
     },
-    finish: { input: object({ token: id, complete: { type: "boolean" } }, ["token"]), output: object({}, []), errors },
+    finish: { input: object({ token: id, complete: { type: "boolean" } }, ["token"]), output: empty, errors },
   },
 })
 

@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 
 import { afterEach, expect, test } from "bun:test"
+import { closeServers, eventually, fakeServer, stopped } from "@opcode/core/test-support/server"
 import { mockTheme } from "@opcode/ui/test-support/host"
 import { PluginContextProvider } from "@opencode/plugin/tui"
 import type { Context, KeymapCommand, KeymapLayer } from "@opencode/plugin/tui/context"
@@ -8,14 +9,15 @@ import { testRender } from "@opentui/solid"
 import { createComputed, onCleanup } from "solid-js"
 import { PullRequestsClient } from "../src/client"
 import { PullRequestsDialog } from "../src/dialog"
+import { serverPlugin } from "../src/index"
 import { defaultSettings } from "../src/model"
-import { closeServers, eventually, fakeServer, ghRunner, stopped } from "./host"
+import { ghRunner, remote } from "./host"
 
 afterEach(closeServers)
 
 test("/ghpr pages through your pull requests, your reviews, and your teams', and saves its settings and the team filter", async () => {
-  const server = fakeServer({ run: ghRunner().run })
-  const prs = new PullRequestsClient(server.remote(), stopped)
+  const server = fakeServer({ plugin: serverPlugin(ghRunner().run, stopped) })
+  const prs = new PullRequestsClient(remote(server), stopped)
   // Layers leave with their owner, as in the host, so a stale command from an unmounted tab or picker can't run.
   const layers = new Set<() => KeymapLayer>()
   const dispatch = (id: string) => [...layers].map((layer) => layer()).sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))

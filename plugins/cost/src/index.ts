@@ -2,6 +2,7 @@ import { errorMessage } from "@opcode/core"
 import { consumeLive } from "@opcode/core/live"
 import type { SessionInfo } from "@opencode/client"
 import { Plugin } from "@opencode/plugin"
+import { guarded } from "@opcode/core/rpc"
 import { parseActivityBatch, parseImportBatch, parseRange } from "./domain.js"
 import { CostLedger, databasePath } from "./ledger.js"
 import { createLiveCollector } from "./live.js"
@@ -97,8 +98,3 @@ export default Plugin.define({
     }
   },
 })
-
-/** Declared errors keep handler messages, such as a cross-project import, visible to the TUI. */
-async function guarded<T>(call: { error(type: "failed", message: string, data: Record<string, never>): unknown }, action: () => Promise<T>): Promise<T> {
-  try { return await action() } catch (error) { throw call.error("failed", errorMessage(error), {}) }
-}

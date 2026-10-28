@@ -1,10 +1,12 @@
-import { readFileSync } from "node:fs"
 import { createSerialQueue, errorMessage } from "@opcode/core"
+import { failover, joinShared, packageVersion } from "@opcode/core/process"
 import { createRefresh, setTimer, type RefreshState, type SetTimer } from "@opcode/core/refresh"
 import { createSchedule, type Schedule } from "@opcode/core/schedule"
 import { fetchSnapshot, type Runner } from "./gh"
 import { defaultSettings, PLUGIN_ID, readSettings, type PullRequestsState, type Settings, type SettingsChange, type Snapshot } from "./model"
-import { failover, joinShared } from "./registry"
+
+/** How long to wait before reading the saved settings again after a read failed. */
+const LOAD_RETRY = 10_000
 
 /** What the service needs from its host: the saved settings, and a way to reach every client. */
 export interface Ports {
@@ -17,18 +19,21 @@ export interface Ports {
 /** The pull requests every client shows: the settings, and the latest snapshot from gh on the settings' schedule. */
 export class PullRequestsService {
   private settings: Settings = defaultSettings
+  /** Whether `settings` are the saved ones. Until then they are the defaults, and saving them would lose the saved ones. */
+  private loaded = false
   private read: RefreshState<Snapshot> = { loading: false }
   private revision = 0
   private disposed = false
+  private cancelLoad?: () => void
   private readonly server = crypto.randomUUID()
   private readonly started = Date.now()
   private readonly reads: ReturnType<typeof createRefresh<Snapshot>>
   private readonly schedule: Schedule
   private readonly writes = createSerialQueue()
-  /** Settles once the saved settings are read and the first refresh has started. */
+  /** Settles once the saved settings were read, or failed to be, and the first refresh has started. */
   readonly ready: Promise<void>
 
-  constructor(private readonly ports: Ports, run: Runner, timer: SetTimer = setTimer) {
+  constructor(private readonly ports: Ports, run: Runner, private readonly timer: SetTimer = setTimer) {
     // A refresh supersedes one in flight, and a failure keeps the last snapshot beside the error.
     this.reads = createRefresh((signal) => fetchSnapshot(run, signal), (state) => { this.read = state; this.changed() }, { timer })
     this.schedule = createSchedule(() => this.refresh(), () => this.settings.refreshMinutes, { timer })
@@ -50,10 +55,14 @@ export class PullRequestsService {
     void this.reads.refresh()
   }
 
-  /** Saves the change, then shares it; changes apply in the order they arrive, and one that can't be saved doesn't apply. */
+  /**
+   * Saves the change, then shares it; changes apply in the order they arrive, and one that can't be saved doesn't
+   * apply. While the saved settings can't be read, changes are refused: saving would replace them with defaults.
+   */
   update(change: SettingsChange): Promise<PullRequestsState> {
     if (this.disposed) return Promise.reject(new Error("Pull requests stopped on the server"))
     return this.writes(async () => {
+      if (!this.loaded && !await this.loadSettings()) throw new Error("The saved settings can't be read right now, so they can't be changed. Try again shortly.")
       const next = readSettings({ ...this.settings, ...change })
       await this.ports.saveSettings(next)
       this.settings = next
@@ -65,13 +74,35 @@ export class PullRequestsService {
 
   dispose(): void {
     this.disposed = true
+    this.cancelLoad?.()
     this.reads.dispose()
     this.schedule.dispose()
   }
 
-  private async loadSettings() {
-    try { this.settings = readSettings(await this.ports.loadSettings()) }
-    catch (error) { console.warn(`${PLUGIN_ID}: using default settings: ${errorMessage(error)}`) }
+  /**
+   * Reads the saved settings, and on failure keeps the defaults for reads and tries again on a timer. Settings read late
+   * are announced. Whether they are the saved ones now.
+   */
+  private async loadSettings(): Promise<boolean> {
+    if (this.loaded) return true
+    try {
+      const stored = await this.ports.loadSettings()
+      if (this.disposed || this.loaded) return this.loaded
+      this.settings = readSettings(stored)
+      this.loaded = true
+      this.cancelLoad?.()
+      if (this.schedule.next() !== undefined) {
+        this.schedule.reschedule()
+        this.changed()
+      }
+      return true
+    } catch (error) {
+      if (this.disposed) return false
+      console.warn(`${PLUGIN_ID}: can't read the saved settings, using the defaults until they can be: ${errorMessage(error)}`)
+      this.cancelLoad?.()
+      this.cancelLoad = this.timer(() => void this.loadSettings(), LOAD_RETRY)
+      return false
+    }
   }
 
   /** Clients get the full state on each change; a refresh changes it twice, as it starts and ends, which is fine at this size. */
@@ -83,12 +114,6 @@ export class PullRequestsService {
   }
 }
 
-/** The package's version, from its manifest, which sits beside both src/ and the built dist/. */
-function packageVersion(): string {
-  try { return String((JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown }).version) }
-  catch { return "unknown" }
-}
-
 /**
  * The server process's service, which every location instance joins with its own ports. `start` runs only for the
  * first to join, and its runner and timer serve them all. The service uses the oldest member's ports, and the next
@@ -97,7 +122,7 @@ function packageVersion(): string {
  */
 export function joinService(member: Ports, start: (ports: Ports) => PullRequestsService) {
   // A different version's service may hold the plugin's place until its locations unload; clients prefer the newer one.
-  const { value, leave } = joinShared(`${PLUGIN_ID}.service@${packageVersion()}`, member, {
+  const { value, leave } = joinShared(`${PLUGIN_ID}.service@${packageVersion(new URL("../package.json", import.meta.url))}`, member, {
     start: (members) => start({
       loadSettings: () => failover(members, (ports) => ports.loadSettings()),
       saveSettings: (settings) => failover(members, (ports) => ports.saveSettings(settings)),

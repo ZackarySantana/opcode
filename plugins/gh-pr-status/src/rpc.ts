@@ -1,13 +1,10 @@
+import { versionedSchema } from "@opcode/core/follow"
+import { empty, failed as errors, object } from "@opcode/core/rpc"
 import { Rpc } from "@opencode/plugin/rpc"
 import { ignoreChoices, orderChoices, PLUGIN_ID, refreshChoices, sidebarItemChoices, type SettingsChange } from "./model"
 
-const object = (properties: Record<string, unknown>, required: string[]) => ({ type: "object" as const, properties, required, additionalProperties: false })
 const text = { type: "string" } as const
 const flag = { type: "boolean" } as const
-const count = { type: "integer", minimum: 0 } as const
-const empty = object({}, [])
-// Undeclared handler errors reach clients only as a generic rpc.internal failure.
-const errors = { failed: empty }
 const choices = {
   order: { type: "string", enum: orderChoices }, ignoreDays: { type: "integer", enum: ignoreChoices }, sidebarMine: flag, sidebarTeams: flag,
   sidebarItems: { type: "integer", enum: sidebarItemChoices }, refreshMinutes: { type: "integer", enum: refreshChoices },
@@ -15,7 +12,7 @@ const choices = {
 const settings = object({ ...choices, team: text }, Object.keys(choices))
 /** `PullRequestsState` in model.ts. */
 const state = object({
-  server: text, started: { type: "number" }, revision: count, settings, refreshing: flag, error: text, nextRefreshIn: { type: "number" },
+  ...versionedSchema, settings, refreshing: flag, error: text, nextRefreshIn: { type: "number" },
   // The server's own parse of gh's output: not validated field by field.
   snapshot: { type: "object" },
 }, ["server", "started", "revision", "settings", "refreshing"])

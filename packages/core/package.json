@@ -3,5 +3,5 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "exports": { ".": "./src/index.ts", "./*": "./src/*.ts" }
+  "exports": { ".": "./src/index.ts", "./test-support/*": "./test-support/*.ts", "./*": "./src/*.ts" }
 }

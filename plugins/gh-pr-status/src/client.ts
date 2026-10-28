@@ -1,13 +1,12 @@
-import { createSerialQueue, errorMessage } from "@opcode/core"
-import { consumeLive } from "@opcode/core/live"
+import { createSerialQueue } from "@opcode/core"
+import { followState } from "@opcode/core/follow"
 import { setTimer, type SetTimer } from "@opcode/core/refresh"
+import { describeRpcError } from "@opcode/core/rpc"
 import type { OpenCodeClient } from "@opencode/client"
 import { createSignal } from "solid-js"
-import { defaultSettings, newer, readSettings, view, type PullRequestsState, type Settings, type SettingsChange } from "./model"
+import { defaultSettings, readSettings, view, type PullRequestsState, type Settings, type SettingsChange } from "./model"
 import { GhPrStatusRpc, type FormattedFeedback } from "./rpc"
 
-/** How long to wait before reading again after the server couldn't be reached. */
-const RETRY = 30_000
 /** How long past its next refresh a state may go without news before the terminal reads again. */
 const OVERDUE = 60_000
 
@@ -43,12 +42,7 @@ export function createRemote(client: () => Pick<OpenCodeClient, "rpc">, location
 }
 
 /** Why a call failed, saying what to do when the server doesn't run the plugin's server side. */
-export function describeError(error: unknown): string {
-  const type = error && typeof error === "object" && "type" in error ? error.type : undefined
-  if (type === "rpc.unavailable") return "The OpenCode server isn't running GH PR Status: add @lidtop/opencode-gh-pr-status to the server's plugins."
-  if (type === "rpc.method_not_found") return "The OpenCode server runs another version of GH PR Status: update @lidtop/opencode-gh-pr-status there."
-  return errorMessage(error)
-}
+export const describeError = (error: unknown) => describeRpcError(error, { name: "GH PR Status", package: "@lidtop/opencode-gh-pr-status" })
 
 /** The server's pull requests and settings, kept live, with the local clock that ages them. Renders nothing. */
 export class PullRequestsClient {
@@ -59,14 +53,22 @@ export class PullRequestsClient {
   /** Why the last call failed, until the next state arrives. */
   private readonly problem = createSignal<string>()
   private readonly clock = createSignal(Date.now())
-  private readonly lifetime = new AbortController()
   private readonly sends = createSerialQueue()
+  private readonly follower: ReturnType<typeof followState<PullRequestsState>>
   private cancelClock?: () => void
-  private cancelRetry?: () => void
   /** The overdue refresh time already read again for, so it is read once. */
   private overdue?: number
 
-  constructor(private readonly remote: Remote, private readonly timer: SetTimer = setTimer) {}
+  constructor(private readonly remote: Remote, private readonly timer: SetTimer = setTimer) {
+    this.follower = followState<PullRequestsState>({
+      read: (signal) => remote.state(signal),
+      changes: (signal) => remote.changes(signal),
+      apply: (state) => this.current[1]({ state, ...state.nextRefreshIn === undefined ? {} : { nextRefresh: Date.now() + state.nextRefreshIn } }),
+      problem: (message) => this.problem[1](message),
+      describe: describeError,
+      timer,
+    })
+  }
 
   snapshot = () => this.current[0]()?.state.snapshot
   error = () => this.problem[0]() ?? this.current[0]()?.state.error
@@ -82,36 +84,26 @@ export class PullRequestsClient {
   /** Follows the server's changes, reading the whole state whenever it may have missed one. */
   start(): void {
     this.cancelClock = this.timer(() => this.tick(), 60_000)
-    void consumeLive({
-      signal: this.lifetime.signal,
-      subscribe: (signal) => this.remote.changes(signal),
-      handle: (state) => this.apply(state),
-      // Changes published while disconnected are gone.
-      onReconnect: () => this.read(),
-      // Reads report what clients need to know.
-      warn: () => {},
-    })
-    void this.read()
+    this.follower.start()
   }
 
   refresh(): void {
-    void this.remote.refresh().then((state) => this.apply(state), (error) => this.failed(error))
+    void this.remote.refresh().then(this.follower.offer, this.follower.failed)
   }
 
   /** Applies at once here, and everywhere once the server has saved it. */
   updateSettings(change: SettingsChange): void {
     this.pending[1]((pending) => [...pending, change])
     void this.sends(async () => {
-      try { this.apply(await this.remote.update(change)) }
-      catch (error) { await this.failed(error) }
+      try { this.follower.offer(await this.remote.update(change)) }
+      catch (error) { await this.follower.failed(error) }
       finally { this.pending[1]((pending) => pending.filter((sent) => sent !== change)) }
     })
   }
 
   dispose(): void {
-    this.lifetime.abort()
+    this.follower.dispose()
     this.cancelClock?.()
-    this.cancelRetry?.()
   }
 
   /**
@@ -124,32 +116,8 @@ export class PullRequestsClient {
     const next = this.nextRefresh()
     if (next !== undefined && next !== this.overdue && !this.refreshing() && now > next + OVERDUE) {
       this.overdue = next
-      void this.read()
+      void this.follower.resync()
     }
     this.cancelClock = this.timer(() => this.tick(), 60_000)
-  }
-
-  /** Server states can arrive twice or out of order: once from a call and once from the event, from any location. */
-  private apply(state: PullRequestsState) {
-    if (this.lifetime.signal.aborted) return
-    this.problem[1](undefined)
-    if (!newer(state, this.current[0]()?.state)) return
-    this.current[1]({ state, ...state.nextRefreshIn === undefined ? {} : { nextRefresh: Date.now() + state.nextRefreshIn } })
-  }
-
-  private async read() {
-    this.cancelRetry?.()
-    try { this.apply(await this.remote.state(this.lifetime.signal)) } catch (error) {
-      if (this.lifetime.signal.aborted) return
-      this.problem[1](describeError(error))
-      this.cancelRetry?.()
-      this.cancelRetry = this.timer(() => void this.read(), RETRY)
-    }
-  }
-
-  /** A failed call may have missed changes: read them, and say what failed. */
-  private async failed(error: unknown) {
-    await this.read()
-    if (!this.lifetime.signal.aborted) this.problem[1](describeError(error))
   }
 }

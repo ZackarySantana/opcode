@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 import type { ToolContext } from "@opencode/plugin/promise/tool"
+import { object } from "@opcode/core/rpc"
 import { DELETE_ACTION, effectiveSnippets, scopes, takenAliases, validateSnippet, validName, WRITE_ACTION, type Authoring, type Scope } from "./domain"
 import type { SnippetService } from "./service"
 
@@ -12,7 +13,6 @@ export interface ToolDependencies {
   assert: Plugin.Context["permission"]["assert"]
 }
 
-const object = (properties: Record<string, unknown>, required: string[]) => ({ type: "object", properties, required, additionalProperties: false })
 const name = { type: "string", description: "Lowercase kebab-case snippet name, typed as @name." }
 const scope = { type: "string", enum: scopes, description: "global applies everywhere; project applies to this project and overrides global." }
 

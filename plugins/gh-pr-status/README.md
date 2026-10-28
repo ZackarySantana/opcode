@@ -92,7 +92,7 @@ GitHub sometimes withholds results. A pull request in an organization that enfor
 
 Review requests for you always appear in the sidebar. **Sidebar team reviews** adds your teams' review requests, narrowed to the Teams tab's filter; **Sidebar own PRs** adds your pull requests that need you. Each refresh runs one GraphQL search per list, up to 50 open pull requests each, once for every terminal on the server. The server keeps refreshing while it has the plugin loaded, even with no terminal open.
 
-Settings and the team filter are saved in the server's plugin storage and shared by every terminal connected to it. Settings saved by versions before the server kept them aren't carried over: they start at the defaults.
+Settings and the team filter are saved in the server's plugin storage and shared by every terminal connected to it. If the server can't read them, it shows the defaults and refuses changes until it can, so your saved settings are never replaced. Settings saved by versions before the server kept them aren't carried over: they start at the defaults.
 
 ## Options
 

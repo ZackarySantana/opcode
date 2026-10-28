@@ -195,3 +195,20 @@ test("server-authorized cross-project session moves preserve IDs and do not bloc
     })
   } finally { await current.cleanup(); rmSync(directory, { recursive: true, force: true }) }
 })
+
+test("a call the terminal aborted ends with the abort, not reported as a failure", async () => {
+  let handlers!: Handlers
+  const cleanup = await serverPlugin.setup({
+    options: { database: ":memory:" }, location,
+    rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value } },
+    event: { subscribe: ({ signal }: { signal: AbortSignal }) => (async function* (): AsyncIterable<OpenCodeEvent> { await waitForAbort(signal) })() },
+    session: { get: async () => session },
+  } as never)
+  if (!cleanup) throw new Error("Missing cleanup")
+  try {
+    const controller = new AbortController()
+    controller.abort()
+    await expect(handlers.dashboard!({ range: "all" }, { ...call, signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" })
+    await expect(handlers.dashboard!({ range: "year" }, call)).rejects.toMatchObject({ type: "failed" })
+  } finally { await cleanup() }
+})

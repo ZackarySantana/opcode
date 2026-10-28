@@ -1,5 +1,6 @@
 import { Plugin } from "@opencode/plugin"
 import { errorMessage } from "@opcode/core"
+import { guarded, type RpcCall } from "@opcode/core/rpc"
 import { createFinder, type FindIn } from "./finder"
 import { createPool } from "./lsp"
 import { TOOL_NAME } from "./message"
@@ -39,21 +40,17 @@ export default Plugin.define({
     // One plugin instance serves one location, so its directory is the root for language servers and searches.
     const pool = createPool()
     const finder = createFinder({ pool, search: searchName })
-    const symbolQuery = (find: FindIn) => async (input: unknown, call: { signal: AbortSignal; error: (type: "failed", message: string, details: {}) => unknown }) => {
+    const symbolQuery = (find: FindIn) => async (input: unknown, call: RpcCall<"failed">) => {
       const { lookup, lsp } = input as { lookup: Lookup; lsp: unknown }
       // The terminal sends OpenCode's `lsp` config, and its commands run here as language servers. That grants nothing a
       // client lacks: anyone who can call this RPC can already run shell commands through OpenCode's API. Nor does it get
       // around anything beyond that, so the config is only checked for shape (and stripped of variables that load code into
       // every child process), not trusted or sandboxed.
-      try { return await find(ctx.location.directory, lookup, lsp === null ? null : validLspConfig(lsp), call.signal) }
-      catch (error) { throw call.signal.aborted ? error : call.error("failed", errorMessage(error), {}) }
+      return await guarded(call, () => find(ctx.location.directory, lookup, lsp === null ? null : validLspConfig(lsp), call.signal))
     }
 
     const registration = await ctx.rpc.register(ReviewRpc, {
-      replies: async (input, call) => {
-        try { return { replies: (await records.get((input as { sessionID: string }).sessionID))?.replies ?? {} } }
-        catch (error) { throw call.error("failed", errorMessage(error), {}) }
-      },
+      replies: (input, call) => guarded(call, async () => ({ replies: (await records.get((input as { sessionID: string }).sessionID))?.replies ?? {} })),
       usages: symbolQuery(finder.usages),
       definition: symbolQuery(finder.definition),
     })

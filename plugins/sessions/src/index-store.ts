@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite"
 import { basename, join, resolve } from "node:path"
 import { openDatabase, resolveStatePath, stateDirectory } from "@opcode/core/state"
 import { createSerialQueue } from "@opcode/core"
+import { joinShared, packageVersion } from "@opcode/core/process"
 import type { MessageRecord, ProjectOption, SearchInput, SessionRecord, SessionResult } from "./domain"
 import { RegexMatcher, RegexTimeoutError, snippet, validateQuery } from "./regex"
 
@@ -199,17 +200,17 @@ export class SessionIndex {
   }
 }
 
-// All location instances in this server process share one writer and queue.
-const indexes = new Map<string, { index: SessionIndex; serial: ReturnType<typeof createSerialQueue>; users: number }>()
+/**
+ * One index per database file in this server process, with one serial writer queue, whichever location instances use
+ * it. Location instances may not share module-level state, so this joins through the process's globals, which is
+ * correct either way; the code's version is in the key so reloaded code opens its own.
+ */
 export function acquireIndex(path: string) {
   const key = path === ":memory:" ? path : resolve(path)
-  let entry = indexes.get(key)
-  if (!entry) { entry = { index: new SessionIndex(path), serial: createSerialQueue(), users: 0 }; indexes.set(key, entry) }
-  entry.users++
-  let released = false
-  return { index: entry.index, serial: entry.serial, release() {
-    if (released) return
-    released = true
-    if (--entry.users === 0) { entry.index.close(); indexes.delete(key) }
-  } }
+  const member = {}
+  const { value, leave } = joinShared(`opcode-sessions.index@${packageVersion(new URL("../package.json", import.meta.url))}:${key}`, member, {
+    start: () => ({ index: new SessionIndex(path), serial: createSerialQueue() }),
+    stop: ({ index }) => index.close(),
+  })
+  return { index: value.index, serial: value.serial, release: leave }
 }

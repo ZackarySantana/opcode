@@ -1,9 +1,9 @@
 import type { Plugin } from "@opencode/plugin"
 import type { ToolContext } from "@opencode/plugin/promise/tool"
+import { object } from "@opcode/core/rpc"
 import { messageText } from "./domain"
 import type { LaterDatabase } from "./sqlite"
 
-const object = (properties: Record<string, unknown>, required: string[]) => ({ type: "object", properties, required, additionalProperties: false })
 const id = { type: "string", description: "The item's id, from later_list." }
 
 /**

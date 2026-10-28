@@ -1,13 +1,11 @@
 import { Rpc } from "@opencode/plugin/rpc"
 import type { OpenCodeClient } from "@opencode/client"
+import { failed, object } from "@opcode/core/rpc"
 import type { Found, Lookup, LspConfig } from "./references"
 import { PLUGIN_ID, replyStatuses, type Reply } from "./review"
 
-const object = (properties: Record<string, unknown>, required: string[]) => ({ type: "object", properties, required, additionalProperties: false })
 const text = { type: "string" } as const
 const count = { type: "integer", minimum: 0 } as const
-// Undeclared handler errors reach clients only as a generic rpc.internal failure.
-const errors = { failed: object({}, []) }
 const reply = object({ status: { type: "string", enum: replyStatuses }, reply: text, at: { type: "number" } }, ["status", "reply", "at"])
 const lookup = object({ file: text, line: { type: "integer", minimum: 1 }, column: count, name: { type: "string", minLength: 1 } }, ["file", "line", "column", "name"])
 const place = object({ file: text, line: { type: "integer", minimum: 1 }, column: count, text }, ["file", "line", "column", "text"])
@@ -16,13 +14,13 @@ const lsp = { type: ["boolean", "object", "null"] } as const
 const found = object({
   engine: { type: "string", enum: ["lsp", "search"] }, server: text, places: { type: "array", items: place }, truncated: { type: "boolean" }, fallback: text, partial: { type: "boolean" },
 }, ["engine", "places", "truncated"])
-const symbolQuery = { errors, input: object({ lookup, lsp }, ["lookup", "lsp"]), output: found }
+const symbolQuery = { errors: failed, input: object({ lookup, lsp }, ["lookup", "lsp"]), output: found }
 
 export const ReviewRpc = Rpc.define({
   id: PLUGIN_ID,
   events: {},
   methods: {
-    replies: { errors, input: object({ sessionID: text }, ["sessionID"]), output: object({ replies: { type: "object", additionalProperties: reply } }, ["replies"]) },
+    replies: { errors: failed, input: object({ sessionID: text }, ["sessionID"]), output: object({ replies: { type: "object", additionalProperties: reply } }, ["replies"]) },
     /** Where the symbol is used, its definition included. */
     usages: symbolQuery,
     /** Where the symbol is defined. */

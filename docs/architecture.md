@@ -91,29 +91,40 @@ that changing it releases only its consumers, not every consumer of `@opcode/ui`
 ## Server-owned shared state
 
 GH PR Status is the template for state that every terminal on a server shares, such as settings and data polled from
-an outside service:
+an outside service. The shared parts live in `@opcode/core`:
 
-- **One service per server process.** The host loads a server plugin's files afresh for each location (it clears their
-  module cache), so module-level variables are per location. Every location instance joins one service kept in the
-  process's globals, keyed by plugin ID and package version, so reloaded code starts its own service instead of
-  joining one built by other code. The first to join starts it and the last to leave stops it.
-- **Ports, not members.** The service gets storage and a way to announce changes as ports, which use the oldest
-  member's and fail over to the next. Plugin storage is the same in every location, and clients receive every
-  location's events, so one announcement per change saves the traffic of one per location.
-- **Full state in one event.** The `changed` event carries the whole state, with the service's ID, start time, and a
-  revision. Clients keep the newest: a later-started service's, else a later revision. They tolerate duplicates and
-  late arrivals.
-- **Re-read on reconnect.** Events are live only, so a client reads the whole state on start, after each reconnect,
-  after a failed call, and when the next refresh is long overdue, which means announcements stopped.
+- **One value per server process (`@opcode/core/process`).** `joinShared` gives every location instance of a server
+  plugin the same value, kept in the process's globals and keyed by plugin, purpose, and `packageVersion`, so reloaded
+  code starts its own value instead of joining one built by other code. The first to join starts it; the last to
+  leave stops it. Module-level variables may not be shared: the host clears a plugin's module cache when it loads it
+  for a location, and OpenCode 2.2.0 ran a separate module copy per location of a local plugin, though files under
+  `node_modules`, such as an installed package's chunks, keep theirs. The globals are correct either way. Sessions'
+  index uses it too, one per database file.
+- **Ports, not members.** The value gets storage and a way to announce changes as ports, which use the oldest member's
+  and `failover` to the next. Plugin storage is the same in every location, and clients receive every location's
+  events, so one announcement per change saves the traffic of one per location.
+- **RPC plumbing (`@opcode/core/rpc`).** `object`, `empty`, and `failed` build contracts; `guarded` reports a handler's
+  failure as a declared error, but lets a call the client aborted end with its abort; `toJson` drops the undefined
+  fields JSON can't carry; `describeRpcError` tells a terminal to add the server plugin, or update it, when the server
+  lacks the RPC.
+- **Full state, versioned (`@opcode/core/follow`).** The change event carries the whole state with its service's ID,
+  start time, and a revision (`Versioned`, `versionedSchema`). `followState` keeps the newest (`newer`: a
+  later-started service's, else a later revision), tolerates duplicates and late arrivals, and reads the whole state on
+  start, after each reconnect, after a failed call, and on `resync`, since events are live only.
+- **Saved settings are never replaced by defaults.** While stored settings can't be read, the service serves the
+  defaults, keeps retrying, and refuses changes until a read succeeds.
 - **Optimistic settings.** A client shows its pending setting changes over the server's settings, sends them in order,
   and drops each once answered, so quick changes build on each other and a refused one is undone.
 - **Time left, not wall-clock times.** Countdowns travel as milliseconds remaining, which the client counts from
   receipt on its own clock.
+- **Tests (`@opcode/core/test-support/server`).** `fakeServer` runs a server plugin as the host does, an instance per
+  location sharing storage, with JSON-checked calls, live-only events, storage and location faults, and
+  `closeServers` for `afterEach`.
 
 `@opcode/core` contains small host-independent utilities, including the XDG
 state directory and owner-only WAL SQLite setup shared by Cost, Later, and
-Sessions, live-subscription reconnection, superseding refreshes, and the refresh schedule
-that GH PR Status's server runs and `@opcode/tabs` wraps. Domain models stay in
+Sessions, live-subscription reconnection, superseding refreshes, the refresh schedule
+that GH PR Status's server runs and `@opcode/tabs` wraps, and the server-owned shared state modules above. Domain models stay in
 their plugin. Share recurring behavior after it appears, rather than building a
 general plugin framework or repository abstraction.
 

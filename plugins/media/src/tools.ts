@@ -3,6 +3,7 @@ import { dirname, extname } from "node:path"
 import type { Plugin } from "@opencode/plugin"
 import type { ToolContext } from "@opencode/plugin/promise/tool"
 import { errorMessage, formatMoney } from "@opcode/core"
+import { object } from "@opcode/core/rpc"
 import { imagePaths, imageType, projectPath, wav, wavSeconds, type ProjectPath } from "./files"
 import type { OpenRouter } from "./openrouter"
 
@@ -13,7 +14,6 @@ export interface ToolDependencies {
   assert: Plugin.Context["permission"]["assert"]
 }
 
-const object = (properties: Record<string, unknown>, required: string[]) => ({ type: "object", properties, required, additionalProperties: false })
 const model = { type: "string", description: "Model ID from media_models." }
 const MODEL_ID = /^\w[\w.-]*\/\w[\w.:-]*$/
 /** OpenRouter's limit on decoded reference media. */
