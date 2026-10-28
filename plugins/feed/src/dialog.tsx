@@ -6,15 +6,15 @@ import { openLink } from "@opcode/tabs/open"
 import { CenterEmpty, usePalette } from "@opcode/ui"
 import { usePlugin } from "@opencode/plugin/tui"
 import { createMemo, createSignal, For, Show } from "solid-js"
-import type { FeedsController } from "./host"
-import { FEED_HISTORY, kindOf, managerRows, matches, refreshChoices, scopeChoices, sidebarItemChoices, windowChoices, windowLabel, windowShort, type Settings, type SurfaceScope, type TimelineEntry } from "./model"
+import type { FeedsClient } from "./client"
+import { FEED_HISTORY, kindOf, managerRows, matches, PLUGIN_ID, refreshChoices, scopeChoices, sidebarItemChoices, windowChoices, windowLabel, windowShort, type Settings, type SurfaceScope, type TimelineEntry } from "./model"
 import { presets, type FeedKind } from "./presets"
 import { clockTime, feedLine, phaseStyle } from "./style"
 import { Subscribe } from "./subscribe"
 
-export function FeedDialog(props: { feeds: FeedsController }) {
+export function FeedDialog(props: { feeds: FeedsClient }) {
   return (
-    <TabbedDialog prefix="opcode-feed" refreshing={props.feeds.refreshing()} refresh={() => void props.feeds.refreshAll()} tabs={[
+    <TabbedDialog prefix={PLUGIN_ID} refreshing={props.feeds.refreshing()} refresh={() => props.feeds.refresh()} tabs={[
       { label: "Status", placeholder: "search status pages", render: () => <Browser feeds={props.feeds} kind="status" /> },
       { label: "Upcoming", placeholder: "search scheduled maintenance", render: () => <Browser feeds={props.feeds} kind="upcoming" /> },
       { label: "Releases", placeholder: "search releases", render: () => <Browser feeds={props.feeds} kind="releases" /> },
@@ -26,7 +26,7 @@ export function FeedDialog(props: { feeds: FeedsController }) {
 }
 
 /** Status, Upcoming, and Releases: enter opens the focused item's link; f narrows to one feed of the tab's kind. */
-function Browser(props: { feeds: FeedsController; kind: "status" | "upcoming" | "releases" }) {
+function Browser(props: { feeds: FeedsClient; kind: "status" | "upcoming" | "releases" }) {
   const api = usePlugin()
   const tab = useTab()
   const palette = usePalette()
@@ -77,7 +77,9 @@ function Browser(props: { feeds: FeedsController; kind: "status" | "upcoming" | 
     }>
       <Show when={subscribed()} fallback={
         <TabFrame hints={hints()}>
-          <CenterEmpty title={feedKind === "status" ? "No status pages yet" : "No release feeds yet"} description="Subscribe to one in the Subscribe tab." />
+          <Show when={props.feeds.error()} fallback={
+            <CenterEmpty title={feedKind === "status" ? "No status pages yet" : "No release feeds yet"} description="Subscribe to one in the Subscribe tab." />
+          }>{(error) => <CenterEmpty title="Couldn't load your feeds" description={error()} />}</Show>
         </TabFrame>
       }>
         <ItemList hints={hints()} focus={focus} open={(entry) => openLink(api, "Feed", entry.link)}
@@ -88,7 +90,8 @@ function Browser(props: { feeds: FeedsController; kind: "status" | "upcoming" | 
             back: () => scope() ? { label: "all feeds", run: () => setScope(undefined) } : undefined,
             prefix: () => scope() && props.feeds.title(scope()!),
           }}
-          header={
+          header={<>
+            <Show when={props.feeds.error()}>{(error) => <text minWidth={0} wrapMode="word" fg={palette.error}>! {error()}</text>}</Show>
             <Show when={props.kind !== "upcoming" && !tab.query()}>
               <Show when={props.kind === "status" && timeline().operational.length}>
                 <text minWidth={0} wrapMode="word" fg={palette.muted}>✓ Operational: {timeline().operational.join(" · ")}</text>
@@ -97,7 +100,7 @@ function Browser(props: { feeds: FeedsController; kind: "status" | "upcoming" | 
                 <text minWidth={0} wrapMode="word" fg={palette.error}>! {failure.source} unreachable: {failure.error}</text>
               )}</For>
             </Show>
-          } />
+          </>} />
       </Show>
     </Show>
   )

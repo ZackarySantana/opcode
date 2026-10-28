@@ -91,3 +91,16 @@ export function followState<State extends Versioned>(options: {
     },
   }
 }
+
+/**
+ * Whether a state's next refresh, due at `next`, is long overdue at `now`, which means news stopped, such as when the
+ * server unloaded the plugin from every location: reading again starts it there. True once per due time.
+ */
+export function createOverdue(grace = 60_000) {
+  let reported: number | undefined
+  return (next: number | undefined, refreshing: boolean, now: number): boolean => {
+    if (next === undefined || next === reported || refreshing || now <= next + grace) return false
+    reported = next
+    return true
+  }
+}

@@ -1,15 +1,7 @@
-import { afterAll, expect, test } from "bun:test"
-import { Database } from "bun:sqlite"
-import { mkdtemp, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { createRoot } from "solid-js"
-import type { SetTimer } from "@opcode/core/refresh"
-import { FeedsController, type Fetcher } from "../src/host"
-import { editRows, managerRows, matches, sidebarLayout, timeline, type EditRow, type FetchResult, type Surface, type SurfaceScope, type TimelineEntry } from "../src/model"
+import { expect, test } from "bun:test"
+import { defaultSettings, editRows, managerRows, matches, readPosts, readSettings, readSubscriptions, sidebarLayout, timeline, type EditRow, type FetchResult, type Surface, type SurfaceScope, type TimelineEntry } from "../src/model"
 import { parseFeed } from "../src/parse"
-import { candidateURL, feedURL, presets } from "../src/presets"
-import { FeedsDatabase } from "../src/sqlite"
+import { candidateURL, feedURL, presets, type FeedKind } from "../src/presets"
 import { interpret } from "../src/status"
 
 const rss = `<?xml version="1.0" encoding="UTF-8"?>
@@ -54,10 +46,12 @@ test("parses RSS and Atom titles, links, dates, and escaped text", () => {
   expect(() => parseFeed("<html><body>Not found</body></html>")).toThrow("Not an RSS or Atom feed")
 })
 
-test("typed feed URLs default to https and reject other schemes", () => {
+test("typed feed URLs default to https and reject other schemes, and presets are already as the server saves them", () => {
   expect(feedURL(" status.npmjs.org/history.rss ")).toBe("https://status.npmjs.org/history.rss")
   expect(() => feedURL("file:///etc/passwd")).toThrow("http or https")
   expect(() => feedURL("not a url")).toThrow("Not a URL")
+  // The server saves a subscription's URL as feedURL reads it, which a preset's row must match to show as subscribed.
+  expect(presets.filter((preset) => feedURL(preset.url) !== preset.url)).toEqual([])
 })
 
 test("manager groups status pages before release feeds, custom feeds first in each", () => {
@@ -109,7 +103,7 @@ test("the timeline pins in-progress items, applies the window, and lists quiet s
   const now = Date.parse("2026-10-22T12:00:00Z")
   const hours = (count: number) => now - count * 60 * 60_000
   const incident = (title: string, status: string, time: number) => ({ id: title, title, published: time, content: `<p><strong>${status}</strong> - ${title} details</p>` })
-  const ok = (items: object[]): FetchResult => ({ status: "ok", fetchedAt: now, feed: { items: items as never } })
+  const ok = (items: object[], kind: FeedKind = "status"): FetchResult => ({ status: "ok", feed: readPosts({ items: items as never }, kind) })
   const subscriptions = ["npm", "gh", "claude", "azure", "blog", "news", "down", "slow"].map((name, index) => ({
     url: `https://${name}.test/rss`, kind: name === "blog" || name === "news" ? "release" as const : "status" as const, createdAt: index,
   }))
@@ -121,9 +115,9 @@ test("the timeline pins in-progress items, applies the window, and lists quiet s
     ["https://claude.test/rss", ok([incident("Errors", "Resolved", hours(60))])],
     // Azure's feed is empty while everything is healthy.
     ["https://azure.test/rss", ok([])],
-    ["https://blog.test/rss", ok([{ id: "post", title: "New release", published: hours(1) }])],
+    ["https://blog.test/rss", ok([{ id: "post", title: "New release", published: hours(1) }], "release")],
     // A busy release feed contributes only its newest three posts.
-    ["https://news.test/rss", ok([5, 4, 3, 2, 1].map((n) => ({ id: `n${n}`, title: `Story ${n}`, published: hours(n + 0.5) })))],
+    ["https://news.test/rss", ok([5, 4, 3, 2, 1].map((n) => ({ id: `n${n}`, title: `Story ${n}`, published: hours(n + 0.5) })), "release")],
     ["https://down.test/rss", { status: "error", error: "HTTP 503" }],
     ["https://slow.test/rss", { status: "loading" }],
   ])
@@ -152,7 +146,7 @@ test("the timeline pins in-progress items, applies the window, and lists quiet s
 test("one feed's history keeps its newest twenty items", () => {
   const now = Date.parse("2026-10-22T12:00:00Z")
   const items = Array.from({ length: 30 }, (_, index) => ({ id: `${index}`, title: `Post ${index}`, published: now - (index + 1) * 24 * 60 * 60_000 }))
-  const view = timeline([{ url: "https://blog.test/rss", kind: "release", createdAt: 0 }], [], new Map([["https://blog.test/rss", { status: "ok", fetchedAt: now, feed: { items } }]]),
+  const view = timeline([{ url: "https://blog.test/rss", kind: "release", createdAt: 0 }], [], new Map([["https://blog.test/rss", { status: "ok", feed: readPosts({ items }, "release") }]]),
     { windowHours: 12, resolved: "none", sidebarReleases: false }, "feed", { now, feed: "https://blog.test/rss" })
   expect(view.recent).toHaveLength(20)
   expect(view.recent[0]!.title).toBe("Post 0")
@@ -161,10 +155,10 @@ test("one feed's history keeps its newest twenty items", () => {
 
 test("resolved items appear only on the surfaces the setting names", () => {
   const now = Date.parse("2026-10-22T12:00:00Z")
-  const results = new Map<string, FetchResult>([["https://npm.test/rss", { status: "ok", fetchedAt: now, feed: { items: [
+  const results = new Map<string, FetchResult>([["https://npm.test/rss", { status: "ok", feed: readPosts({ items: [
     { id: "1", title: "Fixed", published: now - 60_000, content: "<p><strong>Resolved</strong> - Done.</p>" },
     { id: "2", title: "Broken", published: now - 60_000, content: "<p><strong>Investigating</strong> - Looking.</p>" },
-  ] } }]])
+  ] }, "status") }]])
   const titles = (resolved: SurfaceScope, surface: Surface) => {
     const view = timeline([{ url: "https://npm.test/rss", kind: "status", createdAt: 0 }], [], results, { windowHours: 24, resolved, sidebarReleases: true }, surface, { now })
     return [...view.current, ...view.recent].map((entry) => entry.title)
@@ -185,8 +179,8 @@ test("release feeds always appear in /feed and in the sidebar only when asked; s
     { url: "https://down.test/blog", kind: "release" as const, createdAt: 2 },
   ]
   const results = new Map<string, FetchResult>([
-    ["https://npm.test/rss", { status: "ok", fetchedAt: now, feed: { items: [{ id: "1", title: "Broken", published: now - 60_000, content: "<p><strong>Investigating</strong> - Looking.</p>" }] } }],
-    ["https://bun.test/releases", { status: "ok", fetchedAt: now, feed: { items: [{ id: "2", title: "Bun v2", published: now - 60_000 }] } }],
+    ["https://npm.test/rss", { status: "ok", feed: readPosts({ items: [{ id: "1", title: "Broken", published: now - 60_000, content: "<p><strong>Investigating</strong> - Looking.</p>" }] }, "status") }],
+    ["https://bun.test/releases", { status: "ok", feed: readPosts({ items: [{ id: "2", title: "Bun v2", published: now - 60_000 }] }, "release") }],
     ["https://down.test/blog", { status: "error", error: "HTTP 503" }],
   ])
   const view = (sidebarReleases: boolean, surface: Surface) => timeline(subscriptions, [], results, { windowHours: 24, resolved: "none", sidebarReleases }, surface, { now })
@@ -240,241 +234,22 @@ test("the sidebar keeps the configured number of items and two scheduled items, 
   expect(sidebarLayout(view, 10)).toMatchObject({ hiddenEntries: 0, hiddenUpcoming: 2 })
 })
 
-test("settings persist across reopening the database", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "opcode-feed-"))
-  afterAll(() => rm(directory, { recursive: true, force: true }))
-  const path = join(directory, "feed.sqlite")
-  const first = new FeedsDatabase(path)
+test("saved settings and subscriptions of any shape read as what this version offers", () => {
   // A fresh install looks back 12 hours, hides resolved incidents, and refreshes every 10 minutes.
-  expect(first.settings()).toEqual({ windowHours: 12, resolved: "none", sidebarReleases: false, sidebarItems: 5, refreshMinutes: 10 })
-  await createRoot(async (dispose) => {
-    const feeds = new FeedsController(first, async () => rss)
-    feeds.updateSettings({ windowHours: 72 })
-    feeds.updateSettings({ resolved: "sidebar" })
-    feeds.updateSettings({ sidebarReleases: true })
-    feeds.updateSettings({ sidebarItems: 10 })
-    feeds.updateSettings({ refreshMinutes: 30 })
-    dispose()
-  })
-  first.close()
-  const second = new FeedsDatabase(path)
-  expect(second.settings()).toEqual({ windowHours: 72, resolved: "sidebar", sidebarReleases: true, sidebarItems: 10, refreshMinutes: 30 })
-  second.close()
-})
-
-test("0.1.x databases rename release subscriptions and gain the releases setting, keeping saved choices", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "opcode-feed-"))
-  afterAll(() => rm(directory, { recursive: true, force: true }))
-  const path = join(directory, "feed.sqlite")
-  const legacy = new Database(path)
-  legacy.exec(`
-    CREATE TABLE subscriptions (url TEXT PRIMARY KEY, title TEXT, kind TEXT NOT NULL, created_at INTEGER NOT NULL);
-    CREATE TABLE settings (id INTEGER PRIMARY KEY CHECK (id = 1), window_hours INTEGER NOT NULL, resolved TEXT NOT NULL);
-    INSERT INTO settings (id, window_hours, resolved) VALUES (1, 6, 'both');
-    INSERT INTO subscriptions VALUES ('https://bun.test/releases', NULL, 'updates', 1);
-  `)
-  legacy.close()
-  const migrated = new FeedsDatabase(path)
-  expect(migrated.settings()).toEqual({ windowHours: 6, resolved: "both", sidebarReleases: false, sidebarItems: 5, refreshMinutes: 10 })
-  expect(migrated.list().map((subscription) => subscription.url)).toEqual(["https://bun.test/releases"])
-  migrated.saveSettings({ windowHours: 6, resolved: "both", sidebarReleases: true, sidebarItems: 5, refreshMinutes: 10 })
-  migrated.close()
-  const reopened = new FeedsDatabase(path)
-  expect(reopened.settings().sidebarReleases).toBe(true)
-  reopened.close()
-})
-
-test("0.2.0 and 0.3.0 databases keep releases in the sidebar when their saved choice included it", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "opcode-feed-"))
-  afterAll(() => rm(directory, { recursive: true, force: true }))
-  // 0.2.0 stored the choice as `updates`; 0.3.0 as `releases`, keeping a stale `updates` from 0.2.0.
-  const open = (name: string, columns: string, values: string) => {
-    const path = join(directory, `${name}.sqlite`)
-    const legacy = new Database(path)
-    legacy.exec(`
-      CREATE TABLE subscriptions (url TEXT PRIMARY KEY, title TEXT, kind TEXT NOT NULL, created_at INTEGER NOT NULL);
-      CREATE TABLE settings (id INTEGER PRIMARY KEY CHECK (id = 1), window_hours INTEGER NOT NULL, resolved TEXT NOT NULL, ${columns});
-      INSERT INTO settings VALUES (1, 24, 'none', ${values});
-      INSERT INTO subscriptions VALUES ('https://bun.test/releases', NULL, 'updates', 1);
-    `)
-    legacy.close()
-    return { path, database: new FeedsDatabase(path) }
-  }
-  const scopes: [SurfaceScope, boolean][] = [["both", true], ["sidebar", true], ["feed", false], ["none", false]]
-  for (const [scope, sidebarReleases] of scopes) {
-    const v2 = open(`v2-${scope}`, "updates TEXT NOT NULL DEFAULT 'feed'", `'${scope}'`).database
-    expect(v2.settings()).toEqual({ windowHours: 24, resolved: "none", sidebarReleases, sidebarItems: 5, refreshMinutes: 10 })
-    expect(v2.list()).toMatchObject([{ url: "https://bun.test/releases", kind: "release" }])
-    v2.close()
-    const v3 = open(`v3-${scope}`, "updates TEXT NOT NULL DEFAULT 'feed', releases TEXT NOT NULL DEFAULT 'feed'", `'${sidebarReleases ? "none" : "both"}', '${scope}'`).database
-    expect(v3.settings().sidebarReleases).toBe(sidebarReleases)
-    v3.close()
-  }
-  // Saving later, with the old columns still present, works and keeps the new value.
-  const { path, database } = open("saved", "updates TEXT NOT NULL DEFAULT 'feed', releases TEXT NOT NULL DEFAULT 'feed'", "'feed', 'both'")
-  database.saveSettings({ windowHours: 24, resolved: "none", sidebarReleases: false, sidebarItems: 5, refreshMinutes: 10 })
-  database.close()
-  const reopened = new FeedsDatabase(path)
-  expect(reopened.settings().sidebarReleases).toBe(false)
-  reopened.close()
-})
-
-test("0.3.0 databases gain the sidebar length and refresh interval at their defaults, which unknown stored values fall back to", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "opcode-feed-"))
-  afterAll(() => rm(directory, { recursive: true, force: true }))
-  const path = join(directory, "feed.sqlite")
-  const legacy = new Database(path)
-  legacy.exec(`
-    CREATE TABLE subscriptions (url TEXT PRIMARY KEY, title TEXT, kind TEXT NOT NULL, created_at INTEGER NOT NULL);
-    CREATE TABLE settings (id INTEGER PRIMARY KEY CHECK (id = 1), window_hours INTEGER NOT NULL, resolved TEXT NOT NULL, releases TEXT NOT NULL DEFAULT 'feed');
-    INSERT INTO settings (id, window_hours, resolved, releases) VALUES (1, 24, 'both', 'sidebar');
-  `)
-  legacy.close()
-  const migrated = new FeedsDatabase(path)
-  expect(migrated.settings()).toEqual({ windowHours: 24, resolved: "both", sidebarReleases: true, sidebarItems: 5, refreshMinutes: 10 })
-  migrated.close()
-  // Values this version does not offer, such as ones written by another version.
-  const edited = new Database(path)
-  edited.exec("UPDATE settings SET sidebar_items = 7, refresh_minutes = 7")
-  edited.close()
-  const reopened = new FeedsDatabase(path)
-  expect(reopened.settings()).toEqual({ windowHours: 24, resolved: "both", sidebarReleases: true, sidebarItems: 5, refreshMinutes: 10 })
-  reopened.close()
-})
-
-test("subscriptions persist, fetch on subscribe, and late results after unsubscribe are dropped", async () => {
-  const database = new FeedsDatabase(":memory:")
-  const pending = new Map<string, (xml: string) => void>()
-  const fetcher: Fetcher = (url) => new Promise((resolve) => pending.set(url, resolve))
-  await createRoot(async (dispose) => {
-    const feeds = new FeedsController(database, fetcher)
-    expect(feeds.subscribe("https://status.npmjs.org/history.rss", "status")).toBe(true)
-    expect(feeds.subscribe("https://status.npmjs.org/history.rss", "status")).toBe(false)
-    expect(feeds.results().get("https://status.npmjs.org/history.rss")?.status).toBe("loading")
-    pending.get("https://status.npmjs.org/history.rss")!(rss)
-    await Bun.sleep(0)
-    expect(feeds.results().get("https://status.npmjs.org/history.rss")).toMatchObject({ status: "ok", feed: { title: "npm Status - Incident History" } })
-    expect(database.list()).toMatchObject([{ url: "https://status.npmjs.org/history.rss", title: "npm Status - Incident History", kind: "status" }])
-
-    feeds.subscribe("https://example.com/slow.xml", "release")
-    feeds.unsubscribe("https://example.com/slow.xml")
-    pending.get("https://example.com/slow.xml")!(atom)
-    await Bun.sleep(0)
-    expect(feeds.results().has("https://example.com/slow.xml")).toBe(false)
-    expect(database.list().map((subscription) => subscription.url)).toEqual(["https://status.npmjs.org/history.rss"])
-    feeds.dispose()
-    dispose()
-  })
-  database.close()
-})
-
-test("a failed refresh keeps the previous items alongside the error", async () => {
-  const database = new FeedsDatabase(":memory:")
-  let fail = false
-  const fetcher: Fetcher = async () => { if (fail) throw new Error("HTTP 503"); return rss }
-  await createRoot(async (dispose) => {
-    const feeds = new FeedsController(database, fetcher, { retryDelays: [] })
-    feeds.subscribe("https://status.npmjs.org/history.rss", "status")
-    await Bun.sleep(0)
-    fail = true
-    await feeds.refreshAll()
-    expect(feeds.results().get("https://status.npmjs.org/history.rss")).toMatchObject({ status: "error", error: "HTTP 503", feed: { items: [{ title: "Elevated errors & latency" }, {}] } })
-    feeds.dispose()
-    dispose()
-  })
-  database.close()
-})
-
-/** Timers that run only when a test fires them. */
-function fakeTimers() {
-  const pending = new Set<{ run: () => void; ms: number }>()
-  const timer: SetTimer = (run, ms) => { const entry = { run, ms }; pending.add(entry); return () => { pending.delete(entry) } }
-  const fire = async (ms: number) => {
-    for (const entry of [...pending]) if (entry.ms === ms) { pending.delete(entry); entry.run() }
-    await Bun.sleep(0)
-  }
-  return { timer, fire }
-}
-
-const npm = "https://status.npmjs.org/history.rss"
-
-test("a failed fetch is retried within seconds before it shows as unreachable, then again on the refresh schedule", async () => {
-  const database = new FeedsDatabase(":memory:")
-  database.subscribe(npm, "status")
-  const timers = fakeTimers()
-  let calls = 0
-  const fetcher: Fetcher = async () => { if (++calls <= 3) throw new Error("HTTP 503"); return rss }
-  await createRoot(async (dispose) => {
-    const feeds = new FeedsController(database, fetcher, { timer: timers.timer })
-    feeds.start()
-    await Bun.sleep(0)
-    expect(feeds.results().get(npm)?.status).toBe("loading")
-    await timers.fire(2_000)
-    expect(feeds.results().get(npm)?.status).toBe("loading")
-    expect(feeds.timeline("sidebar").unreachable).toEqual([])
-    await timers.fire(5_000)
-    expect(feeds.results().get(npm)).toMatchObject({ status: "error", error: "HTTP 503" })
-    expect(calls).toBe(3)
-    await timers.fire(10 * 60_000)
-    expect(feeds.results().get(npm)?.status).toBe("ok")
-    feeds.dispose()
-    dispose()
-  })
-  database.close()
-})
-
-test("refreshes follow the interval setting; changing it, refreshing by hand, or waking late restarts the countdown", async () => {
-  const database = new FeedsDatabase(":memory:")
-  database.subscribe(npm, "status")
-  const timers = fakeTimers()
-  let calls = 0
-  const fetcher: Fetcher = async () => { calls++; return rss }
-  await createRoot(async (dispose) => {
-    const feeds = new FeedsController(database, fetcher, { timer: timers.timer })
-    const minutesLeft = () => Math.round((feeds.nextRefresh()! - Date.now()) / 60_000)
-    feeds.start()
-    await Bun.sleep(0)
-    expect(calls).toBe(1)
-    expect(minutesLeft()).toBe(10)
-    feeds.updateSettings({ refreshMinutes: 5 })
-    expect(minutesLeft()).toBe(5)
-    // The old schedule is gone.
-    await timers.fire(10 * 60_000)
-    expect(calls).toBe(1)
-    await timers.fire(5 * 60_000)
-    expect(calls).toBe(2)
-    // A refresh by hand replaces the pending automatic one rather than adding another.
-    await feeds.refreshAll()
-    await timers.fire(5 * 60_000)
-    expect(calls).toBe(4)
-    // Timers run late across sleep; a clock tick past the deadline refreshes.
-    feeds.tick(feeds.nextRefresh()! - 1)
-    await Bun.sleep(0)
-    expect(calls).toBe(4)
-    feeds.tick(feeds.nextRefresh()! + 1)
-    await Bun.sleep(0)
-    expect(calls).toBe(5)
-    feeds.dispose()
-    dispose()
-  })
-  database.close()
-})
-
-test("a newer fetch of a feed wins over an older one that settles later", async () => {
-  const database = new FeedsDatabase(":memory:")
-  const calls: { resolve(xml: string): void; reject(error: Error): void }[] = []
-  const fetcher: Fetcher = () => new Promise((resolve, reject) => calls.push({ resolve, reject }))
-  await createRoot(async (dispose) => {
-    const feeds = new FeedsController(database, fetcher, { retryDelays: [], timer: fakeTimers().timer })
-    feeds.subscribe(npm, "status")
-    void feeds.refreshAll()
-    calls[1]!.resolve(rss)
-    await Bun.sleep(0)
-    calls[0]!.reject(new Error("The operation timed out."))
-    await Bun.sleep(0)
-    expect(feeds.results().get(npm)?.status).toBe("ok")
-    feeds.dispose()
-    dispose()
-  })
-  database.close()
+  expect(readSettings(undefined)).toEqual({ windowHours: 12, resolved: "none", sidebarReleases: false, sidebarItems: 5, refreshMinutes: 10 })
+  // Values this version does not offer, such as ones written by another version, keep their defaults.
+  expect(readSettings({ windowHours: 72, resolved: "sidebar", sidebarItems: 7, refreshMinutes: "30", extra: true }))
+    .toEqual({ ...defaultSettings, windowHours: 72, resolved: "sidebar" })
+  expect(readSubscriptions({ url: "https://a.test" })).toEqual([])
+  expect(readSubscriptions([
+    { url: "https://a.test/rss", kind: "status", createdAt: 1, title: "A" },
+    { url: "https://a.test/rss", kind: "release", createdAt: 2 },
+    { url: "file:///etc/passwd", kind: "status", createdAt: 3 },
+    { url: "https://b.test/rss", kind: "updates", createdAt: 4 },
+    { url: "https://c.test/rss", kind: "release", title: "" },
+    "https://d.test/rss",
+  ])).toEqual([
+    { url: "https://a.test/rss", kind: "status", createdAt: 1, title: "A" },
+    { url: "https://c.test/rss", kind: "release", createdAt: 0 },
+  ])
 })

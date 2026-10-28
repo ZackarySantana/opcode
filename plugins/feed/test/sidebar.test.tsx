@@ -1,14 +1,18 @@
 /** @jsxImportSource @opentui/solid */
 
-import { expect, test } from "bun:test"
+import { afterEach, expect, test } from "bun:test"
+import { closeServers, eventually, fakeServer, stopped } from "@opcode/core/test-support/server"
 import { mockTheme } from "@opcode/ui/test-support/host"
 import { PluginContextProvider } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
 import type { MouseButton } from "@opentui/core/testing"
 import { testRender } from "@opentui/solid"
-import { FeedsController } from "../src/host"
+import { FeedsClient, type Remote } from "../src/client"
+import { serverPlugin } from "../src/index"
 import { Sidebar } from "../src/sidebar"
-import { FeedsDatabase } from "../src/sqlite"
+import { remote } from "./host"
+
+afterEach(closeServers)
 
 const item = (title: string, status: string, hoursAgo: number, link?: string) => `<item><title>${title}</title><guid>${title}</guid>
   <description>&lt;p&gt;&lt;strong&gt;${status}&lt;/strong&gt; - details&lt;/p&gt;</description>
@@ -19,9 +23,9 @@ const rss = `<rss><channel><title>npm</title>
   ${item("Planned work", "Scheduled", -3)}
 </channel></rss>`
 
-async function mount(xml: string) {
-  const database = new FeedsDatabase(":memory:")
-  const feeds = new FeedsController(database, async () => xml)
+async function mount(xml: string, to?: Remote) {
+  const feeds = new FeedsClient(to ?? remote(fakeServer({ plugin: serverPlugin(async () => xml, { timer: stopped }) })), stopped)
+  feeds.start()
   const toasts: { message: string; variant: string }[] = []
   const commands: string[] = []
   const host = {
@@ -30,7 +34,7 @@ async function mount(xml: string) {
     keymap: { dispatch: (id: string) => commands.push(id) },
   } as unknown as Context
   const view = await testRender(() => <PluginContextProvider value={host}><Sidebar feeds={feeds} /></PluginContextProvider>, { width: 48, height: 30 })
-  const dispose = async () => { await view.dispose(); feeds.dispose(); database.close() }
+  const dispose = async () => { await view.dispose(); feeds.dispose() }
   return { feeds, view, toasts, commands, dispose }
 }
 
@@ -43,6 +47,7 @@ test("clicking a sidebar item opens its link like enter in /feed, and the /feed 
   }
   try {
     feeds.subscribe("https://npm.test/rss", "status")
+    await eventually(() => expect(feeds.results().get("https://npm.test/rss")?.status).toBe("ok"))
     await click("Outage 1", 2)
     expect(toasts).toEqual([])
     await click("Outage 1")
@@ -62,13 +67,28 @@ test("operational status pages stay out of the sidebar", async () => {
   const { feeds, view, dispose } = await mount("<rss><channel><title>Quiet</title></channel></rss>")
   try {
     feeds.subscribe("https://quiet.test/rss", "status")
-    for (const deadline = Date.now() + 2000; feeds.timeline("sidebar").pending && Date.now() < deadline;) await Bun.sleep(5)
+    await eventually(() => expect(feeds.results().get("https://quiet.test/rss")?.status).toBe("ok"))
     expect(feeds.timeline("sidebar").pending).toBe(0)
     await view.flush()
     // Once fetched, the quiet page isn't listed: the section is just its title.
     const frame = view.captureCharFrame()
     expect(frame).toContain("Feeds")
     expect(frame).not.toContain("Quiet")
+  } finally {
+    await dispose()
+  }
+})
+
+test("the sidebar says what to do when the server doesn't run the plugin", async () => {
+  const unavailable = async () => { throw { type: "rpc.unavailable", message: "no" } }
+  const { view, dispose } = await mount("", {
+    state: unavailable, update: unavailable, subscribe: unavailable, unsubscribe: unavailable, refresh: unavailable,
+    changes: () => ({ async *[Symbol.asyncIterator]() {} }),
+  })
+  try {
+    const frame = await view.waitForFrame((frame) => frame.includes("add"))
+    expect(frame).toContain("Feeds")
+    expect(frame.replace(/\s+/g, " ")).toContain("isn't running Feed: add @lidtop/opencode-feed to the server's plugins.")
   } finally {
     await dispose()
   }

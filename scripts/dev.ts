@@ -7,9 +7,8 @@ import { pluginEntries, pluginIDs, publicPackageName, repositoryRoot } from "./p
 type PluginID = typeof pluginIDs[number]
 // Client-local plugins load through the CLI config so their options reach the terminal process: a server-loaded
 // terminal side gets none. A plugin in both configs loads its terminal side once, from the CLI config.
-const clientLocal: readonly PluginID[] = ["later", "feed"]
-// Of those, the ones with nothing to do on the server. Later's server side registers its agent tools.
-const clientOnly: readonly PluginID[] = ["feed"]
+// Later's server side registers its agent tools, so it is in both.
+const clientLocal: readonly PluginID[] = ["later"]
 type Environment = Record<string, string | undefined>
 const originals = ["opencode-context-tui", "opencode-cost", "opencode-later", "opencode-sessions-all"]
 
@@ -59,7 +58,7 @@ export async function prepareDev(root: string, selected: PluginID[], environment
   }
   const disabled = [...originals, ...pluginIDs.map((id) => `opcode-${id}`)].map((id) => `-${id}`)
   const local = entries.filter(({ id }) => clientLocal.includes(id)).map(({ entry }) => entry)
-  const shared = entries.filter(({ id }) => !clientOnly.includes(id)).map(({ entry }) => entry)
+  const shared = entries.map(({ entry }) => entry)
   return {
     data,
     environment: {

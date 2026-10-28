@@ -6,22 +6,22 @@ import { openLink } from "@opcode/tabs/open"
 import { Section, usePalette } from "@opcode/ui"
 import { usePlugin } from "@opencode/plugin/tui"
 import { createMemo, For, Show } from "solid-js"
-import type { FeedsController } from "./host"
-import { sidebarLayout } from "./model"
+import type { FeedsClient } from "./client"
+import { PLUGIN_ID, sidebarLayout } from "./model"
 import { phaseStyle } from "./style"
 
 /** Only what needs attention; /feed also lists the operational status pages. */
-export function Sidebar(props: { feeds: FeedsController }) {
+export function Sidebar(props: { feeds: FeedsClient }) {
   const api = usePlugin()
   const palette = usePalette()
   const view = createMemo(() => props.feeds.timeline("sidebar"))
   const layout = createMemo(() => sidebarLayout(view(), props.feeds.settings().sidebarItems))
   const countdown = useRefreshCountdown(() => props.feeds.refreshing(), () => props.feeds.nextRefresh())
   return (
-    <Show when={props.feeds.subscriptions().length}>
+    <Show when={props.feeds.subscriptions().length || props.feeds.error()}>
       <box paddingTop={1}>
         <Section title="Feeds" detail={countdown()}>
-          <Show when={layout().entries.length || layout().upcoming.length || view().unreachable.length}>
+          <Show when={layout().entries.length || layout().upcoming.length || view().unreachable.length || props.feeds.error()}>
             <box flexDirection="column" minWidth={0} gap={1}>
               <For each={layout().entries}>{(entry) => (
                 <SidebarItem open={() => openLink(api, "Feed", entry.link)} item={{
@@ -30,7 +30,7 @@ export function Sidebar(props: { feeds: FeedsController }) {
                 }} />
               )}</For>
               <Show when={layout().hiddenEntries}>
-                <More count={layout().hiddenEntries} pointer={layout().hiddenUpcoming ? undefined : "/feed"} command="opcode-feed.open" />
+                <More count={layout().hiddenEntries} pointer={layout().hiddenUpcoming ? undefined : "/feed"} command={`${PLUGIN_ID}.open`} />
               </Show>
               <Show when={layout().upcoming.length}>
                 <box flexDirection="column" minWidth={0}>
@@ -43,12 +43,13 @@ export function Sidebar(props: { feeds: FeedsController }) {
                       </text>
                     )
                   }}</For>
-                  <Show when={layout().hiddenUpcoming}><More count={layout().hiddenUpcoming} noun="scheduled" pointer="/feed" command="opcode-feed.open" /></Show>
+                  <Show when={layout().hiddenUpcoming}><More count={layout().hiddenUpcoming} noun="scheduled" pointer="/feed" command={`${PLUGIN_ID}.open`} /></Show>
                 </box>
               </Show>
               <Show when={view().unreachable.length}>
                 <text minWidth={0} wrapMode="word" fg={palette.error}>! {view().unreachable.map((failure) => failure.source).join(" · ")} unreachable</text>
               </Show>
+              <Show when={props.feeds.error()}>{(error) => <text minWidth={0} wrapMode="word" fg={palette.error}>! {error()}</text>}</Show>
             </box>
           </Show>
         </Section>

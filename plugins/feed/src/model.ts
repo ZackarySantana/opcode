@@ -1,13 +1,41 @@
+import type { Versioned } from "@opcode/core/follow"
 import { age, matchesText } from "@opcode/tabs/format"
 import type { Feed } from "./parse"
-import type { FeedKind, Preset } from "./presets"
-import type { Subscription } from "./sqlite"
-import { inProgress, interpret, type Phase } from "./status"
+import { feedURL, type FeedKind, type Preset } from "./presets"
+import { inProgress, interpret, type Interpretation, type Phase } from "./status"
+
+export const PLUGIN_ID = "opcode-feed"
+
+export interface Subscription {
+  readonly url: string
+  /** The feed's own title, learned on the first successful fetch. */
+  readonly title?: string
+  readonly kind: FeedKind
+  readonly createdAt: number
+}
+
+/** A feed item, read as its feed's kind. */
+export interface Post extends Interpretation {
+  readonly id: string
+  readonly link?: string
+  /** Epoch milliseconds, when the feed provides a parseable date. */
+  readonly published?: number
+}
+
+/** A fetched feed, its items read once where it's fetched rather than shipped as markup. */
+export interface Posts {
+  readonly title?: string
+  readonly items: readonly Post[]
+}
+
+export function readPosts(feed: Feed, kind: FeedKind): Posts {
+  return { title: feed.title, items: feed.items.map((item) => ({ id: item.id, link: item.link, published: item.published, ...interpret(item, kind) })) }
+}
 
 export type FetchResult =
-  | { readonly status: "loading"; readonly feed?: Feed }
-  | { readonly status: "ok"; readonly feed: Feed; readonly fetchedAt: number }
-  | { readonly status: "error"; readonly error: string; readonly feed?: Feed }
+  | { readonly status: "loading"; readonly feed?: Posts }
+  | { readonly status: "ok"; readonly feed: Posts }
+  | { readonly status: "error"; readonly error: string; readonly feed?: Posts }
 
 /** Which surfaces show resolved incidents. */
 export type SurfaceScope = "both" | "sidebar" | "feed" | "none"
@@ -26,10 +54,57 @@ export interface Settings {
 }
 
 export const defaultSettings: Settings = { windowHours: 12, resolved: "none", sidebarReleases: false, sidebarItems: 5, refreshMinutes: 10 }
-export const windowChoices = [6, 12, 24, 48, 72, 168] as const
+export const windowChoices: readonly number[] = [6, 12, 24, 48, 72, 168]
 export const refreshChoices: readonly number[] = [1, 5, 10, 15, 30, 60]
 export const scopeChoices: readonly SurfaceScope[] = ["both", "sidebar", "feed", "none"]
-export const sidebarItemChoices = [3, 5, 10, 15, 20] as const
+export const sidebarItemChoices: readonly number[] = [3, 5, 10, 15, 20]
+
+const fieldChoices: { readonly [Key in keyof Settings]: readonly Settings[Key][] } = {
+  windowHours: windowChoices, resolved: scopeChoices, sidebarReleases: [false, true], sidebarItems: sidebarItemChoices, refreshMinutes: refreshChoices,
+}
+
+/** The fields of `value` that are one of their choices; anything else is left out. */
+export function readChange(value: unknown): Partial<Settings> {
+  const input: Record<string, unknown> = value && typeof value === "object" ? { ...value } : {}
+  const change: Record<string, unknown> = {}
+  for (const [key, choices] of Object.entries(fieldChoices)) if ((choices as readonly unknown[]).includes(input[key])) change[key] = input[key]
+  return change
+}
+
+/** Settings from stored JSON, whatever its shape: each field that isn't one of its choices keeps its default. */
+export function readSettings(stored: unknown): Settings {
+  return { ...defaultSettings, ...readChange(stored) }
+}
+
+export const kinds: readonly FeedKind[] = ["status", "release"]
+
+/** Subscriptions from stored JSON, whatever its shape: entries without an http(s) URL or a kind are left out, as are repeats. */
+export function readSubscriptions(stored: unknown): Subscription[] {
+  const subscriptions = new Map<string, Subscription>()
+  for (const entry of Array.isArray(stored) ? stored as unknown[] : []) {
+    if (!entry || typeof entry !== "object") continue
+    const { url, title, kind, createdAt } = entry as Record<string, unknown>
+    if (typeof url !== "string" || !kinds.includes(kind as FeedKind)) continue
+    let href: string
+    try { href = feedURL(url) } catch { continue }
+    if (subscriptions.has(href)) continue
+    subscriptions.set(href, { url: href, kind: kind as FeedKind, createdAt: typeof createdAt === "number" ? createdAt : 0, ...typeof title === "string" && title ? { title } : {} })
+  }
+  return [...subscriptions.values()]
+}
+
+/** What the server shares with every client: settings, subscriptions, each one's latest fetch, and when the next starts. */
+export interface FeedsState extends Versioned {
+  readonly settings: Settings
+  /** In the order they were added. */
+  readonly subscriptions: readonly Subscription[]
+  /** Each subscription's latest fetch, by URL. */
+  readonly results: { readonly [url: string]: FetchResult }
+  /** How long until the next automatic refresh when the state was made: clients count from receipt, whatever their clock. */
+  readonly nextRefreshIn?: number
+  /** Why the saved subscriptions and settings can't be read, while they can't. */
+  readonly error?: string
+}
 
 const showsOn = (scope: SurfaceScope, surface: Surface) => scope === "both" || scope === surface
 /** In-progress items stay visible past the window, but not forever if a provider never closes one. */
@@ -85,7 +160,6 @@ export function feedTitle(url: string, presets: readonly Preset[], subscription?
 export const kindOf = (subscription: Subscription, presets: readonly Preset[]) => presets.find((preset) => preset.url === subscription.url)?.kind ?? subscription.kind
 
 export const kindTitles: Record<FeedKind, string> = { status: "STATUS PAGES", release: "RELEASES" }
-export const kinds: readonly FeedKind[] = ["status", "release"]
 
 /** Status pages, then release feeds; within each, custom subscriptions first, then presets in catalog order. */
 export function managerRows(subscriptions: readonly Subscription[], presets: readonly Preset[], results: ReadonlyMap<string, FetchResult>): ManagerRow[] {
@@ -157,17 +231,16 @@ export function timeline(subscriptions: readonly Subscription[], presets: readon
     if (!result?.feed) { if (result?.status !== "error") pending++; continue }
     let busy = false
     const posts: TimelineEntry[] = []
-    for (const item of result.feed.items) {
-      if (item.published === undefined) continue
-      const meaning = interpret(item, kind)
-      const entry = { key: `${subscription.url}\n${item.id}`, url: subscription.url, kind, source, link: item.link, time: item.published, ...meaning }
+    for (const { id, published, link, ...meaning } of result.feed.items) {
+      if (published === undefined) continue
+      const entry = { key: `${subscription.url}\n${id}`, url: subscription.url, kind, source, link, time: published, ...meaning }
       if (inProgress(meaning.phase)) {
-        if (item.published < now - CURRENT_HORIZON) continue
+        if (published < now - CURRENT_HORIZON) continue
         busy = true
         current.push(entry)
-      } else if (item.published > now) {
-        if (item.published <= now + span) upcoming.push(entry)
-      } else if (item.published >= now - span && (resolved || meaning.phase !== "resolved")) {
+      } else if (published > now) {
+        if (published <= now + span) upcoming.push(entry)
+      } else if (published >= now - span && (resolved || meaning.phase !== "resolved")) {
         if (kind === "release") posts.push(entry)
         else recent.push(entry)
       }
@@ -208,13 +281,13 @@ export function feedState(result: FetchResult | undefined, kind: FeedKind, now =
   if (!result) return { text: "" }
   if (result.status === "loading" && !result.feed) return { text: "fetching…" }
   if (result.status === "error") return { text: `error: ${result.error}`, phase: "active" }
-  const items = result.feed!.items.map((item) => ({ item, meaning: interpret(item, kind) }))
+  const items = result.feed!.items
   if (kind === "status") {
-    const live = items.find(({ item, meaning }) => inProgress(meaning.phase) && (item.published ?? 0) >= now - CURRENT_HORIZON)
-    return live ? { text: `${live.meaning.status ?? "Ongoing"}: ${live.meaning.title}`, phase: live.meaning.phase } : { text: "operational", phase: "resolved" }
+    const live = items.find((item) => inProgress(item.phase) && (item.published ?? 0) >= now - CURRENT_HORIZON)
+    return live ? { text: `${live.status ?? "Ongoing"}: ${live.title}`, phase: live.phase } : { text: "operational", phase: "resolved" }
   }
   const latest = items[0]
-  return latest ? { text: `${age(latest.item.published, now)} ${latest.meaning.title}`.trim(), phase: "news" } : { text: "no items" }
+  return latest ? { text: `${age(latest.published, now)} ${latest.title}`.trim(), phase: "news" } : { text: "no items" }
 }
 
 export function windowShort(hours: number): string {

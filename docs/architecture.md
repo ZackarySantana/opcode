@@ -8,7 +8,7 @@
 | Cost | Normalized usage ledger and date/entity aggregates | Server-owned SQLite, live events, RPC; client history import | Overview/Models/Projects/Daily/Turns dialog with a date picker |
 | Later | Ordered active items, completed history, and settings | Client-local SQLite, also opened by server-side agent tools; isolated prompt-paste bridge | Later/History/Settings dialog, native edit/confirmation dialogs, sidebar |
 | Sessions | Searchable user/assistant text and session metadata; active sessions projected from server state | Server-owned SQLite, live events, RPC; client history import; client-side snapshot plus live events for active sessions | Browser, filters, preview, active-sessions sidebar, `/go` |
-| Feed | Subscriptions, settings, and an interpreted timeline of feed items | Client-local SQLite, feed fetching | Status/Upcoming/Releases/Subscribe/Settings dialog, feed picker, sidebar |
+| Feed | Subscriptions, settings, and an interpreted timeline of feed items | One server-process service shared by every location: server plugin storage, the refresh schedule, feed fetching, RPC with a change event; terminals follow it live | Status/Upcoming/Releases/Subscribe/Settings dialog, feed picker, sidebar |
 | GH PR Status | Pull requests classified by what waits on you, settings, and a saved team filter | One server-process service shared by every location: server plugin storage, the refresh schedule, `gh` GraphQL and REST calls, RPC with a change event; terminals follow it live | Mine/Reviewing/Teams/Settings dialog, team picker, sidebar |
 | Snippets | Global and project snippet files, precedence, and `@name` mentions | Server-owned files, skill registration, prompt/context hooks, authoring tools, RPC | Dialog with previews, prompt paste bridge, authoring sessions |
 | Media | Project-relative output paths, image naming, PCM-to-WAV framing | OpenRouter media API with the `openrouter` integration credential; agent tools | None: server-only agent tools |
@@ -81,7 +81,7 @@ Persistence, domain actions, and their cancellable I/O remain plugin-specific.
 `@opcode/tabs` holds what Feed, GH PR Status, and Later share: the tabbed dialog with one
 search box and Escape that undoes one step at a time, grouped item cards that
 open on enter or click, the picker, the Settings tab, sidebar items with "+N
-more" lines, the refresh countdown beside a section title, the refresh schedule as signals, and the browser
+more" lines, the refresh countdown beside a section title, the minute clock that ages views, and the browser
 launcher. Sessions uses its dialog, picker, and sidebar items too, Cost its tabbed
 dialog and picker, and Snippets its tabbed dialog and item cards. Native prompts
 replace a custom dialog, so Later passes its own tab and focus signals, and Snippets
@@ -90,8 +90,8 @@ that changing it releases only its consumers, not every consumer of `@opcode/ui`
 
 ## Server-owned shared state
 
-GH PR Status is the template for state that every terminal on a server shares, such as settings and data polled from
-an outside service. The shared parts live in `@opcode/core`:
+GH PR Status and Feed follow this pattern for state that every terminal on a server shares, such as settings and data
+polled from an outside service. The shared parts live in `@opcode/core`:
 
 - **One value per server process (`@opcode/core/process`).** `joinShared` gives every location instance of a server
   plugin the same value, kept in the process's globals and keyed by plugin, purpose, and `packageVersion`, so reloaded
@@ -113,8 +113,16 @@ an outside service. The shared parts live in `@opcode/core`:
   start, after each reconnect, after a failed call, and on `resync`, since events are live only.
 - **Saved settings are never replaced by defaults.** While stored settings can't be read, the service serves the
   defaults, keeps retrying, and refuses changes until a read succeeds.
-- **Optimistic settings.** A client shows its pending setting changes over the server's settings, sends them in order,
-  and drops each once answered, so quick changes build on each other and a refused one is undone.
+- **User data is changed where it's saved.** During an upgrade two versions' services run at once, so writing a whole
+  state from one's memory could undo the other's changes. Feed's subscriptions and settings are read, changed, and
+  written back on each change, one change at a time through a queue `joinShared` keys without the version, so every
+  version's service shares it.
+- **Announcements gather.** Feed announces its state 100 ms after a change, with the changes made meanwhile, so a
+  refresh of many feeds isn't announced feed by feed.
+- **Optimistic changes (`@opcode/core/pending`).** A client shows its pending changes over the server's state, sends
+  them in order, and drops each once answered, so quick changes build on each other and a refused one is undone.
+- **News that stopped.** A client whose state's next refresh is long overdue reads it again (`createOverdue`), which
+  starts the plugin on a server that unloaded it everywhere.
 - **Time left, not wall-clock times.** Countdowns travel as milliseconds remaining, which the client counts from
   receipt on its own clock.
 - **Tests (`@opcode/core/test-support/server`).** `fakeServer` runs a server plugin as the host does, an instance per
@@ -124,7 +132,7 @@ an outside service. The shared parts live in `@opcode/core`:
 `@opcode/core` contains small host-independent utilities, including the XDG
 state directory and owner-only WAL SQLite setup shared by Cost, Later, and
 Sessions, live-subscription reconnection, superseding refreshes, the refresh schedule
-that GH PR Status's server runs and `@opcode/tabs` wraps, and the server-owned shared state modules above. Domain models stay in
+that GH PR Status's and Feed's servers run, and the server-owned shared state modules above. Domain models stay in
 their plugin. Share recurring behavior after it appears, rather than building a
 general plugin framework or repository abstraction.
 

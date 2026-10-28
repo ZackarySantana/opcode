@@ -2,16 +2,9 @@ import { setTimer, type SetTimer } from "./refresh"
 
 /**
  * Runs `refresh` every `minutes()`, with a clock that ticks each minute. `refresh` should call `restart`: every refresh,
- * automatic or not, restarts the countdown. Call `reschedule` when the interval may have changed. Not reactive: `tick`
- * and `next` report changes for views that need them.
+ * automatic or not, restarts the countdown. Call `reschedule` when the interval may have changed.
  */
-export function createSchedule(refresh: () => void, minutes: () => number, options: {
-  timer?: SetTimer
-  /** Each clock tick, with its time. */
-  tick?: (at: number) => void
-  /** Each change to when the next automatic refresh starts. */
-  next?: (at: number) => void
-} = {}) {
+export function createSchedule(refresh: () => void, minutes: () => number, options: { timer?: SetTimer } = {}) {
   const timer = options.timer ?? setTimer
   let next: number | undefined
   let cancelNext: (() => void) | undefined
@@ -19,7 +12,6 @@ export function createSchedule(refresh: () => void, minutes: () => number, optio
   let disposed = false
   let scheduled = 0
   const tick = (at = Date.now()) => {
-    options.tick?.(at)
     // Timers can fall behind the wall clock across sleep (laptops, WSL); an overdue refresh starts within a tick.
     if (next !== undefined && at >= next) refresh()
   }
@@ -29,7 +21,6 @@ export function createSchedule(refresh: () => void, minutes: () => number, optio
     scheduled = minutes()
     const delay = scheduled * 60_000
     next = Date.now() + delay
-    options.next?.(next)
     cancelNext = timer(refresh, delay)
   }
   return {

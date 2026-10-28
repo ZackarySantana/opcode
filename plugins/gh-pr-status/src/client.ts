@@ -1,14 +1,12 @@
-import { createSerialQueue } from "@opcode/core"
-import { followState } from "@opcode/core/follow"
+import { createOverdue, followState } from "@opcode/core/follow"
+import { createPending } from "@opcode/core/pending"
 import { setTimer, type SetTimer } from "@opcode/core/refresh"
 import { describeRpcError } from "@opcode/core/rpc"
+import { createClock } from "@opcode/tabs/clock"
 import type { OpenCodeClient } from "@opencode/client"
 import { createSignal } from "solid-js"
 import { defaultSettings, readSettings, view, type PullRequestsState, type Settings, type SettingsChange } from "./model"
 import { GhPrStatusRpc, type FormattedFeedback } from "./rpc"
-
-/** How long past its next refresh a state may go without news before the terminal reads again. */
-const OVERDUE = 60_000
 
 /** The server's pull request state, as a terminal reaches it. */
 export interface Remote {
@@ -52,14 +50,12 @@ export class PullRequestsClient {
   private readonly pending = createSignal<readonly SettingsChange[]>([])
   /** Why the last call failed, until the next state arrives. */
   private readonly problem = createSignal<string>()
-  private readonly clock = createSignal(Date.now())
-  private readonly sends = createSerialQueue()
   private readonly follower: ReturnType<typeof followState<PullRequestsState>>
-  private cancelClock?: () => void
-  /** The overdue refresh time already read again for, so it is read once. */
-  private overdue?: number
+  private readonly send: (change: SettingsChange) => Promise<void>
+  private readonly overdue = createOverdue()
+  private readonly clock: ReturnType<typeof createClock>
 
-  constructor(private readonly remote: Remote, private readonly timer: SetTimer = setTimer) {
+  constructor(private readonly remote: Remote, timer: SetTimer = setTimer) {
     this.follower = followState<PullRequestsState>({
       read: (signal) => remote.state(signal),
       changes: (signal) => remote.changes(signal),
@@ -68,6 +64,10 @@ export class PullRequestsClient {
       describe: describeError,
       timer,
     })
+    this.send = createPending({ send: remote.update, answered: this.follower.offer, failed: this.follower.failed, changed: this.pending[1] })
+    // A refresh long overdue means news stopped, such as when the server unloaded the plugin from every location:
+    // reading again starts it there.
+    this.clock = createClock({ timer, tick: (at) => { if (this.overdue(this.nextRefresh(), this.refreshing(), at)) void this.follower.resync() } })
   }
 
   snapshot = () => this.current[0]()?.state.snapshot
@@ -75,7 +75,7 @@ export class PullRequestsClient {
   refreshing = () => this.current[0]()?.state.refreshing ?? false
   settings = (): Settings => this.pending[0]().reduce<Settings>((settings, change) => readSettings({ ...settings, ...change }), this.current[0]()?.state.settings ?? defaultSettings)
   /** Ages are relative to this, so views re-render as time passes. */
-  now = () => this.clock[0]()
+  now = () => this.clock.now()
   /** When the server's next automatic refresh starts, on this terminal's clock. */
   nextRefresh = () => this.current[0]()?.nextRefresh
   /** The snapshot's lists, without the pull requests inactive longer than the ignore setting. */
@@ -83,7 +83,6 @@ export class PullRequestsClient {
 
   /** Follows the server's changes, reading the whole state whenever it may have missed one. */
   start(): void {
-    this.cancelClock = this.timer(() => this.tick(), 60_000)
     this.follower.start()
   }
 
@@ -93,31 +92,11 @@ export class PullRequestsClient {
 
   /** Applies at once here, and everywhere once the server has saved it. */
   updateSettings(change: SettingsChange): void {
-    this.pending[1]((pending) => [...pending, change])
-    void this.sends(async () => {
-      try { this.follower.offer(await this.remote.update(change)) }
-      catch (error) { await this.follower.failed(error) }
-      finally { this.pending[1]((pending) => pending.filter((sent) => sent !== change)) }
-    })
+    void this.send(change)
   }
 
   dispose(): void {
     this.follower.dispose()
-    this.cancelClock?.()
-  }
-
-  /**
-   * Ages move on each minute. A refresh long overdue means news stopped, such as when the server unloaded the plugin
-   * from every location: reading again starts it there.
-   */
-  private tick() {
-    const now = Date.now()
-    this.clock[1](now)
-    const next = this.nextRefresh()
-    if (next !== undefined && next !== this.overdue && !this.refreshing() && now > next + OVERDUE) {
-      this.overdue = next
-      void this.follower.resync()
-    }
-    this.cancelClock = this.timer(() => this.tick(), 60_000)
+    this.clock.dispose()
   }
 }

@@ -82,6 +82,7 @@
         "@opcode/core": "workspace:*",
         "@opcode/tabs": "workspace:*",
         "@opcode/ui": "workspace:*",
+        "@opencode/client": "catalog:",
         "@opencode/plugin": "catalog:",
       },
       "peerDependencies": {

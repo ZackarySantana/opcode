@@ -25,7 +25,9 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 }
 ```
 
-**Where it runs.** Feed is a terminal UI plugin; its server entrypoint does nothing. You can instead put the same entry in global `~/.config/opencode/cli.json` to load it on the client only, independent of server configuration. **Do not configure both.** The terminal client fetches the feeds and stores your subscriptions on its filesystem, including when connected to a remote server. A fresh install has no subscriptions.
+**Where it runs.** The server side keeps your subscriptions and settings, fetches the feeds on the schedule, and keeps what they say; the sidebar and `/feed` in the terminal show what it has, over plugin RPC (both parts use the ID `opcode-feed`). Configure it where the server reads plugins (this config, or the remote server's), not in `cli.json`: a terminal-only install has no server side to ask, and the sidebar and `/feed` say to add it to the server's plugins. Feeds are fetched from the machine the OpenCode server runs on, which is a remote machine when you connect to one. A fresh install has no subscriptions.
+
+**One source of truth.** Every terminal connected to the same server shows the same subscriptions, settings, and feeds. The server fetches each feed once for all of them, however many terminals or projects are open, and subscribing, unsubscribing, a change to a setting, or a refresh shows in every terminal right away.
 
 ## Use
 
@@ -54,7 +56,7 @@ Changing tabs clears the search and the chosen feed. While typing in the box, th
 
 On Status, in-progress incidents come first, colored by urgency: red while investigating or identified, yellow while monitoring or during maintenance. Status pages with nothing in progress are listed, grayed out, at the top. Everything else from the time window follows, newest first. Future-dated items, such as scheduled maintenance, appear under Upcoming instead.
 
-The sidebar shows only what needs attention: up to five items by default (see **Sidebar items** below), then the two soonest scheduled items, with a count of the rest and a pointer to `/feed`, then any unreachable feeds. Operational status pages are left out; with nothing to list it's just the title. By default it leaves out release feeds, keeping it for incidents; see **Sidebar releases** below. Beside the title, a countdown shows the time to the next refresh, or "refreshing…" while feeds are being fetched. It is omitted when you have no subscriptions; the plugin never forces it open. Click an item or scheduled maintenance there to open its link, as `enter` does in `/feed`; click a "+N more" line to open the dialog.
+The sidebar shows only what needs attention: up to five items by default (see **Sidebar items** below), then the two soonest scheduled items, with a count of the rest and a pointer to `/feed`, then any unreachable feeds. Operational status pages are left out; with nothing to list it's just the title. By default it leaves out release feeds, keeping it for incidents; see **Sidebar releases** below. Beside the title, a countdown shows the time to the next refresh, or "refreshing…" while feeds are being fetched. It is omitted when you have no subscriptions, unless the server can't be reached or can't read them, which it says; the plugin never forces it open. Click an item or scheduled maintenance there to open its link, as `enter` does in `/feed`; click a "+N more" line to open the dialog.
 
 Links open in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-open` (Linux); on WSL it tries `wslview`, `xdg-open`, then PowerShell. Only `http` and `https` links are opened.
 
@@ -79,26 +81,15 @@ Presets include npm, GitHub, Docker, CircleCI, Google Workspace, Google Cloud, C
 
 The window sets how far back Status and Releases look and how far ahead Upcoming looks; in-progress incidents always show, for up to seven days. **Show resolved** chooses where resolved and completed incidents appear. Posts from release feeds always appear on the Releases tab; **Sidebar releases** adds them to the sidebar too. Showing a single feed with `f` ignores the window, the three-item cap, and Show resolved. **Sidebar items** sets how many items the sidebar lists, in-progress incidents first, before pointing to `/feed`; the two soonest scheduled items show below them either way.
 
-**Refresh every** sets how often every feed is fetched, including unreachable ones; changing it restarts the countdown. `r`, `/feed-refresh`, and **Refresh feeds** fetch every feed now and also restart it. A failed fetch is retried twice within a few seconds before the feed shows as unreachable, so brief outages and network blips recover on their own. After your computer sleeps, an overdue refresh starts within a minute of waking.
+**Refresh every** sets how often every feed is fetched, including unreachable ones; changing it restarts the countdown in every terminal. `r`, `/feed-refresh`, and **Refresh feeds** fetch every feed now and also restart it. A failed fetch is retried twice within a few seconds before the feed shows as unreachable, so brief outages and network blips recover on their own. After the server's machine sleeps, an overdue refresh starts within a minute of waking. The server keeps refreshing while it has the plugin loaded, even with no terminal open.
 
-## Options
-
-Load the plugin in global `~/.config/opencode/cli.json` to pass options; server-loaded terminal extensions in OpenCode 2.1.1 do not reliably receive server plugin options.
-
-```jsonc
-{
-  "$schema": "https://opencode.ai/v2/cli.json",
-  "plugins": [
-    { "package": "@lidtop/opencode-feed", "options": { "database": "/absolute/path/feed.sqlite" } }
-  ]
-}
-```
-
-- `database`: where subscriptions and settings are stored. Relative paths resolve from the client's `$XDG_STATE_HOME/opencode` (or `~/.local/state/opencode`), not the project directory. The default is `$XDG_STATE_HOME/opencode/opcode-feed/feed.sqlite` (or `~/.local/state/opencode/opcode-feed/feed.sqlite`).
+Subscriptions and settings are saved in the server's plugin storage and shared by every terminal connected to it. If the server can't read them, `/feed` and the sidebar say so, and subscribing, unsubscribing, and changing settings are refused until it can, so what you saved is never replaced. Subscriptions and settings saved by versions before the server kept them aren't carried over: subscribe again, and settings start at the defaults.
 
 ## Data and privacy
 
-The database stores subscribed URLs, their titles, and your settings. Fetched items are kept in memory only. Feeds are requested directly from the terminal client, so each feed's server sees your client's IP address; nothing else is sent.
+The server's plugin storage keeps the subscribed URLs, their titles, and your settings. What the feeds say is kept in the server's memory only, and sent to the terminals connected to it. Feeds are requested from the OpenCode server's machine, so each feed's server sees that machine's IP address; nothing else is sent.
+
+Earlier versions kept subscriptions and settings in `opcode-feed/feed.sqlite` in the terminal's OpenCode state directory (`$XDG_STATE_HOME/opencode`, or `~/.local/state/opencode`), or where the `database` option said, which is gone. Nothing reads it now, so you can delete it.
 
 ## Development
 
@@ -110,4 +101,4 @@ mise exec -- bun run typecheck
 mise run dev feed
 ```
 
-The build bundles the private `@opcode/core` and `@opcode/ui` workspaces into the package; OpenCode, OpenTUI, and Solid stay external.
+The build bundles the private `@opcode/core`, `@opcode/tabs`, and `@opcode/ui` workspaces into the package; OpenCode, OpenTUI, and Solid stay external.
