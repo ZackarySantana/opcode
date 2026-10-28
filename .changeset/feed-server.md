@@ -1,5 +1,0 @@
----
-"@lidtop/opencode-feed": patch
----
-
-Feed now runs on the OpenCode server, so every terminal connected to it shows the same subscriptions, settings, and feeds, and each feed is fetched once for all of them instead of once per terminal. Subscribing, unsubscribing, a change to a setting, or a refresh with `r` shows in every terminal right away, and the sidebar's countdown follows the server's schedule. Configure the plugin where the server reads plugins (`opencode.json(c)`, not `cli.json`); feeds are fetched from the server's machine. Without the server side, the sidebar and `/feed` say to add it. The `database` option is gone: subscriptions and settings live in the server's plugin storage. If the server can't read them, it says so and refuses changes until it can, rather than overwrite them. Subscriptions and settings saved by earlier versions are not carried over: subscribe again, and settings start at the defaults; you can delete `opcode-feed/feed.sqlite` in the terminal's OpenCode state directory.

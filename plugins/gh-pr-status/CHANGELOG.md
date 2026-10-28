@@ -1,5 +1,13 @@
 # @lidtop/opencode-gh-pr-status
 
+## 0.2.3
+
+### Patch Changes
+
+- 915e7ff: A new **Ignore inactive** setting (Off, 7 days, 14 days, 1 month, 3 months, 1 year) leaves a pull request out of `/ghpr` and the sidebar once it has gone that long without activity on GitHub, such as a push, comment, review, or review request. It defaults to 1 month.
+- 5ccffe8: GH PR Status now runs on the OpenCode server, so every terminal connected to it shows the same pull requests and settings, and GitHub is polled once for all of them instead of once per terminal. A change to a setting or the Teams tab's filter, or a refresh with `r`, shows in every terminal right away, and the sidebar's countdown follows the server's schedule. Configure the plugin where the server reads plugins (`opencode.json(c)`, not `cli.json`), with `gh` installed and signed in on the server's machine; without the server side, the sidebar and `/ghpr` say to add it; `/ghpr-comments` reads the session's branch there too. `commentsPrompt` is now a server option, and the `database` option is gone: settings live in the server's plugin storage. If the server can't read the saved settings, it shows the defaults and refuses changes until it can, rather than overwrite them. Settings saved by earlier versions are not carried over and start at the defaults; you can delete `opcode-gh-pr-status/gh-pr-status.sqlite` in the terminal's OpenCode state directory.
+- e91635a: Shared code that Feed and GH PR Status use moved into helpers every plugin bundles: the minute clock that ages views, and sending changes to the server in order while showing them at once. Nothing changes for any plugin.
+
 ## 0.2.2
 
 ### Patch Changes

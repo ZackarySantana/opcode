@@ -1,5 +1,12 @@
 # @lidtop/opencode-feed
 
+## 0.4.3
+
+### Patch Changes
+
+- 5ccffe8: Shared code moved into helpers every plugin bundles: the refresh schedule now also works outside the terminal, and there are new helpers for state shared by a server's projects, RPC contracts and handlers, and following a server's state. For Context, Feed, Later, and Media nothing changes. In Cost, Review, Snippets, and Sessions, a call the terminal aborted is no longer reported as a failure. In Sessions, every project open on a server now shares one search index connection and one writer per database file, rather than possibly one per project.
+- e91635a: Feed now runs on the OpenCode server, so every terminal connected to it shows the same subscriptions, settings, and feeds, and each feed is fetched once for all of them instead of once per terminal. Subscribing, unsubscribing, a change to a setting, or a refresh with `r` shows in every terminal right away, and the sidebar's countdown follows the server's schedule. Configure the plugin where the server reads plugins (`opencode.json(c)`, not `cli.json`); feeds are fetched from the server's machine. Without the server side, the sidebar and `/feed` say to add it. The `database` option is gone: subscriptions and settings live in the server's plugin storage. If the server can't read them, it says so and refuses changes until it can, rather than overwrite them. Subscriptions and settings saved by earlier versions are not carried over: subscribe again, and settings start at the defaults; you can delete `opcode-feed/feed.sqlite` in the terminal's OpenCode state directory.
+
 ## 0.4.2
 
 ### Patch Changes

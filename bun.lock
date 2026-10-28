@@ -46,7 +46,7 @@
     },
     "plugins/context": {
       "name": "@lidtop/opencode-context",
-      "version": "0.3.4",
+      "version": "0.3.5",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/ui": "workspace:*",
@@ -61,7 +61,7 @@
     },
     "plugins/cost": {
       "name": "@lidtop/opencode-cost",
-      "version": "0.3.2",
+      "version": "0.3.3",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/tabs": "workspace:*",
@@ -77,7 +77,7 @@
     },
     "plugins/feed": {
       "name": "@lidtop/opencode-feed",
-      "version": "0.4.2",
+      "version": "0.4.3",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/tabs": "workspace:*",
@@ -93,7 +93,7 @@
     },
     "plugins/gh-pr-status": {
       "name": "@lidtop/opencode-gh-pr-status",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/tabs": "workspace:*",
@@ -109,7 +109,7 @@
     },
     "plugins/later": {
       "name": "@lidtop/opencode-later",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/tabs": "workspace:*",
@@ -125,7 +125,7 @@
     },
     "plugins/media": {
       "name": "@lidtop/opencode-media",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opencode/plugin": "catalog:",
@@ -133,7 +133,7 @@
     },
     "plugins/review": {
       "name": "@lidtop/opencode-review",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/ui": "workspace:*",
@@ -150,7 +150,7 @@
     },
     "plugins/sessions": {
       "name": "@lidtop/opencode-sessions",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/tabs": "workspace:*",
@@ -166,7 +166,7 @@
     },
     "plugins/snippets": {
       "name": "@lidtop/opencode-snippets",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/tabs": "workspace:*",
