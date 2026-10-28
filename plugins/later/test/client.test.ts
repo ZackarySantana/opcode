@@ -72,3 +72,13 @@ test("a list that can't be read is reported, refuses changes, and is read again 
   expect(client.problems.at(-1)).toBeUndefined()
   expect(client.settings().sidebarItems).toBe(3)
 })
+
+test("a caller without a location, like the desktop app on Home, changes the same list in the server's own location", async () => {
+  const f = laterServer()
+  const home = follow(remote(f.server, null))
+  const terminal = follow(remote(f.server, "/work/web"))
+  const id = await home.add("from Home")
+  await eventually(() => expect(messages(terminal.list())).toEqual(["from Home"]))
+  expect(await terminal.complete(terminal.item(id)!)).toBe(true)
+  await eventually(() => expect(home.item(id)?.completedAt).toBeDefined())
+})
