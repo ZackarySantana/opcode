@@ -158,4 +158,12 @@ export function authoringGuide(target: Authoring): string {
 /** Leads the user's own message when the guide waits in the prompt for them to finish. */
 export const AUTHORING_LEAD = "The following message is what the user wants: "
 
-export const authoringRequest = (target: Authoring, request: string) => `${authoringGuide(target)}The user wants to create a snippet that ${request}`
+/** The guide and the user's request, sent as the first message of an authoring session. */
+export const authoringRequest = (target: Authoring, request: string) =>
+  `${authoringGuide(target)}${target.name ? `The user wants this change to @${target.name}: ` : "The user wants to create a snippet that "}${request}`
+
+/** `/snippets new [what it should do]` starts authoring; anything else opens the list. */
+export function parseCommand(input = ""): { verb: "new"; request: string } | { verb: "open" } {
+  const [, verb, request = ""] = /^\s*(?:\/\S+)?\s*(\S*)\s*([\s\S]*)$/.exec(input) ?? []
+  return verb === "new" ? { verb, request } : { verb: "open" }
+}

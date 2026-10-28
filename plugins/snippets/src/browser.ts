@@ -4,7 +4,7 @@ import { snapshotRoute } from "@opcode/ui/screen"
 import type { Context } from "@opencode/plugin/tui/context"
 import type { JSX } from "@opentui/solid/jsx-runtime"
 import { createSignal } from "solid-js"
-import { AUTHORING_LEAD, authoringGuide, authoringRequest, authoringSession, type Authoring } from "./domain"
+import { AUTHORING_LEAD, authoringGuide, authoringRequest, authoringSession, parseCommand, type Authoring } from "./domain"
 import type { SnippetsRemote } from "./rpc"
 import type { SnippetEntry } from "./service"
 
@@ -93,10 +93,9 @@ export function createBrowser(api: Context, remote: SnippetsRemote, render: () =
   return {
     state, focus, load, author,
     shown: () => opened,
-    /** `/snippets new [what it should do]` starts authoring; anything else opens the list. */
     async command(input = "") {
-      const [, verb, request] = /^\s*(?:\/\S+)?\s*(\S*)\s*([\s\S]*)$/.exec(input) ?? []
-      if (verb === "new") await author({}, request)
+      const parsed = parseCommand(input)
+      if (parsed.verb === "new") await author({}, parsed.request)
       else open()
     },
     /** Closes the dialog, then types `@name ` into the prompt under it. */
