@@ -6,10 +6,11 @@ import { PluginContextProvider } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
 import { testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"
-import type { Inbox, InboxRow } from "../src/inbox-host"
+import type { AgentRow } from "../src/inbox"
+import type { Inbox } from "../src/inbox-host"
 import { InboxSidebar } from "../src/sidebar"
 
-const row = (id: string, state: InboxRow["state"], agents = 0): InboxRow => ({ id, state, read: false, agents, since: Date.now() - 200_000, title: `Title ${id}`, directory: `/work/${id}` })
+const row = (id: string, state: AgentRow["state"], agents = 0): AgentRow => ({ id, state, read: false, agents, since: Date.now() - 200_000, title: `Title ${id}`, directory: `/work/${id}` })
 
 test("rows are numbered in order; clicking one opens it, the back row goes back, and +N more opens /go", async () => {
   const opened: string[] = []

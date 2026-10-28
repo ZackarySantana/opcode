@@ -16,7 +16,7 @@ export interface TrackedSession {
   outcome?: SessionInfo["outcome"]
 }
 
-/** A TUI-side projection of server-owned state. Status and requests may name sessions whose metadata is still loading. */
+/** The server's projection of host state. Status and requests may name sessions whose metadata is still loading. */
 export interface Projection {
   sessions: Record<string, TrackedSession>
   /** Absent means idle. A retry with an action waits on you. */
@@ -36,6 +36,9 @@ export interface ActiveRoot {
   since: number
 }
 
+/** A listed root, with what its row shows. */
+export interface AgentRow extends ActiveRoot { title: string; directory: string }
+
 /** When each session's idle was first viewed. The server records only which idle was viewed; live events tell when. */
 export type Reads = Record<string, { idle: number; at: number }>
 
@@ -49,6 +52,16 @@ export function nextExpiry({ reads, keep, now }: Lingering) {
 }
 
 export const emptyProjection = (): Projection => ({ sessions: {}, status: {}, requests: {} })
+
+/** The `inbox` plugin option's fields, of any shape. */
+export const inboxOption = (value: unknown) => (value && typeof value === "object" ? value : {}) as Record<string, unknown>
+
+/** An integer option of at least `minimum`, else `fallback`. */
+export const countOption = (value: unknown, minimum: number, fallback: number) =>
+  typeof value === "number" && Number.isInteger(value) && value >= minimum ? value : fallback
+
+/** The server's `inbox.keepRead`, whole minutes a read finish stays listed, in milliseconds. */
+export const keepRead = (value: unknown) => countOption(inboxOption(value).keepRead, 0, 10) * 60_000
 
 export function trackedSession(info: SessionInfo): TrackedSession {
   return {
@@ -132,6 +145,15 @@ export function activeRoots(projection: Projection, lingering?: Lingering): Acti
   return result
 }
 
+/** Forgets sessions nothing lists or waits on, nor leads to one that does; they are read again if they become active. */
+export function forgetInactive(projection: Projection, lingering?: Lingering) {
+  const needed = new Set(activeRoots(projection, lingering).map((root) => root.id))
+  for (const id of [...Object.keys(projection.status), ...Object.values(projection.requests)]) {
+    for (let current: string | undefined = id; current && !needed.has(current); current = projection.sessions[current]?.parentID) needed.add(current)
+  }
+  for (const id of Object.keys(projection.sessions)) if (!needed.has(id)) delete projection.sessions[id]
+}
+
 /** Roots keep the order in which they became active; newly active ones follow, oldest activity first. */
 export function reorder(previous: readonly string[], active: readonly ActiveRoot[]) {
   const ids = new Set(active.map((root) => root.id))
@@ -211,6 +233,52 @@ export function applyEvent(projection: Projection, event: OpenCodeEvent) {
       return
     }
   }
+}
+
+/**
+ * What a terminal read of the host's running sessions and pending requests, which a server plugin can't read itself.
+ * `listed` are the directories whose requests were read.
+ */
+export interface Observation { running: string[]; requests: Record<string, string>; listed: string[] }
+
+/**
+ * The status entries (session IDs) and requests (their keys) an event decides. Call it before applying the event, so the
+ * requests it removes are known.
+ */
+export function decidedBy(projection: Projection, event: OpenCodeEvent): string[] {
+  const requestsOf = (sessions: Set<string>) => Object.entries(projection.requests).filter(([, sessionID]) => sessions.has(sessionID)).map(([key]) => key)
+  switch (event.type) {
+    case "session.status": case "session.idle": return [event.data.sessionID]
+    case "session.deleted": return [event.data.sessionID, ...requestsOf(new Set([event.data.sessionID]))]
+    case "permission.asked": return [`permission:${event.data.id}`]
+    case "permission.replied": return [`permission:${event.data.requestID}`]
+    case "form.created": return [`form:${event.data.form.id}`]
+    case "form.replied": case "form.cancelled": return [`form:${event.data.id}`]
+    case "location.shutdown": {
+      const directory = event.location?.directory
+      const stopped = new Set(Object.values(projection.sessions).filter((session) => session.directory === directory).map((session) => session.id))
+      return directory ? [...stopped, ...requestsOf(stopped)] : []
+    }
+    default: return []
+  }
+}
+
+/**
+ * Corrects status and requests by an observation, except where an event since decided them: those are newer. A running
+ * session keeps a retry status; one that isn't running is idle. A request missing from the observation is gone once its
+ * session isn't running, or its directory was listed.
+ */
+export function applyObservation(projection: Projection, observation: Observation, decided: (key: string) => boolean) {
+  const running = new Set(observation.running)
+  for (const sessionID of Object.keys(projection.status)) if (!running.has(sessionID) && !decided(sessionID)) delete projection.status[sessionID]
+  for (const sessionID of running) if (!projection.status[sessionID] && !decided(sessionID)) projection.status[sessionID] = "busy"
+  const listed = new Set(observation.listed)
+  for (const [key, sessionID] of Object.entries(projection.requests)) {
+    if (key in observation.requests || decided(key)) continue
+    const directory = projection.sessions[sessionID]?.directory
+    if (!running.has(sessionID) || (directory !== undefined && listed.has(directory))) delete projection.requests[key]
+  }
+  for (const [key, sessionID] of Object.entries(observation.requests)) if (!decided(key)) projection.requests[key] = sessionID
 }
 
 /** Where plugin navigation came from. The back row only shows on the session this plugin last opened. */

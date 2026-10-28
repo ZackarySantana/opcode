@@ -21,7 +21,7 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 }
 ```
 
-**Where it runs.** Install it globally so opened projects keep their index up to date even without the browser open. The server builds and owns the index; the terminal browser searches it over plugin RPC. A client-only install in `cli.json` does not work, because the browser needs the server plugin.
+**Where it runs.** Install it globally so opened projects keep their index up to date even without the browser open. The server builds and owns the index and the Agents list; the terminal's browser and sidebar read them over plugin RPC. A client-only install in `cli.json` does not work, because both need the server plugin.
 
 ## Use
 
@@ -48,7 +48,7 @@ When the dialog is wide enough, the preview shows the newest matching message ce
 
 ## Active sessions
 
-The **Agents** section at the top of the sidebar lists root sessions from every project and location that need attention, numbered in the order they became active. The order doesn't change as their states do:
+The **Agents** section at the top of the sidebar lists root sessions from every project and location that need attention, numbered in the order they became active. The server keeps the list, so every terminal connected to it shows the same rows in the same order. The order doesn't change as their states do:
 
 | Mark | State | When |
 | --- | --- | --- |
@@ -58,13 +58,15 @@ The **Agents** section at the top of the sidebar lists root sessions from every 
 | `↻` | retrying | The session or a subagent is retrying after an error |
 | `○` | working | The session or a subagent is running |
 
-Subagents are rolled up into their root session ("2 agents"); only the root needs to be seen for a finished run to drop out, and archived sessions never appear. A run you've seen stays listed, its mark muted, for `inbox.keepRead` minutes after you first open the session following its finish, however long ago it finished. Opening it again doesn't extend that, and a run that finishes while you watch counts as seen then. The session you are in isn't listed. Each row shows its project, the time since it finished or was last active, and its title. Five rows are shown; "+N more" opens the full list. With no active sessions and no way back, the section is hidden.
+Subagents are rolled up into their root session ("2 agents"); only the root needs to be seen for a finished run to drop out, in every terminal, and archived sessions never appear. A run you've seen stays listed, its mark muted, for `inbox.keepRead` minutes after you first open the session following its finish, in any terminal, however long ago it finished. Opening it again doesn't extend that, and a run that finishes while you watch counts as seen then. The session you are in isn't listed in that terminal. Each row shows its project, the time since it finished or was last active, and its title. Five rows are shown; "+N more" opens the full list. With no active sessions and no way back, the section is hidden.
 
 - Click a row, or run `/go <n>`, to open session n. `/go` alone, or **Go to active session** in the command palette, lists them all.
 - After the plugin takes you somewhere (a sidebar click, `/go`, the list, or opening a session from `/sessions`), a **Back to …** row appears above the list; click it, or run `/back`, `/previous`, or `/go back`. Going back again retraces each step. Switching sessions any other way, such as with tabs or going home, forgets the trail.
 - `/go`, `/back`, and `/previous` are each skipped when another command already uses that name; the palette entries (**Go to active session**, **Go back**) always work.
 
-The list follows the connected server's live events and is rebuilt on every (re)connection, including after 45 seconds without even a keepalive; nothing is stored. The server records only that a run was seen, not when, so a terminal knows when a run was seen only if it was running at the time. Times it has seen survive reconnections and plugin reloads, but not a restart. A finished session outside the newest 100 root sessions appears only once it becomes active again.
+The server plugin reads the newest 100 root sessions when it starts and follows the server's live events; terminals read the whole list again whenever they reconnect. A server plugin can't read which sessions are running or what they ask, so after starting, or whenever it may have missed events, it asks a connected terminal to read that once; until one does, a run that started earlier may be missing. OpenCode records only that a run was seen, not when, so the server knows when a run was seen only if the plugin was running at the time; it keeps those times in memory, not across a server restart. A finished session outside the newest 100 root sessions appears only once it becomes active again.
+
+Alerts (`inbox.notify`), the back trail, and leaving out the session you're in stay with each terminal: every terminal alerts once for each new request or finish the server announces, except in the session family it's on.
 
 ### From other plugins
 
@@ -86,20 +88,21 @@ The server indexes each loaded location and follows session lifecycle, usage, co
 
 ## Options
 
-Set a custom database path on the **server** (`opencode.jsonc`):
+Set these on the **server** (`opencode.jsonc`); they apply to every terminal:
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
-    { "package": "@lidtop/opencode-sessions", "options": { "database": "/absolute/server/path/sessions.sqlite" } }
+    { "package": "@lidtop/opencode-sessions", "options": { "database": "/absolute/server/path/sessions.sqlite", "inbox": { "keepRead": 5 } } }
   ]
 }
 ```
 
 - `database`: where the index is stored. Relative paths resolve from the server's OpenCode state directory; the terminal ignores this option and uses RPC. `:memory:` is useful for tests, not durable history. The default is `$XDG_STATE_HOME/opencode/opencode-sessions-all/sessions.sqlite` (or `~/.local/state/opencode/opencode-sessions-all/sessions.sqlite`).
+- `inbox.keepRead` (default `10`): whole minutes a finished or failed run stays listed after you've seen it; `0` removes it as soon as you open it.
 
-Configure the active-sessions sidebar on the **terminal**: terminal extensions receive options only from global `~/.config/opencode/cli.json`. Keep the server entry too; the terminal loads the plugin once, with these options.
+Configure the rest of the active-sessions sidebar on the **terminal**: terminal extensions receive options only from global `~/.config/opencode/cli.json`. Keep the server entry too; the terminal loads the plugin once, with these options.
 
 ```jsonc
 {
@@ -110,9 +113,8 @@ Configure the active-sessions sidebar on the **terminal**: terminal extensions r
 }
 ```
 
-- `inbox.enabled` (default `true`): `false` removes the sidebar section and its commands (`/go`, `/back`, `/previous`), and stops listening for session events.
+- `inbox.enabled` (default `true`): `false` removes the sidebar section and its commands (`/go`, `/back`, `/previous`) from this terminal, which then stops following the list. The server keeps it for other terminals.
 - `inbox.rows` (default `5`): rows shown before "+N more".
-- `inbox.keepRead` (default `10`): whole minutes a finished or failed run stays listed after you've seen it; `0` removes it as soon as you open it.
 - `inbox.notify` (default `false`): a desktop notification and sound while the terminal is unfocused, plus a toast, for each new permission or question and each finished or failed run, except in the session family you are in. They follow your OpenCode attention settings.
 
 ## Data and privacy
