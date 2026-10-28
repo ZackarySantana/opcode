@@ -2,6 +2,7 @@ import { errorMessage } from "@opcode/core"
 import { consumeLive } from "@opcode/core/live"
 import type { SessionInfo } from "@opencode/client"
 import { Plugin } from "@opencode/plugin"
+import { failover, joinShared, packageVersion } from "@opcode/core/process"
 import { guarded } from "@opcode/core/rpc"
 import { parseActivityBatch, parseImportBatch, parseRange } from "./domain.js"
 import { CostLedger, databasePath } from "./ledger.js"
@@ -14,6 +15,22 @@ import { createThrottle } from "./throttle.js"
 const SESSION_REUSE_MILLISECONDS = 30_000
 /** At most one `updated` event per interval, however fast steps or import batches arrive. */
 const UPDATE_INTERVAL = 2_000
+
+type Emit = () => Promise<void>
+
+/**
+ * The server process's throttle, which every location instance joins with its own emitter: each location writes its
+ * own sessions' usage, and clients receive every location's events, so one event per interval serves them all. It
+ * emits through the oldest member, and the next one's if that fails.
+ */
+function joinUpdates(emit: Emit) {
+  return joinShared(`opcode-cost.updates@${packageVersion(new URL("../package.json", import.meta.url))}`, emit, {
+    start: (members) => createThrottle(() => {
+      failover(members, (member) => member()).catch((error: unknown) => console.warn(`opcode-cost: update event failed: ${errorMessage(error)}`))
+    }, UPDATE_INTERVAL),
+    stop: (throttle) => throttle.dispose(),
+  })
+}
 
 export default Plugin.define({
   id: "opcode-cost",
@@ -83,10 +100,8 @@ export default Plugin.define({
       ledger.close()
       throw error
     }
-    const updates = createThrottle(() => {
-      registration.events.emit("updated", {}).catch((error: unknown) => console.warn(`opcode-cost: update event failed: ${errorMessage(error)}`))
-    }, UPDATE_INTERVAL)
-    written = updates.notify
+    const updates = joinUpdates(() => registration.events.emit("updated", {}))
+    written = updates.value.notify
     // Public subscriptions are live-only. Reconnect, but never pretend this replays missed usage.
     // consumeLive handles one event at a time, so live writes keep event order.
     const events = consumeLive({
@@ -102,7 +117,7 @@ export default Plugin.define({
       controller.abort()
       try { await events } finally {
         await Promise.allSettled(pending)
-        updates.dispose()
+        updates.leave()
         live.clear()
         ledger.close()
       }

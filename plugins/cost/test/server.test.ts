@@ -79,6 +79,41 @@ test("recorded usage emits a throttled updated event; reads and completions do n
   } finally { await cleanup() }
 })
 
+test("every location in the server process shares one updated throttle, emitting through the oldest", async () => {
+  const start = async (directory: string, emitted: string[]) => {
+    let handlers!: Handlers
+    const cleanup = await serverPlugin.setup({
+      options: { database: ":memory:" }, location: { ...location, directory },
+      rpc: { register: async (_definition: unknown, value: Handlers) => { handlers = value; return registration(emitted) } },
+      event: { subscribe: ({ signal }: { signal: AbortSignal }) => (async function* (): AsyncIterable<OpenCodeEvent> { await waitForAbort(signal) })() },
+      session: { get: async () => ({ ...session, location: { directory } }) },
+    } as never)
+    if (!cleanup) throw new Error("Missing cleanup")
+    return { handlers, cleanup }
+  }
+  const first: string[] = []
+  const second: string[] = []
+  const a = await start("/work/a", first)
+  const b = await start("/work/b", second)
+  const usage = usageFromMessage(message)
+  try {
+    await b.handlers.importBatch!({ sessionID: session.id, records: [usage] }, call)
+    await a.handlers.importBatch!({ sessionID: session.id, records: [usage] }, call)
+    // Clients receive every location's events: one for both writes, not one per location.
+    expect(first).toEqual(["updated"])
+    expect(second).toEqual([])
+  } finally {
+    await a.cleanup()
+    await b.cleanup()
+  }
+  // Once the last location leaves, the next one starts a fresh throttle.
+  const c = await start("/work/c", first)
+  try {
+    await c.handlers.importBatch!({ sessionID: session.id, records: [usage] }, call)
+    expect(first).toEqual(["updated", "updated"])
+  } finally { await c.cleanup() }
+})
+
 test("server lifetime cancels a pending RPC read before writing, then closes the ledger", async () => {
   const directory = mkdtempSync(join(tmpdir(), "opcode-cost-server-"))
   const database = join(directory, "cost.sqlite")
