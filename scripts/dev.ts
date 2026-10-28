@@ -5,10 +5,6 @@ import { pathToFileURL } from "node:url"
 import { pluginEntries, pluginIDs, publicPackageName, repositoryRoot } from "./packaging"
 
 type PluginID = typeof pluginIDs[number]
-// Client-local plugins load through the CLI config so their options reach the terminal process: a server-loaded
-// terminal side gets none. A plugin in both configs loads its terminal side once, from the CLI config.
-// Later's server side registers its agent tools, so it is in both.
-const clientLocal: readonly PluginID[] = ["later"]
 type Environment = Record<string, string | undefined>
 const originals = ["opencode-context-tui", "opencode-cost", "opencode-later", "opencode-sessions-all"]
 
@@ -57,7 +53,6 @@ export async function prepareDev(root: string, selected: PluginID[], environment
     entries.push({ id, entry: { package: wrapper, options: { database: join(data, `${id}.sqlite`) } } })
   }
   const disabled = [...originals, ...pluginIDs.map((id) => `opcode-${id}`)].map((id) => `-${id}`)
-  const local = entries.filter(({ id }) => clientLocal.includes(id)).map(({ entry }) => entry)
   const shared = entries.map(({ entry }) => entry)
   return {
     data,
@@ -66,7 +61,7 @@ export async function prepareDev(root: string, selected: PluginID[], environment
       OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...settings, plugins: [...(settings.plugins as unknown[] ?? []), ...disabled, ...shared] }),
       // Use the server-provided extensions, excluding old CLI-only copies too.
       // Theme, keybinds, and other CLI settings remain inherited.
-      OPENCODE_CLI_CONFIG_CONTENT: JSON.stringify({ ...cli, plugins: ["*", ...originals.map((id) => `-${id}`), ...local] }),
+      OPENCODE_CLI_CONFIG_CONTENT: JSON.stringify({ ...cli, plugins: ["*", ...originals.map((id) => `-${id}`)] }),
     },
   }
 }

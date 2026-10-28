@@ -1,24 +1,20 @@
 import { afterEach, expect, test } from "bun:test"
-import { Database } from "bun:sqlite"
 import type { Context, Route } from "@opencode/plugin/tui/context"
 import { CliRenderEvents } from "@opentui/core"
 import { EventEmitter } from "node:events"
-import { join } from "node:path"
-import { tempDir } from "@opcode/ui/test-support/host"
+import { closeServers, eventually, stopped } from "@opcode/core/test-support/server"
 import { LaterController } from "../src/host"
-import { LaterDatabase } from "../src/sqlite"
+import { find, laterServer, messages, read, remote } from "./fixture"
 
 const cleanup: Array<() => void> = []
 afterEach(() => { for (const stop of cleanup.splice(0).reverse()) stop() })
+afterEach(closeServers)
 
-/** A controller over a real database, with the host's dialog stack: showing a dialog closes the one it replaces. */
+/** A controller on a fake server, with the host's dialog stack: showing a dialog closes the one it replaces. */
 function harness(initial: Route = { type: "home" }) {
-  const directory = tempDir("opcode-later-host-")
-  cleanup.push(directory.remove)
-  const path = join(directory.path, "later.sqlite")
-  const database = new LaterDatabase(path)
-  const external = new LaterDatabase(path)
-  cleanup.push(() => database.close(), () => external.close())
+  const f = laterServer()
+  /** Another terminal on the same server. */
+  const external = remote(f.server, "/elsewhere")
   let route = initial
   let dialog: { name: string; onClose?: () => void } | undefined
   let answer: ((value: unknown) => void) | undefined
@@ -62,13 +58,28 @@ function harness(initial: Route = { type: "home" }) {
       dialog: { show: (_render: unknown, onClose?: () => void) => show("later", onClose), set: () => {}, clear, prompt: () => native(), confirm: () => native() },
     },
   }
-  const host = new LaterController(api as unknown as Context, database, () => null as never)
+  const host = new LaterController(api as unknown as Context, remote(f.server), () => null as never, stopped)
   cleanup.push(() => host.dispose())
   return {
-    host, database, external, pastes, toasts, api, path,
+    host, server: f.server, external, pastes, toasts, api,
+    /** The stored list. */
+    stored: () => read(f.server),
+    /** Adds an item from elsewhere, and waits until this terminal shows it. */
+    async add(text: string) {
+      const { id } = await external.add(text)
+      await eventually(() => expect(host.list().active.some((item) => item.id === id)).toBe(true))
+      return id
+    },
+    /** The item as this terminal shows it. */
+    item: (id: string) => find(host.list(), id),
+    /** Waits until this terminal shows the stored list. */
+    async settled() {
+      const stored = await read(f.server)
+      await eventually(() => expect(host.list().active).toEqual(stored.active))
+      expect(host.list().completed).toEqual(stored.completed)
+    },
     dialog: () => dialog?.name,
     route: () => route,
-    navigate: (next: Route) => { route = next },
     answer: (value: unknown) => answer!(value),
     dismiss: clear,
     /** Another dialog, such as the command palette, replaces whatever is showing. */
@@ -79,8 +90,6 @@ function harness(initial: Route = { type: "home" }) {
   }
 }
 
-const messages = (database: LaterDatabase) => database.snapshot().active.map((item) => item.message)
-
 test("add, edit, and delete prompts replace the dialog, which reopens with their result", async () => {
   const h = harness()
   h.host.open()
@@ -89,49 +98,52 @@ test("add, edit, and delete prompts replace the dialog, which reopens with their
   h.answer("one")
   await pending
   expect(h.dialog()).toBe("later")
-  expect(messages(h.database)).toEqual(["one"])
+  expect(messages(await h.stored())).toEqual(["one"])
+  // The answer shows at once, without waiting for the announcement.
+  expect(messages(h.host.list())).toEqual(["one"])
 
-  pending = h.host.edit(h.database.snapshot().active[0]!)
+  pending = h.host.edit(h.host.list().active[0]!)
   h.answer("edited")
   await pending
   pending = h.host.add()
   h.dismiss()
   await pending
   expect(h.dialog()).toBe("later")
-  expect(messages(h.database)).toEqual(["edited"])
+  expect(messages(await h.stored())).toEqual(["edited"])
 
   pending = h.host.add()
   h.answer(" \n ")
   await pending
   expect(h.toasts.at(-1)).toMatchObject({ variant: "error", message: "Message cannot be empty" })
 
-  const removing = h.host.remove(h.database.snapshot().active[0]!)
+  const removing = h.host.remove(h.host.list().active[0]!)
   h.answer(true)
   expect(await removing).toBe(true)
   expect(h.dialog()).toBe("later")
-  expect(h.database.snapshot().active).toEqual([])
+  expect((await h.stored()).active).toEqual([])
 })
 
-test("agent tools turn back on only after the user confirms, even from a stale view, and turn off at once", async () => {
+test("agent tools turn back on only after the user confirms, and turn off at once", async () => {
   const h = harness()
   h.host.open()
   // Another terminal turned them off; changing the sidebar count here leaves them off.
-  h.external.saveSettings({ sidebarItems: 5, agentTools: false })
+  await h.external.settings({ agentTools: false })
   await h.host.updateSettings({ sidebarItems: 10 })
-  expect(h.external.settings()).toEqual({ sidebarItems: 10, agentTools: false })
+  expect((await h.stored()).settings).toEqual({ sidebarItems: 10, agentTools: false })
+  expect(h.host.settings()).toEqual({ sidebarItems: 10, agentTools: false })
 
   let pending = h.host.updateSettings({ agentTools: true })
   expect(h.dialog()).toBe("native")
   h.answer(false)
   await pending
-  expect(h.external.settings().agentTools).toBe(false)
+  expect((await h.stored()).settings.agentTools).toBe(false)
   pending = h.host.updateSettings({ agentTools: true })
   h.answer(true)
   await pending
-  expect(h.external.settings().agentTools).toBe(true)
+  expect((await h.stored()).settings.agentTools).toBe(true)
 
   await h.host.updateSettings({ agentTools: false })
-  expect(h.external.settings().agentTools).toBe(false)
+  expect((await h.stored()).settings.agentTools).toBe(false)
 })
 
 test("a dialog that replaces a prompt stays open, and the prompt's answer is dropped", async () => {
@@ -141,70 +153,82 @@ test("a dialog that replaces a prompt stays open, and the prompt's answer is dro
   h.interrupt()
   await pending
   expect(h.dialog()).toBe("other")
-  expect(h.database.revision()).toBe(0)
+  expect((await h.stored()).revision).toBe(0)
 })
 
 test("prompts answered for an item that changed meanwhile never overwrite the newer content", async () => {
   const h = harness()
-  const id = h.database.add("original", 1)
+  const id = await h.add("original")
   h.host.open()
-  const editing = h.host.edit(h.database.get(id)!)
-  h.external.edit(h.external.get(id)!, "newer", 2)
+  const editing = h.host.edit(h.item(id))
+  await h.external.edit(find(await h.stored(), id), "newer")
   h.answer("stale edit")
   await editing
-  expect(h.database.get(id)?.message).toBe("newer")
-  const deleting = h.host.remove(h.database.get(id)!)
-  h.external.edit(h.external.get(id)!, "newest", 3)
+  expect(find(await h.stored(), id).message).toBe("newer")
+  expect(h.toasts.at(-1)?.variant).toBe("warning")
+  await h.settled()
+  const deleting = h.host.remove(h.item(id))
+  await h.external.edit(find(await h.stored(), id), "newest")
   h.answer(true)
   expect(await deleting).toBe(false)
-  expect(h.database.get(id)?.message).toBe("newest")
+  expect(find(await h.stored(), id).message).toBe("newest")
   expect(h.toasts.at(-1)?.variant).toBe("warning")
 })
 
-test("completing an item deleted elsewhere never completes another, and restoring appends", () => {
+test("completing an item deleted elsewhere never completes another, and restoring appends", async () => {
   const h = harness()
-  const first = h.database.add("first", 1)
-  const second = h.database.add("second", 2)
-  h.host.refresh()
-  const seen = h.host.snapshot().active[0]!
-  h.external.delete(h.external.get(first)!)
-  expect(h.host.toggle(seen)).toBe(false)
-  expect(h.database.get(second)?.completedAt).toBeUndefined()
-  expect(h.host.toggle(h.database.get(second)!)).toBe(true)
-  h.database.add("third", 3)
-  expect(h.host.toggle(h.database.get(second)!)).toBe(true)
-  expect(messages(h.database)).toEqual(["third", "second"])
+  const first = await h.add("first")
+  const second = await h.add("second")
+  const seen = h.item(first)
+  await h.external.delete(find(await h.stored(), first))
+  expect(await h.host.toggle(seen)).toBe(false)
+  expect(find(await h.stored(), second).completedAt).toBeUndefined()
+  expect(await h.host.toggle(h.item(second))).toBe(true)
+  await h.add("third")
+  expect(await h.host.toggle(h.item(second))).toBe(true)
+  expect(messages(await h.stored())).toEqual(["third", "second"])
 })
 
-test("pending prompts are dropped on unload, even once the database is closed", async () => {
+test("quick moves of one item each apply", async () => {
   const h = harness()
-  h.database.add("original")
+  const id = await h.add("first")
+  await h.add("second")
+  await h.add("third")
+  const item = h.item(id)
+  // Sent before either answer arrives, from the same view of the item.
+  await Promise.all([h.host.move(item, 1), h.host.move(item, 1), h.host.move(item, 1)])
+  expect(messages(await h.stored())).toEqual(["second", "third", "first"])
+  expect(h.toasts).toEqual([])
+})
+
+test("pending prompts are dropped on unload", async () => {
+  const h = harness()
+  const id = await h.add("original")
   h.host.open()
-  const editing = h.host.edit(h.database.snapshot().active[0]!)
+  const editing = h.host.edit(h.item(id))
   h.host.dispose()
-  h.database.close()
   h.answer("must not save")
   await editing
-  expect(h.external.snapshot().active[0]?.message).toBe("original")
+  expect(messages(await h.stored())).toEqual(["original"])
 })
 
 test.each([{ type: "home" }, { type: "session", sessionID: "session-1" }] as const)("paste closes the dialog, pastes into the %j prompt behind it, and completes", async (origin) => {
   const h = harness(origin)
-  h.database.add("café ☕\nadd tests")
+  const id = await h.add("café ☕\nadd tests")
   h.host.open()
-  await h.host.paste(h.database.snapshot().active[0]!)
+  await h.host.paste(h.item(id))
   expect(h.dialog()).toBeUndefined()
   expect(h.route()).toEqual(origin)
   expect(h.pastes).toEqual(["café ☕\nadd tests"])
-  expect(h.database.snapshot().active).toEqual([])
+  expect((await h.stored()).active).toEqual([])
   expect(h.toasts.at(-1)?.variant).toBe("success")
 })
 
 test("over another plugin's page, paste leaves the dialog and the item alone", async () => {
   const h = harness({ type: "plugin", id: "other", name: "other.page" })
-  h.database.add("keep me")
+  const id = await h.add("keep me")
   h.host.open()
-  await h.host.paste(h.database.snapshot().active[0]!)
+  await h.host.paste(h.item(id))
   expect(h.dialog()).toBe("later")
   expect(h.pastes).toEqual([])
   expect(h.toasts.at(-1)?.variant).toBe("warning")
@@ -212,43 +236,61 @@ test("over another plugin's page, paste leaves the dialog and the item alone", a
 
 test("a prompt that never becomes ready keeps the item and allows another paste", async () => {
   const h = harness()
-  h.database.add("keep me")
+  const id = await h.add("keep me")
   h.ready(false)
-  await h.host.paste(h.database.snapshot().active[0]!)
-  expect(h.database.snapshot().active).toHaveLength(1)
+  await h.host.paste(h.item(id))
+  expect((await h.stored()).active).toHaveLength(1)
   expect(h.toasts.at(-1)?.variant).toBe("error")
   h.ready(true)
-  await h.host.paste(h.database.snapshot().active[0]!)
+  await h.host.paste(h.item(id))
   expect(h.pastes).toEqual(["keep me"])
 })
 
 test("an edit elsewhere before delivery cancels the paste, but completing an unrelated item does not", async () => {
   const h = harness()
-  const above = h.database.add("above", 1)
-  const target = h.database.add("paste me", 2)
+  const above = await h.add("above")
+  const target = await h.add("paste me")
   let frame = Promise.withResolvers<void>()
   h.frame(frame.promise)
-  let pending = h.host.paste(h.database.get(target)!)
-  h.external.edit(h.external.get(target)!, "new text", 3)
+  let pending = h.host.paste(h.item(target))
+  await h.external.edit(find(await h.stored(), target), "new text")
+  await eventually(() => expect(h.item(target).message).toBe("new text"))
   frame.resolve()
   await pending
   expect(h.pastes).toEqual([])
-  expect(h.database.get(target)).toMatchObject({ message: "new text", completedAt: undefined })
+  expect(find(await h.stored(), target)).toMatchObject({ message: "new text" })
+  expect(find(await h.stored(), target).completedAt).toBeUndefined()
 
   frame = Promise.withResolvers<void>()
   h.frame(frame.promise)
-  pending = h.host.paste(h.database.get(target)!)
-  h.external.complete(h.external.get(above)!, 4)
+  pending = h.host.paste(h.item(target))
+  await h.external.complete(find(await h.stored(), above))
+  await eventually(() => expect(h.item(above).completedAt).toBeDefined())
   frame.resolve()
   await pending
   expect(h.pastes).toEqual(["new text"])
-  expect(h.database.get(target)?.completedAt).toBeDefined()
+  expect(find(await h.stored(), target).completedAt).toBeDefined()
+})
+
+test("an edit elsewhere the terminal hasn't heard of yet stops the paste's completion", async () => {
+  const h = harness()
+  const id = await h.add("original")
+  const item = h.item(id)
+  // Saved before the paste completes the item, but announced only later.
+  const editing = Promise.withResolvers<void>()
+  h.pasteHook(() => { void h.external.edit(item, "newer").then(() => editing.resolve()) })
+  const pasting = h.host.paste(item)
+  await editing.promise
+  await pasting
+  expect(h.pastes).toEqual(["original"])
+  expect(find(await h.stored(), id)).toMatchObject({ message: "newer" })
+  expect(find(await h.stored(), id).completedAt).toBeUndefined()
+  expect(h.toasts.at(-1)?.variant).toBe("warning")
 })
 
 test("repeated paste while the prompt mounts delivers once", async () => {
   const h = harness()
-  h.database.add("once")
-  const item = h.database.snapshot().active[0]!
+  const item = h.item(await h.add("once"))
   const frame = Promise.withResolvers<void>()
   h.frame(frame.promise)
   const pending = h.host.paste(item)
@@ -258,46 +300,51 @@ test("repeated paste while the prompt mounts delivers once", async () => {
   expect(h.pastes).toEqual(["once"])
 })
 
-test("unloading during a pending paste never touches the closed database", async () => {
+test("unloading during a pending paste pastes and changes nothing", async () => {
   const h = harness()
-  h.database.add("keep me")
+  const id = await h.add("keep me")
   const frame = Promise.withResolvers<void>()
   h.frame(frame.promise)
-  const pending = h.host.paste(h.database.snapshot().active[0]!)
+  const pending = h.host.paste(h.item(id))
   h.host.dispose()
-  h.database.close()
   await pending
   frame.resolve()
   expect(h.pastes).toEqual([])
-  expect(h.external.snapshot().active).toHaveLength(1)
+  expect((await h.stored()).active).toHaveLength(1)
   expect(h.toasts).toEqual([])
 })
 
-test("a failed paste or a change during delivery leaves the item active", async () => {
+test("a failed paste leaves the item active", async () => {
   const h = harness()
-  const id = h.database.add("original", 1)
+  const id = await h.add("original")
   h.pasteHook(() => { throw new Error("paste failed") })
-  await h.host.paste(h.database.get(id)!)
+  await h.host.paste(h.item(id))
   expect(h.toasts.at(-1)?.message).toBe("paste failed")
-  h.pasteHook(() => { h.external.edit(h.external.get(id)!, "newer", 2) })
-  await h.host.paste(h.database.get(id)!)
-  expect(h.pastes).toEqual(["original"])
-  expect(h.database.get(id)).toMatchObject({ message: "newer", completedAt: undefined })
-  expect(h.toasts.at(-1)?.variant).toBe("warning")
+  expect(find(await h.stored(), id).completedAt).toBeUndefined()
 })
 
-test("a database failure after paste warns that the text was already delivered", async () => {
+test("a failure saving the completion warns that the text was already delivered", async () => {
   const h = harness()
-  h.database.add("already pasted")
-  const raw = new Database(h.path)
-  try {
-    raw.exec("CREATE TRIGGER reject_completion BEFORE UPDATE ON metadata BEGIN SELECT RAISE(ABORT, 'completion failed'); END")
-    await h.host.paste(h.database.snapshot().active[0]!)
-    expect(h.pastes).toEqual(["already pasted"])
-    expect(h.external.snapshot().active).toHaveLength(1)
-    expect(h.toasts.at(-1)).toMatchObject({ variant: "error" })
-    expect(h.toasts.at(-1)?.message).toContain("Text was pasted")
-  } finally { raw.close() }
+  const id = await h.add("already pasted")
+  h.pasteHook(() => { h.server.faults.set = true })
+  await h.host.paste(h.item(id))
+  expect(h.pastes).toEqual(["already pasted"])
+  h.server.faults.set = false
+  expect((await h.stored()).active).toHaveLength(1)
+  expect(h.toasts.at(-1)).toMatchObject({ variant: "error" })
+  expect(h.toasts.at(-1)?.message).toContain("Text was pasted")
+  expect(h.toasts.at(-1)?.message).toContain("disk full")
+})
+
+test("a list that can't be read is said once, not on every retry", async () => {
+  const h = harness()
+  h.server.faults.get = true
+  h.host.refresh()
+  await eventually(() => expect(h.toasts.at(-1)?.message).toContain("can't be read right now"))
+  h.host.refresh()
+  h.host.refresh()
+  await Bun.sleep(20)
+  expect(h.toasts.filter((toast) => toast.message.includes("can't be read"))).toHaveLength(1)
 })
 
 test("unloading closes the open dialog or pending prompt once", async () => {

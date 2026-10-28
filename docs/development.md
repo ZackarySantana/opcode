@@ -20,9 +20,8 @@ built-in `/sessions` command). Relaunch after editing code to rebuild.
 Preview plugin databases persist in `.release/dev/data`, separate from the
 original plugins' databases. The launcher temporarily replaces the four
 originals and uses the preview extensions instead of your CLI-only plugin list.
-Later is configured on the CLI side so its client-local database option reaches
-the TUI. It is configured on the server side too, with the same database, for
-its agent tools; OpenCode still loads its TUI once.
+Every plugin is configured on the server side, which also serves its terminal
+side, so no plugin is configured on the CLI side.
 
 OpenCode loads every configured plugin before applying removals, so a published
 `@lidtop/opencode-*` copy in your global `opencode.json(c)` or `cli.json` would

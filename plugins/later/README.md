@@ -1,6 +1,6 @@
 # @lidtop/opencode-later
 
-Save the next idea without interrupting the current one. Keep a shared Later list across your local projects and sessions, visible in the sidebar, and paste an item into your prompt when it's time. Nothing runs automatically.
+Save the next idea without interrupting the current one. Keep one Later list across your projects, sessions, and terminals, visible in the sidebar, and paste an item into your prompt when it's time. Nothing runs automatically.
 
 [![Watch the Later demo: an idea saved for later by the agent, then reordered and pasted back into the prompt](https://raw.githubusercontent.com/ZackarySantana/opcode/main/docs/images/later-demo.jpg)](https://github.com/user-attachments/assets/6c145b7c-be82-4ebe-a735-9e40ba2706d9)
 
@@ -27,7 +27,9 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 }
 ```
 
-**Where it runs.** The list is a SQLite file on the machine running the terminal. The terminal view reads and edits it; the server side only gives the agent [tools](#agent-tools) for the same file. An `opencode.json(c)` entry loads both sides, and OpenCode loads the terminal view automatically. To keep Later in the terminal only, without agent tools, put the entry in global `~/.config/opencode/cli.json` instead.
+**Where it runs.** The server side keeps the list and its settings in the OpenCode server's plugin storage and gives the agent its [tools](#agent-tools); the sidebar and `/later` in the terminal show and change that list over plugin RPC (both parts use the ID `opcode-later`). Configure it where the server reads plugins (this config, or the remote server's), not in `cli.json`: a terminal-only install has no server side to ask, and `/later` says to add it to the server's plugins.
+
+**One list.** Every terminal connected to the same server, and the agent in every project, shares one list and its settings. A change anywhere shows in every open sidebar and `/later` dialog right away.
 
 ## Use
 
@@ -53,7 +55,7 @@ Adding, editing, and deleting open OpenCode's own prompt in place of the dialog,
 
 Duplicates are allowed. Items are trimmed and cannot be empty. Active numbers follow display order and are reassigned after removing or reordering. Restoring an item appends it to the active list. Nothing is captured from sessions automatically.
 
-The sidebar lists the first active items, 5 by default, and "+N more in /later" for the rest; click it to open the dialog. Change the count in **Settings** (3, 5, 10, 15, or 20). The section is omitted when there are no active items; the plugin never forces the sidebar open. Changes from another local client or the agent's tools using the same database appear automatically, normally within 350 ms. Edits, deletes, and pastes of an item that changed elsewhere are rejected rather than applied to a newer version.
+The sidebar lists the first active items, 5 by default, and "+N more in /later" for the rest; click it to open the dialog. Change the count in **Settings** (3, 5, 10, 15, or 20). The section is omitted when there are no active items; the plugin never forces the sidebar open. Changes from another terminal or the agent's tools appear automatically. Edits, completions, deletes, and pastes of an item that changed elsewhere are rejected rather than applied to a newer version. While the server can't read the stored list, `/later` says so and changes are refused, rather than starting an empty list over it; it tries again on its own.
 
 ### Paste limitations
 
@@ -72,45 +74,19 @@ When the server side is loaded (an `opencode.json(c)` entry), the agent can mana
 | `later_edit` | Replaces an item's text, moves an active item to history, or restores a completed one to the end of the list |
 | `later_delete` | Deletes an item permanently, **after you approve it** in OpenCode's permission prompt, which shows the item's text |
 
-Adding and editing don't ask: an edit's result in the transcript includes the previous text, and a completed item can be restored. Deleting asks unless your permission rules already allow or deny `later_delete`. If the item changes while you decide, it is not deleted. Changes show up in an open `/later` dialog and the sidebar within a poll.
+Adding and editing don't ask: an edit's result in the transcript includes the previous text, and a completed item can be restored. Deleting asks unless your permission rules already allow or deny `later_delete`. If the item changes while you decide, it is not deleted. Changes show up in an open `/later` dialog and the sidebar right away.
 
-To stop the agent using them, set **Agent tools** to off in `/later` **Settings**. Sessions created after that don't get the tools. Older sessions keep them listed, so their requests stay the same and keep hitting the provider's prompt cache, but every call is refused. Turning the tools back on asks first: it adds them to every open session's request, so each one's next message misses the prompt cache once. The setting is shared through the database and applies from the next request, without a restart.
-
-The tools edit the list on **the server's machine**. With a local server that is the terminal's own list. With a remote server they edit a separate list on that machine, not the one in your sidebar, and follow that list's **Agent tools** setting, not yours; load Later from `cli.json` alone there if that would be confusing.
-
-## Options
-
-```jsonc
-// ~/.config/opencode/opencode.jsonc: the server side, for the agent's tools
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugins": [
-    { "package": "@lidtop/opencode-later", "options": { "database": "/absolute/path/later.sqlite" } }
-  ]
-}
-```
-
-```jsonc
-// ~/.config/opencode/cli.json: the terminal view
-{
-  "$schema": "https://opencode.ai/v2/cli.json",
-  "plugins": [
-    { "package": "@lidtop/opencode-later", "options": { "database": "/absolute/path/later.sqlite" } }
-  ]
-}
-```
-
-- `database`: where the list is stored. Relative paths resolve from `$XDG_STATE_HOME/opencode` (or `~/.local/state/opencode`) of the process that opens it, not the project directory. Paths are trimmed; `~` is not expanded. Different paths create different lists. The default is `$XDG_STATE_HOME/opencode/opencode-later/later.sqlite` (or `~/.local/state/opencode/opencode-later/later.sqlite`).
-
-The terminal view loaded from an `opencode.json(c)` entry receives no options (OpenCode 2.1.3), so the default needs only that entry, but **a custom `database` needs both entries above, with the same path**: the server's for the tools, `cli.json`'s for the terminal. OpenCode then loads the terminal view once, from `cli.json`.
+To stop the agent using them, set **Agent tools** to off in `/later` **Settings**. Sessions created after that don't get the tools. Older sessions keep them listed, so their requests stay the same and keep hitting the provider's prompt cache, but every call is refused. Turning the tools back on asks first: it adds them to every open session's request, so each one's next message misses the prompt cache once. The setting is shared by every terminal on the server and applies from the next request, without a restart.
 
 ## Data and privacy
 
-The database stores the item text you enter, IDs, positions, timestamps, and a revision counter. It collects no session or project metadata, but item text can contain anything you type. It also keeps the sidebar item count and, while agent tools are off, when they were turned off. It is not encrypted: protect its directory, file, WAL sidecars, and backups. Close all clients and OpenCode servers before moving or replacing it, and keep the WAL sidecars when backing up an open database. Later does not use OpenCode's own database or any server RPC; the agent's tools open the same file directly.
+The server's plugin storage keeps the item text you enter, IDs, order, timestamps, a revision counter, the sidebar item count, and, while agent tools are off, when they were turned off. It collects no session or project metadata, but item text can contain anything you type, and it is sent to the terminals connected to the server. Nothing else is sent anywhere.
+
+Earlier versions kept the list in `opencode-later/later.sqlite` in the terminal's OpenCode state directory (`$XDG_STATE_HOME/opencode`, or `~/.local/state/opencode`), or a custom `database` path. That list is not carried over: re-add the items you want to keep, then you can delete the file. The `database` option is gone.
 
 ## Replacing opencode-later
 
-The default database path and its `items` and `metadata` schema are the same as `opencode-later`'s, so IDs, order, timestamps, history, and the revision counter carry over without conversion. Remove the old entry and install this package instead; keep any custom `database` path and set it as in [Options](#options). Do not run both: they share `/later`, the sidebar, and the default database.
+Its SQLite list is not imported, as above. Remove the old entry and install this package instead. Do not run both: they share `/later` and the sidebar.
 
 ## Development
 

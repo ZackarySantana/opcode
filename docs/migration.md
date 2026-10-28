@@ -24,9 +24,9 @@ npm scope to slash commands, RPC IDs, or filesystem paths.
 
 ## Data
 
-Opcode uses stable plugin IDs. Later preserves its existing client-local SQLite
-path and schema, so its active list and history remain available without an
-import. Do not run both versions at once. Back up your database before switching.
+Opcode uses stable plugin IDs. Later keeps its list in the server's plugin
+storage and does not import opencode-later's SQLite list: re-add the items you
+want to keep before removing the old plugin. Do not run both at once.
 Cost and Sessions preserve their legacy local database paths, but the server
 now owns those databases and exposes them through plugin RPC. A remote client
 therefore sees the connected server's ledger/index, not its own local copy.
@@ -41,5 +41,4 @@ Before switching your daily setup, exercise commands in OpenCode 2.1.1 or a
 compatible V2 release; check narrow terminal layouts, Escape/keyboard handling,
 theme changes, plugin reload cleanup, and remote-client behavior. Cost requires
 its server entrypoint on the connected server, as do Sessions and Context's tool
-inventory. Later's list remains client-local even
-when the connected server is remote; its agent tools then edit a list on the server's machine.
+inventory, and Later, whose list is the connected server's.

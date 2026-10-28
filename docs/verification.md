@@ -80,8 +80,8 @@ your only copy of a production ledger or session index.
   row disappears after navigating with host tabs.
 - Reload/disable each plugin while its view and a request are active. Check
   route restoration, no stray timers/listeners, and no closed-database errors.
-- Repeat Cost and Sessions with a remote server. They must use that server's
-  ledger/index. Later and explicit Context exports remain client-local.
+- Repeat Cost, Sessions, and Later with a remote server. They must use that
+  server's ledger/index/list. Explicit Context exports remain client-local.
 - Check light/dark themes, live theme changes, keyboard focus, a short terminal,
   and long labels without relying on host renderable internals.
 

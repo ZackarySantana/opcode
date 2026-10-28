@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | Context | Recorded telemetry and observable retained-context estimate | Public history/context/catalog reads; read-only tool RPC | Session dialog and explicit metadata export |
 | Cost | Normalized usage ledger and date/entity aggregates | Server-owned SQLite, live events, RPC; client history import | Overview/Models/Projects/Daily/Turns dialog with a date picker |
-| Later | Ordered active items, completed history, and settings | Client-local SQLite, also opened by server-side agent tools; isolated prompt-paste bridge | Later/History/Settings dialog, native edit/confirmation dialogs, sidebar |
+| Later | Ordered active items, completed history, and settings | One server-process service shared by every location: the whole list as one server plugin storage document, changed one read-modify-write at a time; RPC with a change event and the agent tools both use it; terminals follow it live; isolated prompt-paste bridge | Later/History/Settings dialog, native edit/confirmation dialogs, sidebar |
 | Sessions | Searchable user/assistant text and session metadata; active sessions projected from server state | Server-owned SQLite, live events, RPC; client history import; client-side snapshot plus live events for active sessions | Browser, filters, preview, active-sessions sidebar, `/go` |
 | Feed | Subscriptions, settings, and an interpreted timeline of feed items | One server-process service shared by every location: server plugin storage, the refresh schedule, feed fetching, RPC with a change event; terminals follow it live | Status/Upcoming/Releases/Subscribe/Settings dialog, feed picker, sidebar |
 | GH PR Status | Pull requests classified by what waits on you, settings, and a saved team filter | One server-process service shared by every location: server plugin storage, the refresh schedule, `gh` GraphQL and REST calls, RPC with a change event; terminals follow it live | Mine/Reviewing/Teams/Settings dialog, team picker, sidebar |
@@ -15,9 +15,10 @@
 | Review | Patch rows and segments, line comments that follow their text, delivery states, viewed-by-patch-hash, the review message, names and definitions per language, usages arranged against the diff | Host session/VCS diffs and inbox; synced terminal storage; server plugin storage, prompt/context hooks, a reply tool, RPC; language servers from OpenCode's `lsp` config in a server-side pool, ripgrep / `git grep` | Session panel with the file tree or paths and the diff, inline comment editor, usages list, search, comments list, read-only file view, options menu |
 
 Later is deliberately not an execution engine: starting an item pastes it into
-the existing prompt, without submission. Its server side only registers agent
-tools on its SQLite file, resolved the same way on the server's machine, so they
-reach the terminal's list only with a local server; deleting asks for permission.
+the existing prompt, without submission. Its server owns the list, so terminals
+and the agent tools change the same one; deleting asks for permission. Changes
+name the item as the caller saw it, and one that changed elsewhere first is
+refused rather than applied to the newer text.
 Cost is recorded message telemetry,
 not an invoice. Context estimates visible retained content, not the exact hidden
 provider payload. Sessions stores conversation text; treat its database as
@@ -117,8 +118,13 @@ polled from an outside service. The shared parts live in `@opcode/core`:
   state from one's memory could undo the other's changes. Feed's subscriptions and settings are read, changed, and
   written back on each change, one change at a time through a queue `joinShared` keys without the version, so every
   version's service shares it.
-- **Announcements gather.** Feed announces its state 100 ms after a change, with the changes made meanwhile, so a
-  refresh of many feeds isn't announced feed by feed.
+- **Later keeps no copy.** Later's items can't be recreated, so reads load the stored document, which fails rather
+  than reading as empty, and every change, from a terminal or an agent tool, loads, changes, and saves it through the
+  same kind of unversioned queue. The document's revision orders every state either version announces (one constant
+  service identity), so `followState` keeps the newest. It's one document rather than a key per item, since storage
+  has no transactions: each change is a single atomic `set`.
+- **Announcements gather.** Feed and Later announce their state 100 ms after a change, with the changes made
+  meanwhile, so a refresh of many feeds isn't announced feed by feed.
 - **Optimistic changes (`@opcode/core/pending`).** A client shows its pending changes over the server's state, sends
   them in order, and drops each once answered, so quick changes build on each other and a refused one is undone.
 - **News that stopped.** A client whose state's next refresh is long overdue reads it again (`createOverdue`), which
@@ -130,7 +136,7 @@ polled from an outside service. The shared parts live in `@opcode/core`:
   `closeServers` for `afterEach`.
 
 `@opcode/core` contains small host-independent utilities, including the XDG
-state directory and owner-only WAL SQLite setup shared by Cost, Later, and
+state directory and owner-only WAL SQLite setup shared by Cost and
 Sessions, live-subscription reconnection, superseding refreshes, the refresh schedule
 that GH PR Status's and Feed's servers run, and the server-owned shared state modules above. Domain models stay in
 their plugin. Share recurring behavior after it appears, rather than building a
