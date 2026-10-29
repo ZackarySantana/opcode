@@ -79,7 +79,7 @@
     },
     "plugins/feed": {
       "name": "@lidtop/opencode-feed",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/tabs": "workspace:*",
@@ -95,7 +95,7 @@
     },
     "plugins/gh-pr-status": {
       "name": "@lidtop/opencode-gh-pr-status",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@opcode/core": "workspace:*",
         "@opcode/tabs": "workspace:*",

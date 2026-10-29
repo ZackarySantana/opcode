@@ -1,5 +1,11 @@
 # @lidtop/opencode-gh-pr-status
 
+## 0.4.0
+
+### Minor Changes
+
+- 4fe433a: Add a refresh button at the right end of the sidebar section's title line, beside the countdown to the next refresh.
+
 ## 0.3.0
 
 ### Minor Changes
