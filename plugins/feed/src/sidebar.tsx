@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 
-import { More, SidebarItem, useClick, useRefreshCountdown } from "@opcode/tabs"
+import { More, RefreshButton, SidebarItem, useClick, useRefreshCountdown } from "@opcode/tabs"
 import { age } from "@opcode/tabs/format"
 import { openLink } from "@opcode/tabs/open"
 import { Section, usePalette } from "@opcode/ui"
@@ -20,7 +20,7 @@ export function Sidebar(props: { feeds: FeedsClient }) {
   return (
     <Show when={props.feeds.subscriptions().length || props.feeds.error()}>
       <box paddingTop={1}>
-        <Section title="Feeds" detail={countdown()}>
+        <Section title="Feeds" detail={countdown()} action={<RefreshButton refreshing={props.feeds.refreshing()} refresh={() => props.feeds.refresh()} />}>
           <Show when={layout().entries.length || layout().upcoming.length || view().unreachable.length || props.feeds.error()}>
             <box flexDirection="column" minWidth={0} gap={1}>
               <For each={layout().entries}>{(entry) => (

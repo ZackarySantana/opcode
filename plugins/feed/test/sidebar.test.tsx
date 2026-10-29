@@ -63,6 +63,23 @@ test("clicking a sidebar item opens its link like enter in /feed, and the /feed 
   }
 })
 
+test("the refresh button beside the title fetches every feed again", async () => {
+  let fetches = 0
+  const { feeds, view, dispose } = await mount("", remote(fakeServer({ plugin: serverPlugin(async () => { fetches++; return rss }, { timer: stopped }) })))
+  try {
+    feeds.subscribe("https://npm.test/rss", "status")
+    await eventually(() => expect(feeds.results().get("https://npm.test/rss")?.status).toBe("ok"))
+    const before = fetches
+    const lines = (await view.waitForFrame((frame) => frame.includes("↻"))).split("\n")
+    const y = lines.findIndex((line) => line.includes("↻"))
+    expect(lines[y]).toContain("Feeds")
+    await view.mockMouse.click(lines[y]!.indexOf("↻"), y)
+    await eventually(() => expect(fetches).toBe(before + 1))
+  } finally {
+    await dispose()
+  }
+})
+
 test("operational status pages stay out of the sidebar", async () => {
   const { feeds, view, dispose } = await mount("<rss><channel><title>Quiet</title></channel></rss>")
   try {

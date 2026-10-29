@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 
-import { More, SidebarItem, useRefreshCountdown } from "@opcode/tabs"
+import { More, RefreshButton, SidebarItem, useRefreshCountdown } from "@opcode/tabs"
 import { openLink } from "@opcode/tabs/open"
 import { Section, usePalette } from "@opcode/ui"
 import { usePlugin } from "@opencode/plugin/tui"
@@ -19,7 +19,7 @@ export function Sidebar(props: { prs: PullRequestsClient }) {
   const countdown = useRefreshCountdown(() => props.prs.refreshing(), () => props.prs.nextRefresh())
   return (
     <box paddingTop={1}>
-      <Section title="Pull requests" detail={countdown()}>
+      <Section title="Pull requests" detail={countdown()} action={<RefreshButton refreshing={props.prs.refreshing()} refresh={() => props.prs.refresh()} />}>
         <Show when={entries().length || props.prs.error()}>
           <box flexDirection="column" minWidth={0} gap={1}>
             <For each={entries().slice(0, limit())}>{(entry) => (

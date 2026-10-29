@@ -52,6 +52,13 @@ export function More(props: { count: number; noun?: string; pointer?: string; co
   return <text minWidth={0} wrapMode="word" fg={palette.muted} {...click.handlers}>{click.hovered() ? <u>{label()}</u> : label()}</text>
 }
 
+/** A section title's refresh control: highlighted on hover, and inert while a refresh is already running. */
+export function RefreshButton(props: { refreshing: boolean; refresh(): void }) {
+  const palette = usePalette()
+  const click = useClick(() => { if (!props.refreshing) props.refresh() })
+  return <text wrapMode="none" flexShrink={0} fg={click.hovered() && !props.refreshing ? palette.text : palette.muted} {...click.handlers}>↻</text>
+}
+
 /** The time to the next refresh, for a section title. Ticks every second on its own, so nothing else re-derives. */
 export function useRefreshCountdown(refreshing: () => boolean, next: () => number | undefined) {
   const [now, setNow] = createSignal(Date.now())
