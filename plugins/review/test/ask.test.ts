@@ -1,19 +1,6 @@
 import { expect, test } from "bun:test"
-import type { ModelInfo, SessionMessageInfo } from "@opencode/client"
-import { answerOf, askMetadata, pickModel, type Ask } from "../src/ask"
-
-const model = (id: string, family: string, extra: Partial<ModelInfo> = {}) => ({ id, providerID: "openai", family, name: id, enabled: true, status: "active", ...extra }) as ModelInfo
-
-test("the configured small model wins, else the default provider's small model as OpenCode picks it, else the default", () => {
-  const big = model("gpt-big", "gpt")
-  const luna = model("gpt-luna-1", "gpt-luna")
-  const elsewhere = { ...model("haiku", "claude-haiku"), providerID: "anthropic" } as ModelInfo
-  expect(pickModel({ id: "chosen", providerID: "x" }, big, [big, luna])).toEqual({ id: "chosen", providerID: "x" })
-  expect(pickModel(undefined, big, [big, elsewhere, luna])).toEqual({ id: "gpt-luna-1", providerID: "openai" })
-  // Another provider's small model, or a disabled one, isn't a choice.
-  expect(pickModel(undefined, big, [big, elsewhere, model("gpt-luna-off", "gpt-luna", { enabled: false })])).toEqual({ id: "gpt-big", providerID: "openai" })
-  expect(pickModel(undefined, undefined, [luna])).toBeUndefined()
-})
+import type { SessionMessageInfo } from "@opencode/client"
+import { answerOf, askMetadata, type Ask } from "../src/ask"
 
 const ask: Ask = { id: "msg_q1", anchor: { file: "a.ts", side: "new", start: 1, end: 1, quote: ["+x"] }, question: "Why?" }
 const user = (id: string) => ({ id, type: "user", text: "...", metadata: askMetadata(id), time: { created: 1 } })

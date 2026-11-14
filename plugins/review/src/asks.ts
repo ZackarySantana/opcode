@@ -3,7 +3,7 @@ import { sideSessionMetadata } from "@opcode/core/side"
 import type { ModelRef } from "@opencode/client"
 import type { Context } from "@opencode/plugin/tui/context"
 import { Identifier } from "@opencode/schema/identifier"
-import { answerOf, ASK_PERMISSIONS, askMetadata, askPrompt, pickModel, type Answer, type Ask } from "./ask"
+import { answerOf, ASK_PERMISSIONS, askMetadata, askPrompt, type Answer, type Ask } from "./ask"
 import { PLUGIN_ID, type Anchor } from "./review"
 
 /** A reviewed session's questions, and the session of its own that answers them. */
@@ -12,7 +12,8 @@ interface Questions {
   readonly sessionID?: string
   /** Where it was made: questions about another worktree get a session there. */
   readonly directory?: string
-  /** The answering model's name, for the cards. */
+  /** The answering model, and its name for the cards. */
+  readonly ref?: ModelRef
   readonly model?: string
   readonly items: readonly Ask[]
 }
@@ -27,7 +28,7 @@ export interface AskContext {
 type Api = Pick<Context, "client" | "data" | "storage" | "ui">
 
 /**
- * Asks a small model about lines of the diff. Each reviewed session gets one answering session, made on the first
+ * Asks the conversation's model about lines of the diff, without the agent seeing it. Each reviewed session gets one answering session, made on the first
  * question and archived so it stays out of the session lists, which keeps follow-ups in context and its usage
  * recorded like any session's. Questions last until dismissed or the terminal exits; they never reach the agent.
  */
@@ -62,6 +63,13 @@ export class Asks {
       const questions = this.state.sessions[sessionID]
       const existing = questions?.directory === directory ? questions.sessionID : undefined
       const answering = existing ?? await this.open(sessionID, directory)
+      // The conversation's model may have changed since the last question: the next answer follows it.
+      const chat = this.chatModel(sessionID)
+      if (existing && chat && !sameModel(chat, questions?.ref)) {
+        await this.api.client.session.switchModel({ sessionID: answering, model: chat })
+        const model = await this.modelName(chat, { directory })
+        this.update(sessionID, (current) => ({ ...current, ref: chat, model }))
+      }
       this.change(sessionID, id, { session: answering })
       const text = askPrompt({ anchor: kept, question, ...context, first: !existing })
       await this.api.client.session.prompt({ sessionID: answering, id, text, metadata: askMetadata(id), delivery: "queue" })
@@ -100,7 +108,9 @@ export class Asks {
 
   private async create(sessionID: string, directory: string): Promise<string> {
     const location = { directory }
-    const { model, name } = await this.pick(location)
+    // The conversation's model, or OpenCode's default when the session doesn't name one.
+    const model = this.chatModel(sessionID)
+    const name = model && await this.modelName(model, location)
     const parent = this.api.data.session.get(sessionID)?.title
     const session = await this.api.client.session.create({
       title: parent ? `Review questions: ${parent}` : "Review questions",
@@ -111,20 +121,19 @@ export class Asks {
     await this.api.client.session.update({ sessionID: session.id, archived: true })
     // The host streams a session's messages into its store once they've been read.
     await this.api.data.session.message.sync(session.id)
-    this.update(sessionID, (questions) => ({ ...questions, sessionID: session.id, directory, model: name }))
+    this.update(sessionID, (questions) => ({ ...questions, sessionID: session.id, directory, ref: model, model: name }))
     return session.id
   }
 
-  /** The configured small model, or OpenCode's small model for the default provider, with its name. */
-  private async pick(location: { directory: string }): Promise<{ model?: ModelRef; name?: string }> {
-    const [title, fallback, models] = await Promise.all([
-      this.api.client.agent.get({ agentID: "title", location }).then((result) => result.data.model, () => undefined),
-      this.api.client.model.default({ location }).then((result) => result.data ?? undefined, () => undefined),
-      this.api.client.model.list({ location, types: ["chat"] }).then((result) => result.data, () => []),
-    ])
-    const model = pickModel(title, fallback, models)
-    const name = model && (models.find((candidate) => candidate.providerID === model.providerID && candidate.id === model.id)?.name ?? model.id)
-    return { model, name }
+  /** The model the reviewed conversation uses now, as a plain copy of the host's. */
+  private chatModel(sessionID: string): ModelRef | undefined {
+    const model = this.api.data.session.get(sessionID)?.model
+    return model && { id: model.id, providerID: model.providerID, ...model.variant ? { variant: model.variant } : {} }
+  }
+
+  private async modelName(model: ModelRef, location: { directory: string }): Promise<string> {
+    const models = await this.api.client.model.list({ location, types: ["chat"] }).then((result) => result.data, () => [])
+    return models.find((candidate) => candidate.providerID === model.providerID && candidate.id === model.id)?.name ?? model.id
   }
 
   private change(sessionID: string, id: string, change: Partial<Ask>) {
@@ -135,3 +144,5 @@ export class Asks {
     this.set((draft) => { draft.sessions[sessionID] = update(draft.sessions[sessionID] ?? { items: [] }) })
   }
 }
+
+const sameModel = (a: ModelRef, b: ModelRef | undefined) => !!b && a.id === b.id && a.providerID === b.providerID && a.variant === b.variant

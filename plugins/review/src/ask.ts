@@ -1,9 +1,9 @@
 /**
- * Questions about the diff, answered by a small model in a session of their own: the prompt each one sends, and
+ * Questions about the diff, answered by the conversation's model in a session of their own: the prompt each one sends, and
  * each answer as that session's messages tell it. Knows nothing about the host.
  */
 
-import type { ModelInfo, ModelRef, SessionMessageInfo } from "@opencode/client"
+import type { SessionMessageInfo } from "@opencode/client"
 import { lineOf, MARK, type Row } from "./patch"
 import { lineRange, PLUGIN_ID, type Anchor } from "./review"
 
@@ -38,22 +38,6 @@ export const ASK_PERMISSIONS = [
   { action: "grep", resource: "*", effect: "allow" },
   { action: "glob", resource: "*", effect: "allow" },
 ] as const
-
-/** OpenCode's own choice of small model when none is configured, in its order of preference. */
-const SMALL_FAMILIES = ["gpt-luna", "gemini-flash-lite", "gemini-flash", "claude-haiku"]
-
-/**
- * The model that answers: the one configured for small jobs (the title agent's), else the provider's small model as
- * OpenCode picks it, else the default model.
- */
-export function pickModel(configured: ModelRef | undefined, fallback: ModelInfo | undefined, models: readonly ModelInfo[]): ModelRef | undefined {
-  if (configured) return configured
-  if (!fallback) return undefined
-  const usable = models.filter((model) => model.providerID === fallback.providerID && model.enabled && model.status === "active")
-  const small = SMALL_FAMILIES.flatMap((family) => usable.find((model) => model.family === family) ?? [])[0]
-  const chosen = small ?? fallback
-  return { id: chosen.id, providerID: chosen.providerID }
-}
 
 /** Rows of the diff around a question, at most this many on each side of it. */
 const AROUND = 30

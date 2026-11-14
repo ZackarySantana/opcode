@@ -38,8 +38,8 @@ type Handler = (event: { type: string; data: Record<string, unknown> }) => void
  */
 export function fakeHost(options: {
   diff?: () => FileDiffInfo[]; files?: Record<string, string>; lsp?: unknown
-  /** The models OpenCode offers, its default, and the title agent's model, for questions to the small model. */
-  models?: { list: ModelInfo[]; default?: ModelInfo; title?: { id: string; providerID: string } }
+  /** The models OpenCode offers, which name the conversation's model on question cards. */
+  models?: ModelInfo[]
   /** The project's worktrees as OpenCode lists them, and any it finds once it looks again. */
   worktrees?: { listed: string[]; found?: string[] }
 } = {}) {
@@ -51,6 +51,9 @@ export function fakeHost(options: {
   // Sessions the plugin makes, with the messages and status the host streams into its store for them.
   const created: (SessionCreateInput & { id: string; archived?: boolean })[] = []
   const interrupted: string[] = []
+  const switched: { sessionID: string; model: { id: string; providerID: string } }[] = []
+  // The conversation's model, which questions are answered with.
+  const chat = createStore<{ model?: { id: string; providerID: string } }>({ model: { id: "claude-opus", providerID: "anthropic" } })
   // Where each diff was read, and the worktrees OpenCode knows.
   const diffs: { mode: string; directory?: string }[] = []
   let worktrees = options.worktrees?.listed ?? []
@@ -89,6 +92,7 @@ export function fakeHost(options: {
         create: async (input: SessionCreateInput) => { const session = { ...input, id: `ses_side${created.length + 1}` }; created.push(session); return session },
         update: async (input: { sessionID: string; archived?: boolean }) => { const session = created.find((entry) => entry.id === input.sessionID)!; session.archived = input.archived },
         interrupt: async ({ sessionID }: { sessionID: string }) => { interrupted.push(sessionID) },
+        switchModel: async (input: { sessionID: string; model: { id: string; providerID: string } }) => { switched.push(input) },
         inbox: { cancel: async ({ inboxID }: { inboxID: string }) => { cancelled.push(inboxID) } },
       },
       message: { list: async () => ({ data: [{ id: "msg_first" }], cursor: {} }) },
@@ -102,11 +106,7 @@ export function fakeHost(options: {
       // Two config documents, as OpenCode layers them; the later one's servers win.
       config: { get: async () => [{ type: "document", info: {} }, { type: "document", info: options.lsp === undefined ? {} : { lsp: options.lsp } }] },
       rpc: () => ({ replies: async () => ({ replies: {} }) }),
-      agent: { get: async () => ({ data: { id: "title", model: options.models?.title } }) },
-      model: {
-        default: async () => ({ data: options.models?.default ?? null }),
-        list: async () => ({ data: options.models?.list ?? [] }),
-      },
+      model: { list: async () => ({ data: options.models ?? [] }) },
       worktree: {
         list: async () => worktrees.map((directory) => ({ directory })),
         refresh: async () => { worktrees = [...new Set([...worktrees, ...options.worktrees?.found ?? []])] },
@@ -121,7 +121,7 @@ export function fakeHost(options: {
       },
       session: {
         root: (id: string) => id,
-        get: () => ({ location: { directory: "/repo" }, title: "Fix auth", projectID: "prj_repo" }),
+        get: () => ({ location: { directory: "/repo" }, title: "Fix auth", projectID: "prj_repo", model: chat[0].model }),
         family: (id: string) => [id],
         status: (id: string) => id in sessions[0].running ? (sessions[0].running[id] ? "running" : "idle") : "running",
         message: { list: (id: string) => sessions[0].messages[id] ?? [], sync: async () => {} },
@@ -172,7 +172,9 @@ export function fakeHost(options: {
     choose: (...values: unknown[]) => { choices.push(...values) },
     panelOpen: () => panel[0].current,
     /** Sessions the plugin made, and what it interrupted or took back from their queue. */
-    created, interrupted, cancelled, diffs,
+    created, interrupted, cancelled, diffs, switched,
+    /** Switches the conversation to another model, as the host's model picker does. */
+    setChatModel: (model: { id: string; providerID: string }) => chat[1]("model", model),
     /** What the host's store holds for a session: its messages, as streamed in, and whether it's working. */
     stream: (sessionID: string, messages: SessionMessageInfo[], running: boolean) => {
       sessions[1]("messages", sessionID, messages)

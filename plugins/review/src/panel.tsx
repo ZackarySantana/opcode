@@ -211,10 +211,12 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       if (moved.side !== comment.side || moved.start !== comment.start || moved.end !== comment.end) void review.moveComment(sessionID(), comment.id, moved)
     }
   }))
-  // Questions for the small model, under the lines they're about, in the document they were asked in.
+  // Questions for the conversation's model, under the lines they're about, in the document they were asked in.
   const asks = createMemo(() => review.asks.list(sessionID()).filter((ask) => ask.anchor.file === docFile() && !!ask.anchor.outside === !!doc()?.outside))
   const placedAsks = createMemo(() => asks().map((ask) => ({ ask, at: locate(ask.anchor, rows()) })))
   const answer = (ask: Ask) => review.asks.answer(ask)
+  /** The latest question still waiting or being answered, in any file. */
+  const unanswered = () => [...review.asks.list(sessionID())].reverse().find((ask) => ["waiting", "thinking", "answering"].includes(answer(ask).state))
   const editing = () => position().editing
   const editAt = createMemo(() => {
     const edit = editing()
@@ -253,7 +255,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     place({ editing: { anchor: { ...anchorOf(current.file, rows(), span.from, span.to), ...current.outside ? { outside: true } : {} }, text: "" } })
     setMark(undefined)
   }
-  /** Opens a box for a question about the line or range, for the small model rather than the agent. */
+  /** Opens a box for a question about the line or range, answered by the conversation's model in a session the agent doesn't see. */
   const startAsk = () => {
     const current = doc()
     if (!current || !rows().length) return
@@ -571,7 +573,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       { id: `${PLUGIN_ID}.search`, title: "Search the diff's files and lines", bind: "/", run: openSearch },
       { id: `${PLUGIN_ID}.definition`, title: "Definition of the name", bind: "d", run: () => find("definition") },
       { id: `${PLUGIN_ID}.comment`, title: "Comment on the line or range", bind: "c,return", run: startComment },
-      { id: `${PLUGIN_ID}.ask`, title: "Ask the small model about the line or range", bind: "a", run: startAsk },
+      { id: `${PLUGIN_ID}.ask`, title: "Ask the conversation's model about the line or range", bind: "a", run: startAsk },
       { id: `${PLUGIN_ID}.range`, title: "Start or clear a range", bind: "v", run: () => setMark((current) => current === undefined ? cursor() : undefined) },
       { id: `${PLUGIN_ID}.delete`, title: "Delete the draft here, or dismiss the answer", bind: "x", run: () => {
         const comment = atCursor()
@@ -583,8 +585,11 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       { id: `${PLUGIN_ID}.back`, title: "Back", bind: "ctrl+o", enabled: () => stack().length > 0, run: back },
       // Leaving sends what you wrote, like submitting a review. It never reaches the host's escape, which interrupts the agent.
       // Inside a view opened from the diff, escape goes back instead.
-      { id: `${PLUGIN_ID}.leave`, title: "Back, or send the drafts and close", bind: "escape", run: () => {
+      { id: `${PLUGIN_ID}.leave`, title: "Back, cancel the question being answered, or send the drafts and close", bind: "escape", run: () => {
         if (stack().length) return pop()
+        // A question still being answered is cancelled first, as escape stops the agent in the conversation.
+        const asking = unanswered()
+        if (asking) return void review.asks.dismiss(sessionID(), asking.id)
         if (hasUnsent()) send()
         props.panel.close()
       } },
@@ -729,7 +734,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       { key: "/", label: "search", command: `${PLUGIN_ID}.search` },
       ...stack().length ? [] : [{ key: "S", label: hasUnsent() ? `send ${draftCount() || ""}`.trim() : "send", command: `${PLUGIN_ID}.send` }, { key: "m", label: "viewed", command: `${PLUGIN_ID}.viewed` }],
       { key: "o", label: "options", command: `${PLUGIN_ID}.options` },
-      { key: "esc", label: stack().length ? "back" : hasUnsent() ? "send & close" : "close", command: `${PLUGIN_ID}.leave` },
+      { key: "esc", label: stack().length ? "back" : unanswered() ? "cancel question" : hasUnsent() ? "send & close" : "close", command: `${PLUGIN_ID}.leave` },
     ]
   }
 
@@ -896,7 +901,7 @@ function CommentCard(props: { comment: Comment; delivery: Delivery; reply?: Repl
 
 const askState: Record<Answer["state"], string> = { waiting: "waiting", thinking: "thinking...", answering: "answering...", done: "answered", failed: "failed" }
 
-/** A question for the small model and its answer, streaming in. The agent never sees either. */
+/** A question about the diff and its answer, streaming in. The agent never sees either. */
 function AskCard(props: { ask: Ask; answer: Answer; model?: string; quote?: boolean }) {
   const palette = usePalette()
   const looked = () => {
@@ -929,7 +934,7 @@ function Editor(props: {
   onCleanup(() => props.ref(undefined))
   return (
     <box flexDirection="column" minWidth={0} marginLeft={2} paddingX={1} border={["left"]} borderColor={props.ask ? palette.value : palette.accent}>
-      <text fg={palette.muted} wrapMode="none">{props.ask ? `Ask ${props.model ?? "the small model"} about` : props.id ? `Editing ${props.id} on` : "New comment on"} {where(props.anchor)}</text>
+      <text fg={palette.muted} wrapMode="none">{props.ask ? `Ask ${props.model ?? "the conversation's model"} about` : props.id ? `Editing ${props.id} on` : "New comment on"} {where(props.anchor)}</text>
       <textarea ref={(textarea: TextareaRenderable) => { element = textarea; props.ref(textarea) }} initialValue={props.text} minHeight={1} maxHeight={8}
         placeholder={props.ask ? "A question about these lines. Only you see the answer." : "Ask or adjust. End with ?? for a question."} textColor={palette.text} focusedTextColor={palette.text} placeholderColor={palette.muted}
         keyBindings={[

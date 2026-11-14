@@ -18,7 +18,7 @@ const other: FileDiffInfo = { file: "src/db.ts", patch: "@@ -1,1 +1,1 @@\n-const
 const shifted = () => file(patch.replace(" const user = load()", " const user = load()\n+// one\n+// two").replace("@@ -1,4 +1,5 @@", "@@ -1,4 +1,7 @@"))
 
 const model = (id: string, family: string, name: string) => ({ id, providerID: "anthropic", family, name, enabled: true, status: "active" }) as ModelInfo
-const models = { default: model("claude-opus", "claude-opus", "Claude Opus"), list: [model("claude-opus", "claude-opus", "Claude Opus"), model("claude-haiku", "claude-haiku", "Claude Haiku")] }
+const models = [model("claude-opus", "claude-opus", "Claude Opus"), model("claude-sonnet", "claude-sonnet", "Claude Sonnet")]
 
 async function setup(width = 90, options: Parameters<typeof fakeHost>[0] = {}) {
   let files = [file(), other]
@@ -334,19 +334,19 @@ test("C lists every comment with the agent's reply in full, marks new replies un
   } finally { await dispose() }
 })
 
-test("a asks the small model about a line in a hidden session of its own, streams the answer under it, and x dismisses it", async () => {
-  const { frame, run, write, prompts, created, interrupted, stream, view, dispose } = await setup()
+test("a asks the conversation's model about a line in a hidden session of its own, streams the answer under it, and x dismisses it", async () => {
+  const { frame, run, write, prompts, created, interrupted, switched, setChatModel, stream, view, dispose } = await setup()
   try {
     await frame("const ttl = Number(env.TTL ?? 3600)")
     await run("down", "down", "down", "ask")
-    await frame("Ask the small model about line 2")
+    await frame("Ask the conversation's model about line 2")
     await write("Why read env here?")
-    await frame("ask line 2 · Claude Haiku · waiting")
+    await frame("ask line 2 · Claude Opus · waiting")
 
-    // One archived session, on OpenCode's small model, that can only read, marked as working for this one.
+    // One archived session, on the conversation's model, that can only read, marked as working for this one.
     expect(created).toHaveLength(1)
     expect(created[0]).toMatchObject({
-      archived: true, model: { id: "claude-haiku", providerID: "anthropic" }, location: { directory: "/repo" },
+      archived: true, model: { id: "claude-opus", providerID: "anthropic" }, location: { directory: "/repo" },
       metadata: { "opcode.side": { parentID: SESSION, plugin: ID } },
     })
     expect(created[0]!.permissions).toContainEqual({ action: "*", resource: "*", effect: "deny" })
@@ -361,23 +361,25 @@ test("a asks the small model about a line in a hidden session of its own, stream
     expect(asked.text).toEndWith("Why read env here?")
 
     const question = { id: asked.id!, type: "user", text: asked.text, metadata: asked.metadata, time: { created: 1 } }
-    const reply = (text: string) => ({ id: "msg_answer", type: "assistant", agent: "build", model: { id: "claude-haiku", providerID: "anthropic" }, time: { created: 2 },
+    const reply = (text: string) => ({ id: "msg_answer", type: "assistant", agent: "build", model: { id: "claude-opus", providerID: "anthropic" }, time: { created: 2 },
       content: [{ type: "tool", name: "read" }, { type: "text", text }] })
     stream("ses_side1", [question, reply("TTL comes from")] as SessionMessageInfo[], true)
     expect(await frame("answering... · looked with read")).toContain("TTL comes from")
     stream("ses_side1", [question, reply("TTL comes from the environment so ops can tune it.")] as SessionMessageInfo[], false)
-    expect(await frame("ask line 2 · Claude Haiku · answered")).toContain("TTL comes from the environment so ops can tune it.")
+    expect(await frame("ask line 2 · Claude Opus · answered")).toContain("TTL comes from the environment so ops can tune it.")
 
-    // A follow-up shares the session, without the instructions again.
+    // A follow-up shares the session, without the instructions again, on the model the conversation switched to.
+    setChatModel({ id: "claude-sonnet", providerID: "anthropic" })
     await run("down", "ask")
     await write("Is zero handled?")
     expect(created).toHaveLength(1)
+    expect(switched).toEqual([{ sessionID: "ses_side1", model: { id: "claude-sonnet", providerID: "anthropic" } }])
     expect(prompts[1]).toMatchObject({ sessionID: "ses_side1" })
     expect(prompts[1]!.text).not.toContain("Don't edit anything.")
 
     // Dismissing the one being answered stops it.
     stream("ses_side1", [question, reply("TTL comes from the environment so ops can tune it."), { ...question, id: prompts[1]!.id!, metadata: prompts[1]!.metadata }] as SessionMessageInfo[], true)
-    await frame("ask line 3 · Claude Haiku · thinking...")
+    await frame("ask line 3 · Claude Sonnet · thinking...")
     await run("delete")
     await view.waitForFrame((current) => !current.includes("Is zero handled?"))
     expect(interrupted).toEqual(["ses_side1"])
@@ -392,10 +394,10 @@ test("esc leaves a question unasked", async () => {
   try {
     await frame("const ttl = Number(env.TTL ?? 3600)")
     await run("down", "down", "down", "ask")
-    await frame("Ask the small model about line 2")
+    await frame("Ask the conversation's model about line 2")
     await view.mockInput.typeText("Never mind")
     await run("editor.save")
-    await view.waitForFrame((current) => !current.includes("Ask the small model"))
+    await view.waitForFrame((current) => !current.includes("Ask the conversation's model"))
     expect(prompts).toHaveLength(0)
     expect(created).toHaveLength(0)
   } finally { await dispose() }
@@ -431,5 +433,23 @@ test("an agent working in a worktree of its own is reviewed there, as Uncommitte
     await run("options")
     await settle()
     await frame("Review Uncommitted in late")
+  } finally { await dispose() }
+})
+
+test("esc cancels a question still being answered before it closes the view", async () => {
+  const { frame, run, write, prompts, stream, interrupted, panel, view, dispose } = await setup()
+  try {
+    await frame("const ttl = Number(env.TTL ?? 3600)")
+    await run("down", "down", "down", "ask")
+    await write("Why read env here?")
+    const asked = prompts[0]!
+    stream("ses_side1", [{ id: asked.id!, type: "user", text: asked.text, metadata: asked.metadata, time: { created: 1 } }] as SessionMessageInfo[], true)
+    await frame("esc cancel question")
+    await run("leave")
+    await view.waitForFrame((current) => !current.includes("Why read env here?"))
+    expect(interrupted).toEqual(["ses_side1"])
+    expect(panel.state.closed).toBe(0)
+    await run("leave")
+    expect(panel.state.closed).toBe(1)
   } finally { await dispose() }
 })

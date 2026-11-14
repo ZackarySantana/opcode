@@ -67,7 +67,7 @@ export type Frame = { readonly id: number } & (
 export interface Position extends Cursor {
   /** Views opened from the diff, innermost last. */
   readonly stack?: readonly Frame[]
-  /** A comment being written: a new one on its anchor, or the draft with this ID. Or a question for the small model, when `ask`. */
+  /** A comment being written: a new one on its anchor, or the draft with this ID. Or a question about the lines, when `ask`. */
   readonly editing?: { readonly id?: string; readonly anchor: Anchor; readonly text: string; readonly ask?: true }
 }
 
@@ -116,7 +116,7 @@ export class ReviewController {
   private readonly lspSettings: LspSettings
   readonly now: () => number
   readonly timer: SetTimer
-  /** Questions about the diff, answered by a small model beside the session. */
+  /** Questions about the diff, answered by the conversation's model beside the session. */
   readonly asks: Asks
 
   constructor(private readonly api: Pick<Context, "client" | "data" | "storage" | "ui" | "location">, options: ControllerOptions = {}) {

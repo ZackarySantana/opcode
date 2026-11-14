@@ -33,15 +33,15 @@ Move to a line, press `c`, type, and press `enter`. The comment is a **draft** u
 
 Cancelling the message from OpenCode's queue turns its comments back into drafts, as does a send the server refuses, such as one to a session that no longer exists. Sent comments can't be edited, since the agent already has them.
 
-End a comment with `??` to ask the agent a question: it's told to answer it rather than change the code. For a question the agent doesn't need to see, ask the small model instead (below).
+End a comment with `??` to ask the agent a question: it's told to answer it rather than change the code. For a question the agent doesn't need to see, ask about the lines instead (below).
 
 The agent answers with `review_reply`, once per batch: **done** (it changed the code), **answered**, or **declined** (with why). Each reply shows under its comment. The tool only appears in sessions that have been sent review comments, so other sessions spend no context on it.
 
 As the agent edits, drafts and the cursor follow the text they were on, and a draft's lines are updated to where that text is now. A comment whose lines are gone from the view is listed at the top as **Not in this diff any more**, with the lines it was on.
 
-### Ask the small model
+### Ask about the lines
 
-Press `a` on a line (or on a range, after `v`), type a question, and press `enter`. The answer streams in under the line, from the model OpenCode uses for small jobs: the title agent's model (`agents.title.model`), else your default provider's small model as OpenCode picks it, else the default model. The card names the model and shows **waiting**, **thinking...**, **answering...**, then **answered**. `x` on the line dismisses the answer, stopping it if it's still being written. `esc` in the question box leaves it unasked.
+Press `a` on a line (or on a range, after `v`), type a question, and press `enter`. The answer streams in under the line, from the model the conversation uses; switch the conversation's model and the next question follows it. The card names the model and shows **waiting**, **thinking...**, **answering...**, then **answered**. `x` on the line dismisses the answer, stopping it if it's still being written, and `esc` cancels the question still being answered before it closes the panel. `esc` in the question box leaves it unasked.
 
 The question goes with the diff around its lines, and the model can read and search the repository to check callers and definitions before answering. It can't edit files, run commands, or ask you anything. Nothing reaches the agent.
 
@@ -60,7 +60,7 @@ The same menu switches the file list between the **Folder tree** and **Full path
 
 The session views come from OpenCode's own snapshots and include edits you make yourself. Uncommitted and Branch show the whole worktree, so they include changes from other sessions in it.
 
-**Agents in their own worktree.** An agent often makes a worktree and works there while its session stays where it started. Review follows the work: it reviews the worktree where the agent (or one of its subagents) last changed a file or ran a command, found from the paths its tools used, and the header names it, as in **Uncommitted in my-feature**. OpenCode's snapshots only cover the session's own directory, so there This turn and Session show the worktree's uncommitted changes instead; Branch works as usual. Usages, opened files, and questions to the small model go to that worktree too, and comments tell the agent which checkout their lines are from. **Worktree...** in the options picks one of the project's worktrees, or the session's own directory, for the session; **Where the agent works** goes back to following it. A session that moves to another directory is followed as well.
+**Agents in their own worktree.** An agent often makes a worktree and works there while its session stays where it started. Review follows the work: it reviews the worktree where the agent (or one of its subagents) last changed a file or ran a command, found from the paths its tools used, and the header names it, as in **Uncommitted in my-feature**. OpenCode's snapshots only cover the session's own directory, so there This turn and Session show the worktree's uncommitted changes instead; Branch works as usual. Usages, opened files, and questions go to that worktree too, and comments tell the agent which checkout their lines are from. **Worktree...** in the options picks one of the project's worktrees, or the session's own directory, for the session; **Where the agent works** goes back to following it. A session that moves to another directory is followed as well.
 
 **Mark viewed** (`m`) sets a file aside and moves to the next one. A viewed file comes back as soon as its diff changes, so you see what the agent did since you last looked.
 
@@ -94,14 +94,14 @@ Usages are grouped by file: the definition first, then the files the diff change
 | `d` | Definition of the name |
 | `c`, `enter` | Comment on the line, or edit the draft there |
 | `v` | Start a range, then `c` comments on it |
-| `a` | Ask the small model about the line or range |
+| `a` | Ask about the line or range, without the agent seeing it |
 | `x` | Delete the draft on the line, or dismiss the answer there |
 | `m` | Mark the file viewed, or not |
 | `o` | Options: what to review, how files are listed, and how usages are found |
 | `b` | Show or hide the file list |
 | `r` | Refresh now |
 | `S` | Send the drafts |
-| `esc`, `ctrl+o` | Back from a usage or file; in the diff, `esc` sends the drafts and closes |
+| `esc`, `ctrl+o` | Back from a usage or file; in the diff, `esc` cancels a question being answered, else sends the drafts and closes |
 | `q` | Back to the conversation, keeping the drafts |
 | `?` | Show or hide the key hints |
 | `C` | All comments and the agent's replies |
@@ -120,4 +120,4 @@ In the comment box, `enter` saves, `shift+enter` adds a line, and `esc` saves an
 
 ## Storage
 
-Comments and viewed files are kept in OpenCode's terminal storage, synced across terminals on the same machine and kept across restarts. The line you were on, a half-written comment, and the small model's answers survive closing the panel, until OpenCode exits. Replies are kept in the server's plugin storage.
+Comments and viewed files are kept in OpenCode's terminal storage, synced across terminals on the same machine and kept across restarts. The line you were on, a half-written comment, and the answers to your questions survive closing the panel, until OpenCode exits. Replies are kept in the server's plugin storage.
