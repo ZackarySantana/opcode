@@ -139,3 +139,46 @@ test("deletes of missing snippets and writes with aliases that insert other snip
   expect(f.approvals).toHaveLength(1)
   expect(f.skills().find((skill) => skill.id === "shared")?.content).toBe("FRESH")
 })
+
+test("an attached snippet carries the current text of the snippets it uses, and the list reports references that stay as typed", async () => {
+  const f = await fixture({
+    "config/opencode/snippets/ticket.md": "Do the ticket, then @review",
+    "config/opencode/snippets/review.md": "GLOBAL REVIEW",
+    "config/opencode/snippets/notes.md": "Ask @report and @someone",
+  })
+  const content = (id: string) => f.skills().find((skill) => skill.id === id)?.content
+  expect(content("ticket")).toBe("Do the ticket, then GLOBAL REVIEW")
+  // Another skill's name is not a snippet to expand.
+  expect(content("notes")).toBe("Ask @report and @someone")
+  // A hand edit to the used snippet, or a project snippet in its place, is picked up when a prompt mentions a snippet.
+  await writeFile(join(f.root, "config/opencode/snippets/review.md"), "EDITED REVIEW")
+  await f.hooks.prompt!({ prompt: { text: "@ticket", skills: [] } })
+  expect(content("ticket")).toBe("Do the ticket, then EDITED REVIEW")
+  await mkdir(join(f.root, "project/.opencode/snippets"), { recursive: true })
+  await writeFile(join(f.root, "project/.opencode/snippets/review.md"), "PROJECT REVIEW")
+  await f.hooks.prompt!({ prompt: { text: "@ticket", skills: [] } })
+  expect(content("ticket")).toBe("Do the ticket, then PROJECT REVIEW")
+  const problems = JSON.parse(await f.call("snippet_list", {})).map((entry: any) => [entry.scope, entry.name, entry.problems])
+  expect(problems).toEqual([
+    ["global", "notes", ["@report is not a snippet.", "@someone is not a snippet."]], ["global", "review", []], ["global", "ticket", []], ["project", "review", []],
+  ])
+})
+
+test("writes with references that would not expand fail without asking, and deletes name the snippets that used the snippet", async () => {
+  const f = await fixture({
+    "config/opencode/snippets/review.md": "---\naliases: [rv]\n---\nREVIEW @style",
+    "config/opencode/snippets/style.md": "STYLE",
+    "project/.opencode/snippets/local.md": "LOCAL",
+  })
+  await expect(f.call("snippet_write", { name: "style", body: "Style, then @rv" }))
+    .rejects.toThrow("@style would not expand: @rv → @style loops back to a snippet already being expanded.")
+  await expect(f.call("snippet_write", { name: "ticket", body: "@review @local", scope: "global" }))
+    .rejects.toThrow("@ticket would not expand: @local is not a snippet. A global snippet can only use global snippets.")
+  expect(f.approvals).toEqual([])
+  await f.call("snippet_write", { name: "ticket", body: "Ticket: @rv", scope: "global" })
+  expect(f.approvals[0].metadata).toMatchObject({ body: "Ticket: @rv", expanded: "Ticket: REVIEW STYLE" })
+  expect(f.skills().find((skill) => skill.id === "ticket")?.content).toBe("Ticket: REVIEW STYLE")
+  expect(await f.call("snippet_delete", { name: "review", scope: "global" })).toBe("Deleted @review (global). @ticket used it and now keep its @name as typed. Tell the user.")
+  expect(f.approvals[1].metadata).toMatchObject({ breaks: ["@ticket"] })
+  expect(f.skills().find((skill) => skill.id === "ticket")?.content).toBe("Ticket: @rv")
+})

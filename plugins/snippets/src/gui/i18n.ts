@@ -14,6 +14,7 @@ export const en = {
   "group.global": "Global",
   "flag.overridden": "overridden",
   "flag.conflict": "skill conflict",
+  "flag.broken": "broken reference",
   "author.new.title": "What should the snippet do?",
   "author.new.placeholder": "Never commit until I say so",
   "author.edit.title": "What should change in @{{name}}?",

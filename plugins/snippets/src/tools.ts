@@ -1,13 +1,13 @@
 import type { Plugin } from "@opencode/plugin"
 import type { ToolContext } from "@opencode/plugin/promise/tool"
 import { object } from "@opcode/core/rpc"
-import { DELETE_ACTION, effectiveSnippets, scopes, takenAliases, validateSnippet, validName, WRITE_ACTION, type Authoring, type Scope } from "./domain"
+import { brokenBy, DELETE_ACTION, effectiveSnippets, expandWrite, referenceProblems, scopes, takenAliases, validateSnippet, validName, WRITE_ACTION, type Authoring, type Scope } from "./domain"
 import type { SnippetService } from "./service"
 
 export const TOOL_NAMES = ["snippet_list", "snippet_write", "snippet_delete"] as const
 
 export interface ToolDependencies {
-  service: Pick<SnippetService, "entries" | "list" | "write" | "remove">
+  service: Pick<SnippetService, "entries" | "list" | "blocked" | "write" | "remove">
   /** The session's authoring target, or undefined outside an authoring session. */
   authoring: (sessionID: string) => Promise<Authoring | undefined>
   assert: Plugin.Context["permission"]["assert"]
@@ -33,17 +33,17 @@ export function snippetTools({ service, authoring, assert }: ToolDependencies) {
   return [
     {
       name: "snippet_list",
-      description: "List every snippet with its scope, body, description, aliases, and whether a project snippet or another skill hides it.",
+      description: "List every snippet with its scope, body, description, aliases, whether a project snippet or another skill hides it, and why any of its @name references don't expand.",
       input: object({}, []),
       options: { codemode: false },
       execute: guarded(async () => JSON.stringify(await service.entries())),
     },
     {
       name: "snippet_write",
-      description: "Create or replace a snippet after the user approves. The body is inserted verbatim.",
+      description: "Create or replace a snippet after the user approves. The body is inserted as written, except that @name on its own between spaces is replaced by that snippet's current text.",
       input: object({
         name, scope,
-        body: { type: "string", description: "The text to insert. No templating or arguments." },
+        body: { type: "string", description: "The text to insert. No templating or arguments; @name on its own uses another snippet." },
         description: { type: "string", description: "One line shown in /snippets and @ completion." },
         aliases: { type: "array", items: { type: "string" }, description: "Other names that insert this snippet." },
       }, ["name", "body"]),
@@ -57,7 +57,13 @@ export function snippetTools({ service, authoring, assert }: ToolDependencies) {
         const fields = validateSnippet(input.name, { body: input.body, description: input.description, aliases: input.aliases ?? [] })
         const taken = takenAliases(snippets, { name: input.name, scope, aliases: fields.aliases })
         if (taken.length) throw new Error(`These aliases would not insert @${input.name}: ${taken.map(([alias, owner]) => `${alias} inserts @${owner.name} (${owner.scope})`).join(", ")}. Drop or rename them.`)
-        await approve(context, WRITE_ACTION, scope, input.name, { ...fields })
+        const expansion = expandWrite(snippets, { name: input.name, scope, ...fields }, await service.blocked())
+        const problems = referenceProblems(expansion)
+        if (problems.length) {
+          const projectOnly = scope === "global" && expansion.missing.some((key) => effectiveSnippets(snippets).get(key)?.scope === "project")
+          throw new Error(`@${input.name} would not expand: ${problems.join(" ")}${projectOnly ? " A global snippet can only use global snippets." : ""}`)
+        }
+        await approve(context, WRITE_ACTION, scope, input.name, { ...fields, ...expansion.text !== fields.body ? { expanded: expansion.text } : {} })
         const path = await service.write(scope, input.name, fields)
         return `Saved @${input.name} (${scope}) to ${path}.`
       }),
@@ -71,14 +77,17 @@ export function snippetTools({ service, authoring, assert }: ToolDependencies) {
         if (!validName(input.name)) throw new Error(`Invalid snippet name "${input.name}". Use lowercase letters, digits, and single hyphens, with at least one letter.`)
         // Check first, so an approval is never spent on a delete that does nothing.
         const snippets = await service.list()
-        if (!snippets.some((snippet) => snippet.scope === input.scope && snippet.name === input.name)) {
+        const removed = snippets.find((snippet) => snippet.scope === input.scope && snippet.name === input.name)
+        if (!removed) {
           const existing = effectiveSnippets(snippets).get(input.name)
           if (existing && existing.name !== input.name) throw new Error(`${input.name} is an alias of @${existing.name}. Delete ${existing.name} (${existing.scope}) instead.`)
           const other = snippets.find((snippet) => snippet.name === input.name)
           throw new Error(`No ${input.scope} snippet named ${input.name}${other ? `; there is a ${other.scope} one` : ""}.`)
         }
-        await approve(context, DELETE_ACTION, input.scope, input.name, {})
-        return await service.remove(input.scope, input.name) ? `Deleted @${input.name} (${input.scope}).` : `No ${input.scope} snippet named ${input.name}.`
+        const broken = brokenBy(snippets, removed, await service.blocked()).map((snippet) => `@${snippet.name}`)
+        await approve(context, DELETE_ACTION, input.scope, input.name, broken.length ? { breaks: broken } : {})
+        if (!await service.remove(input.scope, input.name)) return `No ${input.scope} snippet named ${input.name}.`
+        return `Deleted @${input.name} (${input.scope}).${broken.length ? ` ${broken.join(", ")} used it and now keep its @name as typed. Tell the user.` : ""}`
       }),
     },
   ]

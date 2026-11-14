@@ -1,7 +1,7 @@
 import { createSerialQueue } from "@opcode/core"
 import { Skill } from "@opencode/plugin"
 import type { SkillEditor } from "@opencode/plugin/promise/skill"
-import { effectiveSnippets, skillDescription, skillName, type Scope, type Snippet, type SnippetFields } from "./domain"
+import { effectiveSnippets, expandSnippet, referenceProblems, skillDescription, skillName, type Scope, type Snippet, type SnippetFields } from "./domain"
 import type { SnippetStore } from "./store"
 
 export interface SnippetEntry extends Snippet {
@@ -9,6 +9,8 @@ export interface SnippetEntry extends Snippet {
   overridden: boolean
   /** Another skill owns this name, so `@name` does not insert the snippet. */
   conflict: boolean
+  /** Why some of its `@name` references stay as typed. */
+  problems: string[]
 }
 
 export interface SkillHost {
@@ -26,8 +28,12 @@ export class SnippetService {
 
   /** The synchronous skill transform; the host replays it on every rebuild. Existing skills keep their IDs. */
   register(editor: Pick<SkillEditor, "get" | "add">): void {
-    for (const [key, snippet] of effectiveSnippets(this.snippets)) {
-      if (editor.get(key)) continue
+    // Skills registered before snippets keep their names, for references as for `@name` in a prompt. A later skill source
+    // isn't known yet, so a reference to a name it takes still expands; entries() reports it.
+    const keys = new Map([...effectiveSnippets(this.snippets)].filter(([key]) => !editor.get(key)))
+    const content = new Map<Snippet, string>()
+    for (const [key, snippet] of keys) {
+      if (!content.has(snippet)) content.set(snippet, expandSnippet(snippet, keys).text)
       editor.add({
         id: Skill.ID.make(key),
         name: Skill.Name.make(skillName(key)),
@@ -35,7 +41,8 @@ export class SnippetService {
         // Only the user attaches snippets; the model never sees them in its skill list.
         autoinvoke: false,
         path: Skill.Info.fields.path.make(snippet.path),
-        content: snippet.body,
+        // References expand here, so the text attached at send time carries each referenced snippet's current text.
+        content: content.get(snippet)!,
       })
     }
   }
@@ -61,13 +68,21 @@ export class SnippetService {
     }))
   }
 
+  /** Snippet names and aliases another skill owns, so references to them stay as typed. */
+  async blocked(): Promise<Set<string>> {
+    await this.refresh()
+    const available = await this.available()
+    return new Set([...effectiveSnippets(this.snippets).keys()].filter((key) => !available.has(key)))
+  }
+
   async entries(): Promise<SnippetEntry[]> {
     await this.refresh()
     const available = await this.available()
     const projectNames = new Set(this.snippets.filter((snippet) => snippet.scope === "project").map((snippet) => snippet.name))
     return this.snippets.map((snippet) => {
       const overridden = snippet.scope === "global" && projectNames.has(snippet.name)
-      return { ...snippet, overridden, conflict: !overridden && available.get(snippet.name) !== snippet }
+      const problems = referenceProblems(expandSnippet(snippet, available))
+      return { ...snippet, overridden, conflict: !overridden && available.get(snippet.name) !== snippet, problems }
     })
   }
 
