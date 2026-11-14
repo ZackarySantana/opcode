@@ -140,8 +140,6 @@ async function harness(route: Route, options: { agentTools?: boolean; rows?: Sni
     type: async (text: string) => { await view.mockInput.typeText(text); await view.renderOnce() },
     erase: async (count: number) => { for (let index = 0; index < count; index++) view.mockInput.pressBackspace(); await view.renderOnce() },
     newline: async () => { view.mockInput.pressEnter(); await view.renderOnce() },
-    /** A key the focused field handles itself, such as an arrow in the text. */
-    press: (key: Parameters<typeof view.mockInput.pressArrow>[0]) => view.mockInput.pressArrow(key),
     render: () => view.renderOnce(),
     /** Moves the editor's focus forward by `count` fields. */
     next: async (count = 1) => { for (let index = 0; index < count; index++) dispatch("editor.next"); await view.renderOnce() },
@@ -337,15 +335,16 @@ test("↑/↓ move between editor fields, and in the text between its lines befo
   await h.type("one")
   await h.newline()
   await h.type("two")
-  // The text is the last field, so ↓ stays in it; ↑ moves between its lines, then past the first one to the aliases.
-  h.press("down")
-  h.press("up")
-  h.press("up")
+  // OpenCode's keymap, not the textarea, gets the arrows: ↑ moves up the text's lines, then past the first one to the aliases.
+  h.dispatch("editor.up")
+  await h.render()
+  await h.type("<")
+  h.dispatch("editor.up")
   await h.render()
   await h.type(" also")
   await h.dispatch("editor.save")
   await until(() => h.saved.length)
-  expect(h.saved).toEqual([{ name: "steps", scope: "project", fields: { aliases: ["also"], body: "one\ntwo" } }])
+  expect(h.saved).toEqual([{ name: "steps", scope: "project", fields: { aliases: ["also"], body: "one<\ntwo" } }])
 })
 
 test("Save Message as Snippet needs a session", async () => {

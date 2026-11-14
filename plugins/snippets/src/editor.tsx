@@ -3,7 +3,7 @@
 import { cellWidth, KeyHints, usePalette } from "@opcode/ui"
 import { useDialogCommands } from "@opcode/ui/screen"
 import { usePlugin } from "@opencode/plugin/tui"
-import { SyntaxStyle, type KeyEvent, type TextareaRenderable } from "@opentui/core"
+import { SyntaxStyle, type TextareaRenderable } from "@opentui/core"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import type { JSX } from "@opentui/solid/jsx-runtime"
 import { createEffect, createMemo, onCleanup, Show, untrack } from "solid-js"
@@ -36,9 +36,8 @@ export function SnippetEditor(props: { browser: Browser }) {
   useDialogCommands(api, () => [
     { id: command("next"), bind: "tab", run: around(1) },
     { id: command("previous"), bind: "shift+tab", run: around(-1) },
-    // In the text, ↑/↓ move between its lines; leaving it from its first or last line is handled there.
-    { id: command("down"), bind: "down", enabled: () => field() !== "body" && !!step(1), run: towards(1) },
-    { id: command("up"), bind: "up", enabled: () => field() !== "body" && !!step(-1), run: towards(-1) },
+    { id: command("down"), bind: "down", enabled: () => field() === "body" || !!step(1), run: () => field() === "body" ? arrow(1)() : towards(1)() },
+    { id: command("up"), bind: "up", enabled: () => field() === "body" || !!step(-1), run: () => field() === "body" ? arrow(-1)() : towards(-1)() },
     { id: command("save"), bind: "ctrl+s", run: () => void props.browser.save() },
     { id: command("cancel"), bind: "escape", run: () => void props.browser.cancel() },
     { id: command("scope"), bind: "space,left,right,h,l", enabled: () => field() === "scope", run: toggleScope },
@@ -66,17 +65,19 @@ export function SnippetEditor(props: { browser: Browser }) {
     })
   }
   createEffect(() => { keys(); highlight() })
-  // Entering the text from another field starts from wherever its cursor was left.
   // The textarea keeps the keyboard when another field is focused, so it lets go itself.
   createEffect(() => { if (field() !== "body" && body && !body.isDestroyed) body.blur() })
-  /** ↑ on the text's first line, or ↓ on its last, moves to the field above or below, if there is one. */
-  const leaveText = (key: KeyEvent) => {
-    if (!body || key.ctrl || key.meta || key.shift) return
+  /**
+   * ↑/↓ in the text. OpenCode's keymap moves a textarea's cursor itself, before the textarea sees the key, so these keys
+   * come through the dialog's commands: on the first line ↑ moves to the field above, otherwise the cursor moves a line.
+   */
+  const arrow = (by: -1 | 1) => () => {
+    if (!body || body.isDestroyed) return
     const row = body.visualCursor.visualRow
-    const by = key.name === "up" && row <= 0 ? -1 : key.name === "down" && row >= body.virtualLineCount - 1 ? 1 : 0
-    if (!by || !step(by)) return
-    key.preventDefault()
-    towards(by)()
+    const edge = by < 0 ? row <= 0 : row >= body.virtualLineCount - 1
+    if (edge && step(by)) towards(by)()
+    else if (by < 0) body.moveCursorUp()
+    else body.moveCursorDown()
   }
   const input = (name: Exclude<Field, "scope" | "body">, placeholder: string) => (
     <input focused={field() === name} value={initial[name]} placeholder={placeholder} flexGrow={1}
@@ -104,7 +105,6 @@ export function SnippetEditor(props: { browser: Browser }) {
         <textarea ref={(element: TextareaRenderable) => { body = element; queueMicrotask(highlight) }} focused={field() === "body"} initialValue={initial.body} syntaxStyle={syntax}
           height={Math.max(4, Math.min(24, dimensions().height - 22))} flexGrow={1} wrapMode="word"
           placeholder="What @name attaches. @other-snippet uses another snippet's current text." textColor={palette.text} focusedTextColor={palette.text} placeholderColor={palette.muted}
-          onKeyDown={leaveText}
           onContentChange={() => { props.browser.update({ draft: { body: body?.plainText ?? "" } }); highlight() }} />
       </Row>
       <Show when={editing().error}>{(error) => <text minWidth={0} wrapMode="word" paddingTop={1} fg={palette.error}>! {error()}</text>}</Show>
