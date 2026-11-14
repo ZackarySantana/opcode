@@ -74,10 +74,7 @@ your only copy of a production ledger or session index.
   update, and deleting asks first.
 - Sessions: search title/path/message text, try invalid regex, pick a project,
   toggle children, navigate beyond a screen, inspect a preview, and refresh
-  after deletion. Open a session in another directory from the browser: `/go
-  back` returns to the session it was opened over. Run agents in two projects:
-  check the sidebar's states, numbering, `/go <n>`, `/go back`, and that the back
-  row disappears after navigating with host tabs.
+  after deletion. Open a session in another directory from the browser.
 - Reload/disable each plugin while its view and a request are active. Check
   route restoration, no stray timers/listeners, and no closed-database errors.
 - Repeat Cost, Sessions, and Later with a remote server. They must use that
