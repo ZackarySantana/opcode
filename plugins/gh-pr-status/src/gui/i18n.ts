@@ -4,8 +4,6 @@ export const en = {
   "command.open": "Pull requests",
   "command.open.description": "Your GitHub pull requests and review requests",
   "command.refresh": "Refresh pull requests",
-  "command.comments": "Send PR review comments",
-  "command.comments.description": "Put the review comments on this branch's pull request in the prompt, for the agent to act on",
 
   "pill.title": "Pull requests",
   "pill.waiting.one": "{{count}} pull request waiting on you",
@@ -26,12 +24,6 @@ export const en = {
   "group.reviewing.done": "Reviewed by you",
   "group.teams": "Your teams' review requests",
   "group.team": "{{team}} review requests",
-
-  "comments.session": "Open a session first: review comments go to its prompt.",
-  "comments.fetching": "Fetching review comments...",
-  "comments.empty": "PR #{{number}}: no review comments to add",
-  "comments.added": "PR #{{number}}: review comments added to the prompt",
-  "comments.failed": "Couldn't get review comments",
 
   "error.title": "Pull requests unavailable",
 }

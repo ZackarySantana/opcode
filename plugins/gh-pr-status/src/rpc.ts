@@ -30,13 +30,6 @@ export const GhPrStatusRpc = Rpc.define({
     update: { input: object({ settings: object({ ...choices, team: { type: ["string", "null"] }, scopeMode: mode, scopeOrg }, []) }, ["settings"]), output: state, errors },
     /** Refreshes now and restarts the countdown. */
     refresh: { input: empty, output: state, errors },
-    /** Review feedback on the pull request for the branch checked out in the call's location, as the prompt to send. */
-    feedback: {
-      input: empty,
-      // No text when nothing is left to send.
-      output: object({ number: { type: "integer" }, text, summary: text }, ["number", "summary"]),
-      errors,
-    },
   },
   events: {
     /** The full state after each change. */
@@ -47,11 +40,4 @@ export const GhPrStatusRpc = Rpc.define({
 /** `update`'s input. */
 export interface UpdateInput {
   readonly settings: SettingsChange
-}
-
-/** `feedback`'s output. */
-export interface FormattedFeedback {
-  readonly number: number
-  readonly text?: string
-  readonly summary: string
 }

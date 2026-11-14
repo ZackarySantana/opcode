@@ -1,10 +1,9 @@
 import { expect, test } from "bun:test"
 import { parseResponse } from "../src/gh"
-import { addReviewComments, pickable } from "../src/gui/actions"
+import { pickable } from "../src/gui/actions"
 import { en } from "../src/gui/i18n"
 import { pillView, selectOptions, type Copy, type Shown } from "../src/gui/view"
 import { defaultSettings, view, type Settings, type Snapshot } from "../src/model"
-import type { FormattedFeedback } from "../src/rpc"
 import { response } from "./fixtures"
 
 /** The English copy, filled in as `ctx.t` and `ctx.plural` do. */
@@ -94,29 +93,4 @@ test("with nothing to pick, Pull requests says whether it's still loading or why
   const empty = { ...snapshot, mine: { prs: [], hidden: 0 }, requested: { prs: [], hidden: 0 }, reviewed: { prs: [], hidden: 0 } }
   expect(pickable(shown(empty), copy)).toEqual({ title: "No open pull requests", description: undefined, error: false })
   expect(pickable(loaded(), copy)).toHaveProperty("options")
-})
-
-test("review comments go into the session's prompt for the user to send, or a toast says why not", async () => {
-  const toasts: { title: string; variant?: string; description?: string }[] = []
-  const toast = { show: (options: { title: string; variant?: string; description?: string }) => { toasts.push(options); return { dismiss() {} } } }
-  const prompt: string[] = []
-  const composer = { insert: (text: string) => { prompt.push(text) }, focus: () => { prompt.push("focus") } }
-  const directories: string[] = []
-  const send = (result: () => Promise<FormattedFeedback>) =>
-    addReviewComments({ session: { directory: "/work/web" }, composer, toast, copy, describe: (error) => String((error as Error).message), feedback: (directory) => { directories.push(directory); return result() } })
-
-  await addReviewComments({ session: undefined, composer, toast, copy, describe: String, feedback: async () => ({ number: 42, summary: "s" }) })
-  expect(toasts.at(-1)?.title).toBe("Open a session first: review comments go to its prompt.")
-
-  await send(async () => ({ number: 42, text: "Review these", summary: "Included 1 thread." }))
-  expect(directories).toEqual(["/work/web"])
-  expect(prompt).toEqual(["Review these", "focus"])
-  expect(toasts.at(-1)).toEqual({ variant: "success", title: "PR #42: review comments added to the prompt", description: "Included 1 thread." })
-
-  await send(async () => ({ number: 42, summary: "Included nothing." }))
-  expect(prompt).toHaveLength(2)
-  expect(toasts.at(-1)).toEqual({ title: "PR #42: no review comments to add", description: "Included nothing." })
-
-  await send(async () => { throw new Error("no pull requests found for branch \"main\"") })
-  expect(toasts.at(-1)).toEqual({ variant: "error", title: "Couldn't get review comments", description: "no pull requests found for branch \"main\"" })
 })
