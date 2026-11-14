@@ -457,3 +457,73 @@ test("esc cancels a question still being answered before it closes the view", as
     expect(panel.state.closed).toBe(1)
   } finally { await dispose() }
 })
+
+test("a guided review walks through the diff in the model's order, one step's lines at a time, and esc leaves it to resume later", async () => {
+  const { frame, run, review, prompts, created, serve, panel, view, dispose } = await setup()
+  try {
+    await frame("const ttl = Number(env.TTL ?? 3600)")
+    review.guides.request()
+    await settle()
+    expect(await frame("Guided review of This turn")).toContain("esc cancel guide")
+    // The helper on the conversation's model gets the whole diff.
+    expect(created).toHaveLength(1)
+    const asked = prompts[0]!
+    expect(asked.sessionID).toBe("ses_side1")
+    expect(asked.text).toContain("guided code review")
+    expect(asked.text).toContain("--- src/db.ts")
+
+    const guide = { summary: "Moves the TTL to the environment and grows the pool.", steps: [
+      { file: "src/db.ts", start: 1, title: "Bigger pool", note: "Check the connection limit." },
+      { file: "src/auth.ts", start: 2, end: 3, title: "TTL from env", note: "Zero throws on startup." },
+    ], skipped: [] }
+    await serve("ses_side1", [
+      { id: asked.id!, type: "user", text: asked.text, metadata: asked.metadata, time: { created: 1 } },
+      { id: "msg_guide", type: "assistant", agent: "build", model: { id: "claude-opus", providerID: "anthropic" }, time: { created: 2, completed: 3 },
+        content: [{ type: "text", text: `\`\`\`json\n${JSON.stringify(guide)}\n\`\`\`` }] },
+      { id: "msg_idle", type: "idle", outcome: "succeeded", time: { created: 3 } },
+    ] as SessionMessageInfo[])
+    // Step one is the model's first, in another file than the one shown: the cursor goes to its lines.
+    const first = await frame("step 1/2 Bigger pool")
+    expect(first).toContain("2/2 src/db.ts")
+    expect(first).toContain("Moves the TTL to the environment and grows the pool.")
+    expect(first).toMatch(/▶ 1 \+ const pool = 2/)
+    expect(first).toContain("agent working · step 1/2")
+
+    await run("guide.next")
+    const second = await frame("step 2/2 TTL from env")
+    expect(second).toContain("1/2 src/auth.ts")
+    expect(second).toMatch(/▶ 2 \+ const ttl = Number/)
+    expect(second).toContain("Zero throws on startup.")
+    // Comments work on the way, as anywhere.
+    await run("comment")
+    await view.mockInput.typeText("Guard it")
+    view.mockInput.pressEnter()
+    await settle()
+    await frame("r1 line 2 · draft")
+
+    // Esc leaves the guide without closing; asking again resumes at the same step, without asking the model again.
+    await run("leave")
+    await view.waitForFrame((current) => !current.includes("step 2/2 TTL from env"))
+    expect(panel.state.closed).toBe(0)
+    review.guides.request()
+    await settle()
+    await frame("step 2/2 TTL from env")
+    expect(prompts).toHaveLength(1)
+  } finally { await dispose() }
+})
+
+test("esc cancels a guided review still being written", async () => {
+  const { frame, run, review, prompts, serve, interrupted, panel, dispose } = await setup()
+  try {
+    await frame("const ttl = Number(env.TTL ?? 3600)")
+    review.guides.request()
+    await settle()
+    await frame("Guided review of This turn")
+    const asked = prompts[0]!
+    await serve("ses_side1", [{ id: asked.id!, type: "user", text: asked.text, metadata: asked.metadata, time: { created: 1 } }] as SessionMessageInfo[])
+    await run("leave")
+    expect(interrupted).toEqual(["ses_side1"])
+    expect(review.guides.run(SESSION)).toBeUndefined()
+    expect(panel.state.closed).toBe(0)
+  } finally { await dispose() }
+})

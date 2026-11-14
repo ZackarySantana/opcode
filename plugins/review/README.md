@@ -45,7 +45,15 @@ Press `a` on a line (or on a range, after `v`), type a question, and press `ente
 
 The question goes with the diff around its lines, and the model can read and search the repository to check callers and definitions before answering. It can't edit files, run commands, or ask you anything. Nothing reaches the agent.
 
-The questions of a session share a session of their own, made on the first one, so follow-ups keep their context. It's archived, so it stays out of OpenCode's session lists, and its usage and cost are recorded like any session's. The [Cost](../cost/README.md) plugin counts them, but not as agent time. Answers stay until you dismiss them or OpenCode exits.
+The questions of a session, and its guided reviews, share a helper session of their own, made when first needed, so follow-ups keep their context: a question can ask about a step of the guide. It's archived, so it stays out of OpenCode's session lists, and its usage and cost are recorded like any session's. The [Cost](../cost/README.md) plugin counts them, but not as agent time. Answers stay until you dismiss them or OpenCode exits.
+
+### Guided review
+
+Run `/diffs-guided` (or **Guided review of changes** in the command palette, or **Guided review** in the options) to have the conversation's model walk you through the changes. It reads the diff of the view you're on, and the repository where it needs to, then orders the changes the way that explains them best: where the change starts, then what depends on it, tests last. Each step is some lines with a title and a note on what they do and what deserves a careful look; the first step opens with a summary, and the last says which files it left out and why.
+
+While the model writes it, a line above the diff says so, and you can review as usual meanwhile; `esc` cancels it. When it's ready, the cursor goes to the first step's lines with its note under them. `n` and `p` go to the next and previous step, across files, and the header shows **step 2/7**. Everything else works on the way: comment, ask, look up usages. Steps follow their lines as the agent edits.
+
+`esc` leaves the guide, keeping your place: `/diffs-guided` again, or **Resume the guided review** in the options, picks it up at the same step without asking the model again. **Start a new guided review** in the options asks for a fresh one, such as after the agent changed more.
 
 ### What to review
 
@@ -87,7 +95,7 @@ Usages are grouped by file: the definition first, then the files the diff change
 | `g` / `shift+g`, `home` / `end` | First / last line |
 | `]` / `[` | Next / previous hunk |
 | `shift+j` / `shift+k`, `alt+↓` / `alt+↑` | Next / previous file (clicking one in the list does too) |
-| `n` / `p` | In a usage or search match you opened, the next / previous one |
+| `n` / `p` | In a guided review, the next / previous step; in a usage or search match you opened, the next / previous one |
 | `/` | Search the diff: file paths and lines |
 | `h` / `l`, `←` / `→` | Previous / next name on the line |
 | `u` | Usages of the name |
@@ -101,7 +109,7 @@ Usages are grouped by file: the definition first, then the files the diff change
 | `b` | Show or hide the file list |
 | `r` | Refresh now |
 | `S` | Send the drafts |
-| `esc`, `ctrl+o` | Back from a usage or file; in the diff, `esc` cancels a question being answered, else sends the drafts and closes |
+| `esc`, `ctrl+o` | Back from a usage or file; in the diff, `esc` cancels a question being answered or a guide being written, then leaves the guide, else sends the drafts and closes |
 | `q` | Back to the conversation, keeping the drafts |
 | `?` | Show or hide the key hints |
 | `C` | All comments and the agent's replies |
@@ -120,4 +128,4 @@ In the comment box, `enter` saves, `shift+enter` adds a line, and `esc` saves an
 
 ## Storage
 
-Comments and viewed files are kept in OpenCode's terminal storage, synced across terminals on the same machine and kept across restarts. The line you were on, a half-written comment, and the answers to your questions survive closing the panel, until OpenCode exits. Replies are kept in the server's plugin storage.
+Comments and viewed files are kept in OpenCode's terminal storage, synced across terminals on the same machine and kept across restarts. The line you were on, a half-written comment, the answers to your questions, and your place in a guided review survive closing the panel, until OpenCode exits. Replies are kept in the server's plugin storage.

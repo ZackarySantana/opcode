@@ -80,17 +80,17 @@ export function askPrompt(input: { anchor: Anchor; question: string; excerpt: st
   ].join("\n")
 }
 
-/** Metadata that tags a question's prompt, so its user message can be found again. */
-export const askMetadata = (id: string) => ({ [PLUGIN_ID]: { ask: id } })
-const askOf = (message: SessionMessageInfo) => (message.metadata?.[PLUGIN_ID] as { ask?: unknown } | undefined)?.ask
+/** Metadata that tags a prompt to a helper, a question or a guided review, so its user message can be found again. */
+export const promptMetadata = (id: string) => ({ [PLUGIN_ID]: { prompt: id } })
+const promptOf = (message: SessionMessageInfo) => (message.metadata?.[PLUGIN_ID] as { prompt?: unknown } | undefined)?.prompt
 
 /**
  * A question's answer, from the answering session's messages: what the model wrote after the question and before
  * the next one. It's done once the session went idle after it, or moved on to the next question.
  */
-export function answerOf(messages: readonly SessionMessageInfo[], ask: Ask): Answer {
+export function answerOf(messages: readonly SessionMessageInfo[], ask: Pick<Ask, "id" | "error">): Answer {
   if (ask.error) return { state: "failed", text: "", looked: [], error: ask.error }
-  const at = messages.findIndex((message) => message.type === "user" && askOf(message) === ask.id)
+  const at = messages.findIndex((message) => message.type === "user" && promptOf(message) === ask.id)
   if (at < 0) return { state: "waiting", text: "", looked: [] }
   const next = messages.findIndex((message, index) => index > at && message.type === "user")
   const after = messages.slice(at + 1, next < 0 ? undefined : next)

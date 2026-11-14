@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test"
 import type { SessionMessageInfo } from "@opencode/client"
-import { answerOf, askMetadata, mergeRead, streamText, type Ask } from "../src/ask"
+import { answerOf, promptMetadata, mergeRead, streamText, type Ask } from "../src/ask"
 
 const ask: Ask = { id: "msg_q1", anchor: { file: "a.ts", side: "new", start: 1, end: 1, quote: ["+x"] }, question: "Why?" }
-const user = (id: string) => ({ id, type: "user", text: "...", metadata: askMetadata(id), time: { created: 1 } })
+const user = (id: string) => ({ id, type: "user", text: "...", metadata: promptMetadata(id), time: { created: 1 } })
 const assistant = (content: unknown[], extra = {}) => ({ id: `msg_a${content.length}`, type: "assistant", agent: "build", model: { id: "m", providerID: "p" }, time: { created: 2 }, content, ...extra })
 const idle = (outcome = "succeeded", extra = {}) => ({ id: "msg_idle", type: "idle", outcome, time: { created: 3 }, ...extra })
 const of = (...messages: unknown[]) => messages as SessionMessageInfo[]
