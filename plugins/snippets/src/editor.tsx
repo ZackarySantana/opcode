@@ -28,21 +28,21 @@ export function SnippetEditor(props: { browser: Browser }) {
   const draft = () => editing().draft
   // The inputs own their text once mounted; the draft only follows it, so it survives a confirmation replacing the editor.
   const initial = untrack(draft)
-  const move = (by: number) => props.browser.update({ field: fields[(fields.indexOf(field()) + by + fields.length) % fields.length] })
-  // ↑/↓ stop at the first and last field; tab goes around.
+  // tab goes around; ↑/↓ stop at the first and last field.
+  const around = (by: number) => () => props.browser.update({ field: fields[(fields.indexOf(field()) + by + fields.length) % fields.length] })
   const step = (by: number) => fields[fields.indexOf(field()) + by]
-  const towards = (by: number) => () => props.browser.update({ field: step(by) })
+  const towards = (by: number) => () => { const next = step(by); if (next) props.browser.update({ field: next }) }
   const toggleScope = () => props.browser.update({ draft: { scope: draft().scope === "global" ? "project" : "global" } })
   useDialogCommands(api, () => [
-    { id: command("next"), bind: "tab", run: () => move(1) },
-    { id: command("previous"), bind: "shift+tab", run: () => move(-1) },
+    { id: command("next"), bind: "tab", run: around(1) },
+    { id: command("previous"), bind: "shift+tab", run: around(-1) },
     // In the text, ↑/↓ move between its lines; leaving it from its first or last line is handled there.
     { id: command("down"), bind: "down", enabled: () => field() !== "body" && !!step(1), run: towards(1) },
     { id: command("up"), bind: "up", enabled: () => field() !== "body" && !!step(-1), run: towards(-1) },
     { id: command("save"), bind: "ctrl+s", run: () => void props.browser.save() },
     { id: command("cancel"), bind: "escape", run: () => void props.browser.cancel() },
     { id: command("scope"), bind: "space,left,right,h,l", enabled: () => field() === "scope", run: toggleScope },
-    { id: command("scope.next"), bind: "return", enabled: () => field() === "scope", run: () => move(1) },
+    { id: command("scope.next"), bind: "return", enabled: () => field() === "scope", run: towards(1) },
   ])
   const title = () => editing().from ? `Edit @${editing().from!.name}` : "New snippet"
   let body: TextareaRenderable | undefined
@@ -80,7 +80,7 @@ export function SnippetEditor(props: { browser: Browser }) {
   }
   const input = (name: Exclude<Field, "scope" | "body">, placeholder: string) => (
     <input focused={field() === name} value={initial[name]} placeholder={placeholder} flexGrow={1}
-      onInput={(value) => props.browser.update({ draft: { [name]: value } })} onSubmit={() => move(1)}
+      onInput={(value) => props.browser.update({ draft: { [name]: value } })} onSubmit={towards(1)}
       textColor={palette.text} focusedTextColor={palette.text} placeholderColor={palette.muted} />
   )
   return (

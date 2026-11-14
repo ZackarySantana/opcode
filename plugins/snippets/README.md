@@ -58,12 +58,16 @@ Run `/snippets` or select **Snippets** in the command palette. It opens a dialog
 | `n` | Write a new snippet, in the open tab's scope |
 | `y` | Duplicate the selected snippet under a free `name-copy` |
 | `d` | Delete the selected snippet's file, after a confirmation that names the snippets whose references would stay as typed |
+| `c` | Copy the selected snippet to the clipboard, with its name, description, and aliases, to send someone |
+| `p` | Paste a snippet from the clipboard: opens the editor filled in from it, in the open tab's scope. Other text becomes a new snippet's text |
 | `pgup` / `pgdn`, `shift+↑` / `shift+↓` | Scroll the preview of a long snippet |
 | `/` | Search names, aliases, descriptions, and text |
 | `r` | Refresh |
 | `esc` | Leave the search, clear it, then close the dialog |
 
 The list marks a global snippet **overridden** when a project snippet has the same name, **skill conflict** when another skill already uses its name (it is not inserted by `@name`; rename it), and **broken reference** when one of its references stays as typed.
+
+Copying writes through the terminal's clipboard sequence (OSC 52, which also works over SSH) and the system's clipboard tool. Pasting needs a tool that reads the clipboard: PowerShell on Windows and WSL, `wl-paste` on Wayland, `xclip` or `xsel` on X11, or `pbpaste` on macOS. A copied snippet is its file with a `name:` line added to the frontmatter.
 
 ### Edit
 
@@ -72,7 +76,7 @@ The list marks a global snippet **overridden** when a project snippet has the sa
 | Key | Action |
 | --- | --- |
 | `tab` / `shift+tab` | Next or previous field (`enter` also moves on, except in the text, where it starts a new line) |
-| `↑` / `↓` | Previous or next field; in the text, the previous or next line, then the field above from its first line |
+| `↑` / `↓` | Previous or next field, stopping at the first and last (`tab` goes around); in the text, the previous or next line, then the field above from its first line |
 | `space`, `←` / `→` | On the scope, switch between global and project |
 | `ctrl+s` | Save |
 | `esc` | Back to the list, or close when the editor was opened on its own; asks first if anything changed |

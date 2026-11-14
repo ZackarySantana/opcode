@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { askFirst, newlyBroken, referenceSegments, effectiveSnippets, expandSnippet, expandWrite, formatSnippet, MAX_BODY, parseCommand, parseSnippet, referenceKeys, referenceProblems, takenAliases, type Snippet } from "../src/domain"
+import { askFirst, formatShared, newlyBroken, parseShared, referenceSegments, effectiveSnippets, expandSnippet, expandWrite, formatSnippet, MAX_BODY, parseCommand, parseSnippet, referenceKeys, referenceProblems, takenAliases, type Snippet } from "../src/domain"
 
 const snippet = (name: string, scope: Snippet["scope"], aliases: string[] = [], body = `${scope} ${name}`): Snippet => ({ name, scope, aliases, body, path: `/${scope}/${name}.md` })
 const expand = (snippets: Snippet[], name: string, blocked?: Set<string>) => {
@@ -114,4 +114,12 @@ test("references to snippets are split out for coloring; other @words, emails, a
     { text: "@rv", reference: true },
   ])
   expect(referenceSegments("", () => true)).toEqual([])
+})
+
+test("a shared snippet carries its name and fields; other clipboard text becomes a new snippet's text", () => {
+  const fields = { description: "Review the diff", aliases: ["rv"], body: "Review it.\n\n---\nThen @style." }
+  expect(parseShared(formatShared("review", fields))).toEqual({ name: "review", ...fields })
+  expect(parseShared(formatShared("plain", { aliases: [], body: "Just text" }))).toEqual({ name: "plain", aliases: [], body: "Just text" })
+  expect(parseShared("  Some prompt a coworker wrote\n")).toEqual({ aliases: [], body: "Some prompt a coworker wrote" })
+  expect(parseShared("---\nname: Not Valid\n---\nbody")).toEqual({ aliases: [], body: "body" })
 })

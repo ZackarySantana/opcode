@@ -64,6 +64,24 @@ export function formatSnippet(fields: SnippetFields): string {
   return `---\n${lines.map((line) => `${line}\n`).join("")}---\n\n${body}`
 }
 
+/**
+ * A snippet as text to send someone: its file with its name added to the frontmatter, so pasting it into /snippets
+ * fills in every field.
+ */
+export function formatShared(name: string, fields: SnippetFields): string {
+  const file = formatSnippet(fields)
+  return file.startsWith("---\n") ? `---\nname: ${name}\n${file.slice(4)}` : `---\nname: ${name}\n---\n\n${file}`
+}
+
+/** Shared snippet text read back; anything else is the text of a new snippet. A name that isn't valid is left out. */
+export function parseShared(text: string): SnippetFields & { name?: string } {
+  const fields = parseSnippet(text)
+  const frontmatter = FRONTMATTER.exec(text.replace(/^\uFEFF/, ""))?.[1] ?? ""
+  const name = /^name\s*:\s*(.*)$/m.exec(frontmatter)?.[1]?.trim()
+  const unquoted = name === undefined ? undefined : unquote(name)
+  return { ...validName(unquoted) ? { name: unquoted } : {}, ...fields }
+}
+
 /** Normalized fields for a write, or an error a user or model can act on. */
 export function validateSnippet(name: string, fields: SnippetFields): SnippetFields {
   if (!validName(name)) throw new Error(`Invalid snippet name "${name}". Use lowercase letters, digits, and single hyphens, with at least one letter.`)

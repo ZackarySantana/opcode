@@ -66,6 +66,8 @@ function Snippets(props: { browser: Browser; scope: Scope }) {
     { id: command("edit"), bind: "e", enabled: idle, run: withFocused(props.browser.edit) },
     { id: command("duplicate"), bind: "y", enabled: idle, run: withFocused(props.browser.duplicate) },
     { id: command("delete"), bind: "d", enabled: idle, run: withFocused(props.browser.remove) },
+    { id: command("copy"), bind: "c", enabled: idle, run: withFocused(props.browser.copy) },
+    { id: command("paste"), bind: "p", enabled: idle, run: () => void props.browser.paste(props.scope) },
     { id: command("preview.down"), bind: "pagedown,shift+down", run: () => page(1) },
     { id: command("preview.up"), bind: "pageup,shift+up", run: () => page(-1) },
   ])
@@ -85,6 +87,8 @@ function Snippets(props: { browser: Browser; scope: Scope }) {
         { key: "n", label: "new", command: command("new") },
         { key: "y", label: "duplicate", command: command("duplicate") },
         { key: "d", label: "delete", command: command("delete") },
+        { key: "c", label: "copy", command: command("copy") },
+        { key: "p", label: "paste", command: command("paste") },
         { key: "pgup/pgdn", label: "scroll preview", command: command("preview.down") },
         { key: "/", label: "search", command: tab.command("search") },
         { key: "r", label: "refresh", command: tab.command("refresh") },

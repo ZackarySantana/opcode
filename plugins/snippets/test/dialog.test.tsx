@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 
-import { afterEach, expect, test } from "bun:test"
+import { afterEach, expect, mock, test } from "bun:test"
 import { mockTheme } from "@opcode/ui/test-support/host"
 import type { SessionMessageInfo } from "@opencode/client"
 import { PluginContextProvider } from "@opencode/plugin/tui"
@@ -10,12 +10,24 @@ import { testRender } from "@opentui/solid"
 import type { JSX } from "@opentui/solid/jsx-runtime"
 import { EventEmitter } from "node:events"
 import { createRoot, createSignal, onCleanup, Show } from "solid-js"
-import { SAVE_LEAD } from "../src/domain"
+import { formatShared, SAVE_LEAD } from "../src/domain"
 import type { SnippetEntry } from "../src/service"
 import plugin from "../src/tui"
 
+/** The system clipboard as the dialog sees it; `undefined` contents mean no tool could read it. */
+const clipboard = { contents: undefined as string | undefined, written: [] as string[], tool: true }
+mock.module("../src/clipboard", () => ({
+  systemClipboard: () => ({
+    read: async () => clipboard.contents,
+    write: async (text: string) => { clipboard.written.push(text); return clipboard.tool },
+  }),
+}))
+
 const cleanups: (() => unknown)[] = []
-afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+  Object.assign(clipboard, { contents: undefined, written: [], tool: true })
+})
 
 const entry = (scope: "global" | "project", name: string, body: string, extra: Partial<SnippetEntry> = {}): SnippetEntry =>
   ({ scope, name, path: `/${scope}/${name}.md`, aliases: [], body, overridden: false, conflict: false, expanded: body, problems: [], breaks: [], ...extra })
@@ -36,7 +48,8 @@ const messages = [
 /**
  * The plugin over a host whose dialogs replace one another, and whose prompt accepts pastes only with no dialog open.
  */
-async function harness(route: Route, options: { agentTools?: boolean; rows?: SnippetEntry[] } = {}) {
+async function harness(route: Route, options: { agentTools?: boolean; rows?: SnippetEntry[]; osc52?: boolean } = {}) {
+  const sequences: string[] = []
   let rows = options.rows ?? [
     entry("global", "review", "GLOBAL REVIEW", { overridden: true }),
     entry("project", "later", "Loses to a skill", { conflict: true }),
@@ -58,6 +71,7 @@ async function harness(route: Route, options: { agentTools?: boolean; rows?: Sni
     widthMethod: "unicode", isDestroyed: false,
     requestRender: () => { setTimeout(() => renderer.emit(CliRenderEvents.FRAME)) },
     keyInput: { processPaste: (bytes: Uint8Array) => pastes.push(new TextDecoder().decode(bytes)) },
+    copyToClipboardOSC52: (text: string) => { sequences.push(text); return options.osc52 ?? true },
   })
   const clear = () => { dialog()?.close?.(); setDialog(undefined) }
   const api = {
@@ -117,7 +131,7 @@ async function harness(route: Route, options: { agentTools?: boolean; rows?: Sni
   const dispatch = (id: string, input?: string) => enabled(id)?.run(input)
   const frame = (match: (frame: string) => boolean) => view.waitForFrame(match)
   return {
-    dispatch, frame, pastes,
+    dispatch, frame, pastes, sequences,
     /** Whether a key would run the command now. */
     can: (id: string) => !!enabled(id), toasts, removed, saved, prompts, confirms, answers, failures, selects,
     open: () => dialog() !== undefined,
@@ -360,4 +374,61 @@ test("/snippets save says so when the agent's snippet tools are off", async () =
   expect(h.toasts).toEqual([expect.stringMatching(/agentTools/)])
   expect(h.prompts).toEqual([])
   expect(h.pastes).toEqual([])
+})
+
+test("c copies the outlined snippet for someone else, and p in their /snippets fills a new one in the open tab", async () => {
+  const h = await harness({ type: "home" })
+  await h.dispatch("open")
+  await h.frame((frame) => frame.includes("/project/later.md"))
+  h.dispatch("down")
+  await h.frame((frame) => frame.includes("/project/review.md"))
+  await h.dispatch("copy")
+  const shared = formatShared("review", { description: "Review the diff", aliases: ["rv"], body: "Review the current changes\nfor correctness." })
+  expect(h.sequences).toEqual([shared])
+  expect(clipboard.written).toEqual([shared])
+  expect(h.toasts).toContain("Copied @review. Paste it into /snippets with p.")
+
+  // Their clipboard holds what was sent; pasting on the global tab makes it a global snippet.
+  clipboard.contents = shared.replaceAll("\n", "\r\n")
+  h.dispatch("next")
+  await h.frame((frame) => frame.includes("EVERY PROJECT"))
+  await h.dispatch("paste")
+  await h.frame((frame) => frame.includes("New snippet") && frame.includes("Review the diff"))
+  await h.dispatch("editor.save")
+  await until(() => h.saved.length)
+  expect(h.saved).toEqual([{ name: "review", scope: "global", fields: { description: "Review the diff", aliases: ["rv"], body: "Review the current changes\nfor correctness." } }])
+})
+
+test("p says why when the clipboard can't be read or is empty, and c when it can't be written", async () => {
+  const h = await harness({ type: "home" }, { osc52: false })
+  await h.dispatch("open")
+  await h.frame((frame) => frame.includes("@later"))
+  await h.dispatch("paste")
+  clipboard.contents = "  "
+  await h.dispatch("paste")
+  clipboard.tool = false
+  await h.dispatch("copy")
+  expect(h.toasts).toEqual([
+    expect.stringMatching(/^Couldn't read the clipboard/),
+    "The clipboard has no text to make a snippet from.",
+    expect.stringMatching(/^Couldn't reach the clipboard/),
+  ])
+  expect(h.saved).toEqual([])
+})
+
+test("tab goes around the editor's fields, while ↑/↓ stop at the first and last", async () => {
+  const h = await harness({ type: "home" })
+  await h.dispatch("open")
+  await h.frame((frame) => frame.includes("@later"))
+  h.dispatch("new")
+  await h.frame((frame) => frame.includes("New snippet"))
+  expect(h.can("editor.up")).toBe(false)
+  h.dispatch("editor.previous")
+  await h.render()
+  await h.type("from the end")
+  await h.next()
+  await h.type("named")
+  await h.dispatch("editor.save")
+  await until(() => h.saved.length)
+  expect(h.saved).toEqual([{ name: "named", scope: "project", fields: { aliases: [], body: "from the end" } }])
 })

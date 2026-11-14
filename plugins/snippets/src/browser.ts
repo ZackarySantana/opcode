@@ -5,7 +5,8 @@ import type { Context } from "@opencode/plugin/tui/context"
 import type { JSX } from "@opentui/solid/jsx-runtime"
 import { createSignal } from "solid-js"
 import { draftOf, duplicateOf, emptyDraft, messageChoices, sameDraft, saveRequest, type Draft } from "./draft"
-import { parseCommand, SAVE_LEAD, type Scope } from "./domain"
+import { type Clipboard, systemClipboard } from "./clipboard"
+import { formatShared, parseCommand, parseShared, SAVE_LEAD, type Scope } from "./domain"
 import { describeError, type SnippetsRemote } from "./rpc"
 import type { SnippetEntry, SnippetKey } from "./service"
 
@@ -37,7 +38,7 @@ export const keyOf = (row: SnippetKey) => `${row.scope}/${row.name}`
  * /snippets: a dialog to list, preview, insert, write, and delete snippets, and to ask the session's agent to save one.
  * Snippet data stays on the server.
  */
-export function createBrowser(api: Context, remote: SnippetsRemote, render: () => JSX.Element) {
+export function createBrowser(api: Context, remote: SnippetsRemote, render: () => JSX.Element, clipboard: Clipboard = systemClipboard()) {
   const [state, setState] = createSignal<BrowserState>({ rows: [], loading: false })
   const [editing, setEditing] = createSignal<Editing>()
   // The outlined snippet's key and the open tab (project, then global), kept here so they survive the list being
@@ -208,6 +209,25 @@ export function createBrowser(api: Context, remote: SnippetsRemote, render: () =
         ...change.field ? { field: change.field } : {},
         ...change.draft ? { draft: { ...current.draft, ...change.draft }, error: undefined } : {},
       })
+    },
+    /** Puts the snippet on the clipboard as text someone else can paste into their /snippets with p. */
+    async copy(row: SnippetEntry) {
+      const text = formatShared(row.name, row)
+      // The terminal's own clipboard sequence also reaches the clipboard over SSH; a local tool covers terminals without it.
+      const sent = api.renderer.copyToClipboardOSC52(text)
+      const written = await clipboard.write(text)
+      if (lifetime.signal.aborted) return
+      if (sent || written) toast(`Copied @${row.name}. Paste it into /snippets with p.`, "success")
+      else toast("Couldn't reach the clipboard: this terminal doesn't support it, and no clipboard tool was found.", "error")
+    },
+    /** Opens the editor with a snippet from the clipboard, or its text as a new snippet's, in `scope`. */
+    async paste(scope: Scope) {
+      const text = await clipboard.read()
+      if (lifetime.signal.aborted) return
+      if (text === undefined) { toast("Couldn't read the clipboard: no clipboard tool was found (pbpaste, wl-paste, xclip, xsel, or PowerShell).", "error"); return }
+      const shared = parseShared(text)
+      if (!shared.body) { toast("The clipboard has no text to make a snippet from.", "warning"); return }
+      write({ ...emptyDraft(shared.body), name: shared.name ?? "", scope, description: shared.description ?? "", aliases: shared.aliases.join(" ") }, { back: true })
     },
     /** Closes the dialog, then types `@name ` into the prompt under it. */
     async insert(row: SnippetEntry) {
