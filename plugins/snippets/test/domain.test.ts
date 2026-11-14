@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { authoringRequest, brokenBy, effectiveSnippets, expandSnippet, expandWrite, formatSnippet, MAX_BODY, parseCommand, parseSnippet, referenceKeys, referenceProblems, takenAliases, type Snippet } from "../src/domain"
+import { askFirst, formatShared, newlyBroken, parseShared, referenceSegments, effectiveSnippets, expandSnippet, expandWrite, formatSnippet, MAX_BODY, parseCommand, parseSnippet, referenceKeys, referenceProblems, takenAliases, type Snippet } from "../src/domain"
 
 const snippet = (name: string, scope: Snippet["scope"], aliases: string[] = [], body = `${scope} ${name}`): Snippet => ({ name, scope, aliases, body, path: `/${scope}/${name}.md` })
 const expand = (snippets: Snippet[], name: string, blocked?: Set<string>) => {
@@ -41,16 +41,23 @@ test("aliases another snippet would keep are reported, but a project alias may o
   expect(owners(snippet("wide", "global", ["fx", "first", "rv"]))).toEqual([["rv", "/global/other.md"]])
 })
 
-test("/snippets arguments start authoring only after new, with the rest as the request", () => {
-  expect(parseCommand("new Never commit\nuntil I say so")).toEqual({ verb: "new", request: "Never commit\nuntil I say so" })
-  expect(parseCommand("/snippets new")).toEqual({ verb: "new", request: "" })
+test("/snippets new opens the editor, save carries the request, and anything else opens the list", () => {
+  expect(parseCommand("new")).toEqual({ verb: "new" })
+  expect(parseCommand("/snippets save  the handoff\nabove ")).toEqual({ verb: "save", request: "the handoff\nabove" })
   expect(parseCommand("")).toEqual({ verb: "open" })
   expect(parseCommand("newer")).toEqual({ verb: "open" })
 })
 
-test("an authoring request names the snippet it changes", () => {
-  expect(authoringRequest({}, "says hi")).toEndWith("The user wants to create a snippet that says hi")
-  expect(authoringRequest({ name: "review", scope: "project" }, "be shorter")).toEndWith("The user wants this change to @review: be shorter")
+test("agents ask before snippet writes and deletes unless they already have a rule for them", () => {
+  const rules = [{ action: "*", resource: "*", effect: "deny" }]
+  askFirst(rules)
+  // Added first, so the agent's own rules after them, such as a deny, still win.
+  expect(rules).toEqual([
+    { action: "snippet_write", resource: "*", effect: "ask" }, { action: "snippet_delete", resource: "*", effect: "ask" }, { action: "*", resource: "*", effect: "deny" },
+  ])
+  const configured = [{ action: "snippet_write", resource: "*", effect: "allow" }]
+  askFirst(configured)
+  expect(configured).toEqual([{ action: "snippet_delete", resource: "*", effect: "ask" }, { action: "snippet_write", resource: "*", effect: "allow" }])
 })
 
 test("references expand in place through nested snippets, by name or alias, with project snippets in place of global ones", () => {
@@ -88,10 +95,31 @@ test("a snippet about to be written expands with its new text, and a global one 
   expect(expandWrite(snippets, snippet("ticket", "project", [], "@local")).text).toBe("project local")
 })
 
-test("deleting a snippet reports the snippets whose references stop resolving", () => {
+test("removing or renaming a snippet reports the snippets whose references stop resolving", () => {
   const review = snippet("review", "project", ["rv"])
   const snippets = [snippet("ticket", "global", [], "@review"), snippet("alias", "global", [], "@rv"), review, snippet("review", "global"), snippet("other", "global", [], "@gone")]
+  const without = (removed: Snippet) => snippets.filter((other) => other !== removed)
   // Without the project review, @review still finds the global one, but @rv no longer resolves.
-  expect(brokenBy(snippets, review).map((s) => s.name)).toEqual(["alias"])
-  expect(brokenBy(snippets, snippets[3]!)).toEqual([])
+  expect(newlyBroken(snippets, without(review)).map((s) => s.name)).toEqual(["alias"])
+  expect(newlyBroken(snippets, without(snippets[3]!))).toEqual([])
+  // A rename that keeps the alias breaks nothing.
+  expect(newlyBroken(snippets, [...without(review), snippet("check", "project", ["rv"])])).toEqual([])
+})
+
+test("references to snippets are split out for coloring; other @words, emails, and paths stay plain text", () => {
+  const known = new Set(["review", "rv"])
+  expect(referenceSegments("@review then mail me@b.com, read @b/x, ask @someone, and @rv", (key) => known.has(key))).toEqual([
+    { text: "@review", reference: true },
+    { text: " then mail me@b.com, read @b/x, ask @someone, and ", reference: false },
+    { text: "@rv", reference: true },
+  ])
+  expect(referenceSegments("", () => true)).toEqual([])
+})
+
+test("a shared snippet carries its name and fields; other clipboard text becomes a new snippet's text", () => {
+  const fields = { description: "Review the diff", aliases: ["rv"], body: "Review it.\n\n---\nThen @style." }
+  expect(parseShared(formatShared("review", fields))).toEqual({ name: "review", ...fields })
+  expect(parseShared(formatShared("plain", { aliases: [], body: "Just text" }))).toEqual({ name: "plain", aliases: [], body: "Just text" })
+  expect(parseShared("  Some prompt a coworker wrote\n")).toEqual({ aliases: [], body: "Some prompt a coworker wrote" })
+  expect(parseShared("---\nname: Not Valid\n---\nbody")).toEqual({ aliases: [], body: "body" })
 })

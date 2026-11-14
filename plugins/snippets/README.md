@@ -1,6 +1,6 @@
 # @lidtop/opencode-snippets
 
-Stop retyping the prompts you use every day. Save reusable prompt text as snippets, drop one into any message with `@name`, and write or change snippets by asking for them in a chat.
+Stop retyping the prompts you use every day. Save reusable prompt text as snippets, drop one into any message with `@name`, and save or change snippets by asking the agent you're working with, or in the built-in editor.
 
 ## Install
 
@@ -29,38 +29,72 @@ Type `@` in a prompt and pick a snippet from OpenCode's own completion, where sn
 
 Snippets are not shown to the model as skills it may load on its own. Only the ones you mention are sent.
 
+### Save snippets from the chat you're in
+
+The agent in every session has snippet tools, so you can ask it directly: "save the handoff you just wrote as @ticket", "make @review shorter", "rename @rv to @check and make it a project snippet", or "delete @old". It saves exactly the text you want reused, and **you approve every write and delete** in OpenCode's permission prompt. Choosing **Allow always** there approves later changes to that one snippet in this project.
+
+`/snippets save` types "Save as a snippet: " into the prompt for you to finish, and `/snippets save the plan above` sends that request to the agent right away. Neither opens another session.
+
+The tools tell the agent to use them only when you ask about snippets. To keep the agent from seeing them at all, set the plugin option `agentTools` to `false`:
+
+```jsonc
+{
+  "plugins": [["@lidtop/opencode-snippets", { "agentTools": false }]]
+}
+```
+
+Your own permission rules for `snippet_write` and `snippet_delete` on an agent win over the plugin's ask rules, so an agent configured to deny them keeps denying.
+
 ### Manage
 
-Run `/snippets` or select **Snippets** in the command palette. It opens a dialog listing project snippets, then global ones, each with a preview of its text.
+Run `/snippets` or select **Snippets** in the command palette. It opens a dialog with project snippets and global snippets on separate tabs (`tab` switches; a project without snippets of its own opens on the global ones). Beside the list is a preview of the outlined snippet: its scope, file, description, aliases, any problems, the snippets that use it, and its text as written, with references to other snippets in purple.
 
 | Key | Action |
 | --- | --- |
 | `↑` / `↓`, `j` / `k` | Move selection |
+| `tab` / `shift+tab` | Switch between the project and global tabs |
 | `enter` | Close the dialog and insert `@name ` into the prompt under it (nothing is submitted). Over another plugin's page there is no prompt, so the dialog stays open |
-| `n` | Write a new snippet in a new chat |
-| `e` | Edit the selected snippet in a new chat |
-| `d` | Delete the selected snippet's file, after confirmation |
+| `e` | Edit the selected snippet |
+| `n` | Write a new snippet, in the open tab's scope |
+| `y` | Duplicate the selected snippet under a free `name-copy` |
+| `d` | Delete the selected snippet's file, after a confirmation that names the snippets whose references would stay as typed |
+| `c` | Copy the selected snippet to the clipboard, with its name, description, and aliases, to send someone |
+| `p` | Paste a snippet from the clipboard: opens the editor filled in from it, in the open tab's scope. Other text becomes a new snippet's text |
+| `pgup` / `pgdn`, `shift+↑` / `shift+↓` | Scroll the preview of a long snippet |
 | `/` | Search names, aliases, descriptions, and text |
 | `r` | Refresh |
 | `esc` | Leave the search, clear it, then close the dialog |
 
-The list marks a global snippet **overridden** when a project snippet has the same name, and **skill conflict** when another skill already uses its name. A conflicting snippet is not inserted by `@name`; rename it.
+The list marks a global snippet **overridden** when a project snippet has the same name, **skill conflict** when another skill already uses its name (it is not inserted by `@name`; rename it), and **broken reference** when one of its references stays as typed.
 
-### Write snippets in chat
+Copying writes through the terminal's clipboard sequence (OSC 52, which also works over SSH) and the system's clipboard tool. Pasting needs a tool that reads the clipboard: PowerShell on Windows and WSL, `wl-paste` on Wayland, `xclip` or `xsel` on X11, or `pbpaste` on macOS. A copied snippet is its file with a `name:` line added to the frontmatter.
 
-`/snippets new` (or `n` in `/snippets`) opens a new session for writing snippets with instructions for the agent already in the prompt (OpenCode may show them as a "pasted N lines" placeholder), followed by "The following message is what the user wants:". Type what you want after it and send. `/snippets new Never commit until I say so` sends the instructions right away, ending with "The user wants to create a snippet that Never commit until I say so". `e` in `/snippets` opens the same kind of session for the selected snippet. Before writing anything, the agent walks you through an example: the name and scope, the exact text, and a sample message that uses it. It creates or updates snippets with its snippet tools, and **you approve every write and delete** in OpenCode's permission prompt, which shows the name, scope, and text. The session uses the model selected in your prompt.
+### Edit
 
-The snippet tools exist only in these sessions. Other sessions never see them.
+`e`, `n`, `y`, and `/snippets new` open the editor, with fields for the name, scope, description, aliases (separated by spaces or commas), and the text. References to other snippets in the text turn purple as you type them.
+
+| Key | Action |
+| --- | --- |
+| `tab` / `shift+tab` | Next or previous field (`enter` also moves on, except in the text, where it starts a new line) |
+| `↑` / `↓` | Previous or next field, stopping at the first and last (`tab` goes around); in the text, the previous or next line, then the field above from its first line |
+| `space`, `←` / `→` | On the scope, switch between global and project |
+| `ctrl+s` | Save |
+| `esc` | Back to the list, or close when the editor was opened on its own; asks first if anything changed |
+
+Changing an existing snippet's name or scope renames or moves its file. A save that would replace another snippet, or with an invalid name, alias, or reference, keeps the editor open with the reason. Saving from the editor doesn't ask for approval: you are the one writing.
+
+**Save Message as Snippet** in the command palette lists this session's recent messages, yours and the agent's, and opens the editor with the one you pick.
 
 ### Desktop
 
 In the desktop app, from a session:
 
-- `/snippets` (or **Snippets** in the command palette) opens a searchable list of project snippets, then global ones, with their descriptions or text, aliases, and **overridden** or **skill conflict** marks. Picking one types `@name ` into the prompt; **New snippet…** at the top writes one in a new chat.
-- `/snippets new Never commit until I say so` opens the authoring session with that request right away. Without a request, the app asks what the snippet should do first.
-- **Edit Snippet in Chat** and **Delete Snippet** in the command palette pick a snippet, then open an authoring session asking what should change, or delete its file after confirmation.
+- `/snippets` (or **Snippets** in the command palette) opens a dialog with a search field and the list on the left and a preview on the right, showing the text as written with references in purple. **Insert** (or `enter` in the search, or a double click) types `@name ` into the prompt. **Edit**, **Duplicate**, **Delete**, and **New snippet** work as in the terminal, in an editor inside the dialog. `↑` / `↓` move the selection, and in the editor `ctrl+enter` (`⌘+enter` on macOS) saves.
+- `/snippets new` opens the editor, and `/snippets save [what]` asks the session's agent, as in the terminal.
+- **Save Prompt as Snippet** opens the editor with the prompt you are writing. After saving, it offers to replace the prompt with `@name `.
+- **Save Message as Snippet** picks one of the session's messages.
 
-Authoring sessions open in a new tab on the session's server, with the model selected in your prompt, and work as in the terminal: you approve every write and delete. Snippets come from the session's server and directory.
+Snippets come from the session's server and directory. Closing the dialog with `esc` or a click outside it discards unsaved editor changes; **Cancel** asks first.
 
 ## Files
 
@@ -83,7 +117,7 @@ Review the current changes for correctness, missing tests, and unclear names. Be
 - Names are lowercase letters and digits joined by single hyphens, with at least one letter, such as `review` or `pr-2`.
 - A project snippet replaces a global one with the same name. A name always wins over another snippet's alias.
 - The body is inserted as written. There is no templating, arguments, or shell substitution.
-- Files you edit by hand are picked up the next time you send a message that mentions a snippet, open `/snippets`, or write a snippet. Global snippet files may be symlinks, for example into a dotfiles checkout, and writes update the file they point to. Project snippets must be regular files, so a cloned repository cannot point a snippet at a file elsewhere on your machine. Bodies are limited to 64 KiB.
+- Files you edit by hand are picked up as soon as they are saved, including in `@` completion. Global snippet files may be symlinks, for example into a dotfiles checkout, and writes update the file they point to. Project snippets must be regular files, so a cloned repository cannot point a snippet at a file elsewhere on your machine. Bodies are limited to 64 KiB.
 
 ### Use other snippets
 
@@ -102,7 +136,7 @@ Read the ticket, implement it, then:
 Sending `@ticket` attaches its text with `@review` replaced by the current text of `review`, so editing `review` changes what `@ticket` sends without touching `ticket`. References nest, and resolve the way `@name` does in a prompt: by name or alias, with a project snippet in place of a global one with the same name, even inside a global snippet.
 
 - A reference that is no snippet, such as `@someone`, or that leads back to a snippet already being expanded stays as typed. The same goes for every reference in a snippet that would grow past 64 KiB with them.
-- Snippets written in chat must use only existing snippets, with no loops, and global snippets only global ones. Deleting a snippet in chat names the snippets that used it.
+- Saves from the agent or the editor must use only existing snippets, with no loops, and global snippets only global ones. Deleting or renaming a snippet names the snippets that used it.
 - `/snippets` and the desktop list mark a snippet with a reference that stays as typed **broken reference**.
 - A message that mentions both `@ticket` and `@review` gets the review text twice.
 

@@ -3,7 +3,6 @@ import { mkdir, readdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tempDir } from "@opcode/ui/test-support/host"
 import plugin from "../src/index"
-import { authoringSession } from "../src/domain"
 
 type Skill = { id: string; name: string; path: string; content: string; autoinvoke?: boolean }
 type Hook = (event: any) => Promise<void> | void
@@ -12,7 +11,7 @@ const cleanups: (() => void)[] = []
 afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup() })
 
 /** A plugin context whose skill registry replays transforms after built-in skills and before later file skills. */
-async function fixture(files: Record<string, string>, laterSkills: Skill[] = []) {
+async function fixture(files: Record<string, string>, laterSkills: Skill[] = [], options: Record<string, unknown> = {}) {
   const root = tempDir("opcode-snippets-plugin-")
   const previous = process.env.XDG_CONFIG_HOME
   process.env.XDG_CONFIG_HOME = join(root.path, "config")
@@ -25,9 +24,7 @@ async function fixture(files: Record<string, string>, laterSkills: Skill[] = [])
     await mkdir(join(root.path, path, ".."), { recursive: true })
     await writeFile(join(root.path, path), text)
   }
-  const sessions: Record<string, { metadata?: unknown; permissions?: unknown }> = {
-    normal: {}, authoring: authoringSession({}), unprotected: { metadata: authoringSession({}).metadata },
-  }
+  const agents = [{ id: "build", permissions: [] as any[] }, { id: "explore", permissions: [{ action: "*", resource: "*", effect: "deny" }] }]
   const transforms: ((editor: any) => void)[] = []
   let skills: Skill[] = []
   let failing = false
@@ -39,9 +36,11 @@ async function fixture(files: Record<string, string>, laterSkills: Skill[] = [])
   }
   const hooks: Record<string, Hook> = {}
   const tools: any[] = []
+  let handlers: Record<string, (input: unknown, call: unknown) => Promise<any>> = {}
   const approvals: any[] = []
   let approve = true
-  await plugin.setup({
+  const stop = await plugin.setup({
+    options,
     location: { directory: join(root.path, "project"), project: { id: "p", directory: join(root.path, "project") } },
     skill: {
       transform: async (callback: any) => { transforms.push(callback); rebuild() },
@@ -49,13 +48,18 @@ async function fixture(files: Record<string, string>, laterSkills: Skill[] = [])
       list: async () => { if (failing) throw new Error("registry unavailable"); return { data: skills } },
     },
     tool: { transform: async (callback: any) => callback({ add: (tool: any) => tools.push(tool) }) },
-    session: { hook: async (name: string, callback: Hook) => { hooks[name] = callback }, get: async ({ sessionID }: { sessionID: string }) => sessions[sessionID]! },
+    session: { hook: async (name: string, callback: Hook) => { hooks[name] = callback } },
+    agent: { transform: async (callback: any) => callback({ list: () => agents, update: (id: string, change: any) => change(agents.find((agent) => agent.id === id)) }) },
     permission: { assert: async (input: unknown) => { approvals.push(input); if (!approve) throw new Error("rejected") } },
-    rpc: { register: async () => ({ dispose: async () => {} }) },
+    rpc: { register: async (_definition: unknown, registered: typeof handlers) => { handlers = registered; return { dispose: async () => {} } } },
   } as any)
+  cleanups.push(() => void (stop as () => Promise<void>)())
   const tool = (name: string) => tools.find((tool) => tool.name === name)!
-  const call = async (name: string, input: unknown, sessionID = "authoring") => (await tool(name).execute(input, { sessionID, agent: "build", messageID: "m", id: "c" })).content
-  return { root: root.path, hooks, skills: () => skills, approvals, call, reject: () => { approve = false }, fail: () => { failing = true } }
+  const call = async (name: string, input: unknown, sessionID = "work") => (await tool(name).execute(input, { sessionID, agent: "build", messageID: "m", id: "c" })).content
+  // `guarded` throws what `call.error` makes, carrying the failure's message.
+  const rpc = (method: string, input: unknown = {}) =>
+    handlers[method]!(input, { signal: new AbortController().signal, error: (_type: string, message: string) => new Error(message) })
+  return { root: root.path, hooks, skills: () => skills, tools, agents, approvals, call, rpc, reject: () => { approve = false }, fail: () => { failing = true } }
 }
 
 test("pasted @name attaches each available snippet once and leaves the text as typed", async () => {
@@ -94,26 +98,27 @@ test("a snippet failure never blocks sending the prompt", async () => {
   expect(event.prompt).toEqual({ text: "@review", skills: [] })
 })
 
-test("snippet tools exist only in authoring sessions that still ask before writing", async () => {
+test("every session gets the snippet tools, and every agent asks before writes and deletes", async () => {
   const f = await fixture({})
-  const context = async (sessionID: string) => {
-    const event = { sessionID, tools: { snippet_list: {}, snippet_write: {}, snippet_delete: {}, read: {} } }
-    await f.hooks.context!(event)
-    return Object.keys(event.tools)
-  }
-  expect(await context("normal")).toEqual(["read"])
-  expect(await context("unprotected")).toEqual(["read"])
-  expect(await context("authoring")).toEqual(["snippet_list", "snippet_write", "snippet_delete", "read"])
-  for (const sessionID of ["normal", "unprotected"]) {
-    await expect(f.call("snippet_list", {}, sessionID)).rejects.toThrow("only available in a snippet authoring session")
-  }
+  expect(f.tools.map((tool) => tool.name)).toEqual(["snippet_list", "snippet_read", "snippet_write", "snippet_delete"])
+  expect(f.hooks.context).toBeUndefined()
+  expect(f.agents[0]!.permissions).toEqual([
+    { action: "snippet_write", resource: "*", effect: "ask" }, { action: "snippet_delete", resource: "*", effect: "ask" },
+  ])
+  // An agent that denies everything keeps denying: its own rule comes after the ask rules.
+  expect(f.agents[1]!.permissions.at(-1)).toEqual({ action: "*", resource: "*", effect: "deny" })
+  expect(await f.rpc("list")).toMatchObject({ agentTools: true })
+  const off = await fixture({}, [], { agentTools: false })
+  expect(off.tools).toEqual([])
+  expect(off.agents[0]!.permissions).toEqual([])
+  expect(await off.rpc("list")).toMatchObject({ agentTools: false })
 })
 
 test("writes and deletes wait for approval under the session's ask rules, and a rejection changes nothing", async () => {
   const f = await fixture({})
-  const asked = authoringSession({}).permissions.map((rule) => rule.action)
+  const asked = ["snippet_write", "snippet_delete"]
   await f.call("snippet_write", { name: "fresh", body: "FRESH", scope: "project" })
-  expect(f.approvals).toMatchObject([{ sessionID: "authoring", resources: ["project/fresh"] }])
+  expect(f.approvals).toMatchObject([{ sessionID: "work", resources: ["project/fresh"] }])
   expect(asked).toContain(f.approvals[0].action)
   expect(f.skills().find((skill) => skill.id === "fresh")?.content).toBe("FRESH")
   f.reject()
@@ -178,7 +183,38 @@ test("writes with references that would not expand fail without asking, and dele
   await f.call("snippet_write", { name: "ticket", body: "Ticket: @rv", scope: "global" })
   expect(f.approvals[0].metadata).toMatchObject({ body: "Ticket: @rv", expanded: "Ticket: REVIEW STYLE" })
   expect(f.skills().find((skill) => skill.id === "ticket")?.content).toBe("Ticket: REVIEW STYLE")
-  expect(await f.call("snippet_delete", { name: "review", scope: "global" })).toBe("Deleted @review (global). @ticket used it and now keep its @name as typed. Tell the user.")
-  expect(f.approvals[1].metadata).toMatchObject({ breaks: ["@ticket"] })
+  expect(await f.call("snippet_delete", { name: "review", scope: "global" })).toBe("Deleted @review (global). @ticket used @review and now keep that @name as typed. Tell the user.")
+  expect(f.approvals[1].metadata).toMatchObject({ breaks: ["ticket"] })
   expect(f.skills().find((skill) => skill.id === "ticket")?.content).toBe("Ticket: @rv")
+})
+
+test("the agent renames or moves a snippet in one approved write, and the list follows hand edits without a prompt", async () => {
+  const f = await fixture({ "config/opencode/snippets/review.md": "REVIEW", "config/opencode/snippets/ticket.md": "Ticket: @review" })
+  const read = JSON.parse(await f.call("snippet_read", { name: "ticket" }))
+  expect(read).toMatchObject({ name: "ticket", scope: "global", body: "Ticket: @review", expanded: "Ticket: REVIEW", usedBy: [] })
+  expect(JSON.parse(await f.call("snippet_read", { name: "review" })).usedBy).toEqual(["ticket"])
+  expect(await f.call("snippet_write", { name: "check", scope: "project", body: "REVIEW", from: { name: "review", scope: "global" } }))
+    .toEndWith("It replaces @review (global). @ticket used @review and now keep that @name as typed. Tell the user.")
+  expect(f.approvals).toHaveLength(1)
+  expect(f.approvals[0].metadata).toMatchObject({ from: "global/review", breaks: ["ticket"] })
+  expect(await readdir(join(f.root, "config/opencode/snippets"))).toEqual(["ticket.md"])
+  expect(f.skills().find((skill) => skill.id === "check")?.content).toBe("REVIEW")
+  // A hand edit reaches the skills without any prompt mentioning a snippet.
+  await writeFile(join(f.root, "config/opencode/snippets/ticket.md"), "Ticket: @check")
+  for (let attempt = 0; attempt < 100 && f.skills().find((skill) => skill.id === "ticket")?.content !== "Ticket: REVIEW"; attempt++) await Bun.sleep(20)
+  expect(f.skills().find((skill) => skill.id === "ticket")?.content).toBe("Ticket: REVIEW")
+})
+
+test("saves from the user's client don't ask, never replace another snippet, and rename with from", async () => {
+  const f = await fixture({ "config/opencode/snippets/review.md": "REVIEW", "config/opencode/snippets/ticket.md": "Ticket: @review" })
+  await expect(f.rpc("save", { name: "ticket", scope: "global", fields: { aliases: [], body: "NEW" } })).rejects.toThrow("There is already a global snippet named ticket.")
+  expect(await f.rpc("save", { name: "plan", scope: "project", fields: { description: "Plan first", aliases: ["p"], body: "PLAN" } }))
+    .toEqual({ path: join(f.root, "project/.opencode/snippets/plan.md"), breaks: [] })
+  expect(await f.rpc("save", { name: "check", scope: "global", fields: { aliases: [], body: "CHECK" }, from: { name: "review", scope: "global" } }))
+    .toMatchObject({ breaks: ["ticket"] })
+  expect(f.approvals).toEqual([])
+  const { snippets } = await f.rpc("list")
+  expect(snippets.map((entry: any) => [entry.scope, entry.name, entry.expanded, entry.problems, entry.breaks])).toEqual([
+    ["global", "check", "CHECK", [], []], ["global", "ticket", "Ticket: @review", ["@review is not a snippet."], []], ["project", "plan", "PLAN", [], []],
+  ])
 })

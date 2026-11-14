@@ -18,11 +18,18 @@ export default Plugin.define({
       void api.data.location.skill.sync(location).catch(() => {})
       if (browser.shown()) void browser.load()
     })
-    api.keymap.layer(() => ({ mode: "global", commands: [{
-      id: "opcode-snippets.open", title: "Snippets", description: "Insert, edit, or write reusable prompt snippets", group: "Plugin", palette: true,
-      slash: { name: "snippets", arguments: true },
-      run: (input) => browser.command(input),
-    }] }))
+    api.keymap.layer(() => ({ mode: "global", commands: [
+      {
+        id: `${PLUGIN_ID}.open`, title: "Snippets", description: "Insert, write, or edit reusable prompt snippets; /snippets new or /snippets save [what]",
+        group: "Plugin", palette: true, slash: { name: "snippets", arguments: true },
+        run: (input) => browser.command(input),
+      },
+      {
+        id: `${PLUGIN_ID}.save-message`, title: "Save Message as Snippet", description: "Start a snippet from a message in this session",
+        group: "Plugin", palette: true,
+        run: () => browser.saveMessage(),
+      },
+    ] }))
     return () => {
       unsubscribe()
       browser.dispose()
