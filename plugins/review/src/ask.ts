@@ -13,6 +13,8 @@ export interface Ask {
   readonly id: string
   readonly anchor: Anchor
   readonly question: string
+  /** The session answering it, once it's made. */
+  readonly session?: string
   /** Set when the question never reached the session. */
   readonly error?: string
 }

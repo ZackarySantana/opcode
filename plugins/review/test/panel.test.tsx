@@ -20,10 +20,10 @@ const shifted = () => file(patch.replace(" const user = load()", " const user = 
 const model = (id: string, family: string, name: string) => ({ id, providerID: "anthropic", family, name, enabled: true, status: "active" }) as ModelInfo
 const models = { default: model("claude-opus", "claude-opus", "Claude Opus"), list: [model("claude-opus", "claude-opus", "Claude Opus"), model("claude-haiku", "claude-haiku", "Claude Haiku")] }
 
-async function setup(width = 90) {
+async function setup(width = 90, options: Parameters<typeof fakeHost>[0] = {}) {
   let files = [file(), other]
   let answered: Record<string, Reply> = {}
-  const host = fakeHost({ diff: () => files, models })
+  const host = fakeHost({ diff: () => files, models, ...options })
   const panel = fakePanel(width)
   const review = new ReviewController(host.api, { replies: async () => answered, timer: fastTimer })
   const view = await testRender(() => (
@@ -398,5 +398,38 @@ test("esc leaves a question unasked", async () => {
     await view.waitForFrame((current) => !current.includes("Ask the small model"))
     expect(prompts).toHaveLength(0)
     expect(created).toHaveLength(0)
+  } finally { await dispose() }
+})
+
+test("an agent working in a worktree of its own is reviewed there, as Uncommitted, and the options pick another checkout", async () => {
+  const { frame, run, write, choose, stream, diffs, prompts, dispose } = await setup(90, { worktrees: { listed: ["/repo", "/wt/feature"], found: ["/wt/late"] } })
+  const working = (tool: Record<string, unknown>) => [{ id: "msg_work", type: "assistant", agent: "build", model: { id: "m", providerID: "p" }, time: { created: 1 },
+    content: [{ type: "tool", id: "t", name: tool.name, time: { created: 1 }, state: { status: "completed", input: tool.input, content: [{ type: "text", text: "" }] } }] }] as SessionMessageInfo[]
+  try {
+    await frame("Review This turn")
+    // The session stays in /repo, but its agent runs its commands in a worktree: the snapshots there show nothing.
+    stream(SESSION, working({ name: "shell", input: { command: "bun test", workdir: "/wt/feature" } }), true)
+    await frame("Review Uncommitted in feature")
+    expect(diffs.at(-1)).toEqual({ mode: "working", directory: "/wt/feature" })
+    // The agent is told which checkout the line numbers are from.
+    await run("down", "down", "down", "comment")
+    await write("Guard zero")
+    await run("send")
+    expect(prompts.at(-1)!.text).toContain("(Uncommitted in feature)")
+
+    // A worktree made outside OpenCode is found by looking again.
+    stream(SESSION, working({ name: "edit", input: { path: "/wt/late/src/auth.ts" } }), true)
+    await frame("Review Uncommitted in late")
+    expect(diffs.at(-1)).toEqual({ mode: "working", directory: "/wt/late" })
+
+    // Picking the session's own directory brings back its views, and "where the agent works" follows it again.
+    choose("worktree", "/repo")
+    await run("options")
+    await settle()
+    await frame("Review This turn")
+    choose("worktree", "auto")
+    await run("options")
+    await settle()
+    await frame("Review Uncommitted in late")
   } finally { await dispose() }
 })

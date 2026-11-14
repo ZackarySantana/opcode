@@ -60,6 +60,8 @@ The same menu switches the file list between the **Folder tree** and **Full path
 
 The session views come from OpenCode's own snapshots and include edits you make yourself. Uncommitted and Branch show the whole worktree, so they include changes from other sessions in it.
 
+**Agents in their own worktree.** An agent often makes a worktree and works there while its session stays where it started. Review follows the work: it reviews the worktree where the agent (or one of its subagents) last changed a file or ran a command, found from the paths its tools used, and the header names it, as in **Uncommitted in my-feature**. OpenCode's snapshots only cover the session's own directory, so there This turn and Session show the worktree's uncommitted changes instead; Branch works as usual. Usages, opened files, and questions to the small model go to that worktree too, and comments tell the agent which checkout their lines are from. **Worktree...** in the options picks one of the project's worktrees, or the session's own directory, for the session; **Where the agent works** goes back to following it. A session that moves to another directory is followed as well.
+
 **Mark viewed** (`m`) sets a file aside and moves to the next one. A viewed file comes back as soon as its diff changes, so you see what the agent did since you last looked.
 
 ### Usages and definitions

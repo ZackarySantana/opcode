@@ -10,6 +10,8 @@ import { PLUGIN_ID, type Anchor } from "./review"
 interface Questions {
   /** The answering session, once it exists. */
   readonly sessionID?: string
+  /** Where it was made: questions about another worktree get a session there. */
+  readonly directory?: string
   /** The answering model's name, for the cards. */
   readonly model?: string
   readonly items: readonly Ask[]
@@ -43,8 +45,8 @@ export class Asks {
   model = (sessionID: string): string | undefined => this.state.sessions[sessionID]?.model
 
   /** A question's answer as it stands, streaming while the model writes it. */
-  answer(sessionID: string, ask: Ask): Answer {
-    const answering = this.state.sessions[sessionID]?.sessionID
+  answer(ask: Ask): Answer {
+    const answering = ask.session
     if (!answering) return answerOf([], ask, false)
     return answerOf(this.api.data.session.message.list(answering), ask, this.api.data.session.status(answering) === "running")
   }
@@ -57,8 +59,10 @@ export class Asks {
     const kept: Anchor = { file, side, start, end, quote: [...quote], ...outside ? { outside } : {} }
     this.update(sessionID, (questions) => ({ ...questions, items: [...questions.items, { id, anchor: kept, question }] }))
     try {
-      const existing = this.state.sessions[sessionID]?.sessionID
+      const questions = this.state.sessions[sessionID]
+      const existing = questions?.directory === directory ? questions.sessionID : undefined
       const answering = existing ?? await this.open(sessionID, directory)
+      this.change(sessionID, id, { session: answering })
       const text = askPrompt({ anchor: kept, question, ...context, first: !existing })
       await this.api.client.session.prompt({ sessionID: answering, id, text, metadata: askMetadata(id), delivery: "queue" })
     } catch (error) {
@@ -71,24 +75,25 @@ export class Asks {
     const questions = this.state.sessions[sessionID]
     const ask = questions?.items.find((item) => item.id === id)
     if (!questions || !ask) return
-    const answer = this.answer(sessionID, ask)
+    const answer = this.answer(ask)
     this.update(sessionID, (current) => ({ ...current, items: current.items.filter((item) => item.id !== id) }))
-    const answering = questions.sessionID
+    const answering = ask.session
     if (!answering) return
     try {
       if (answer.state === "waiting") await this.api.client.session.inbox.cancel({ sessionID: answering, inboxID: id })
       // A later question waiting behind it would be stopped too, so only the last one is interrupted.
-      else if ((answer.state === "thinking" || answer.state === "answering") && questions.items.at(-1)?.id === id) await this.api.client.session.interrupt({ sessionID: answering })
+      else if ((answer.state === "thinking" || answer.state === "answering") && questions.items.filter((item) => item.session === answering).at(-1)?.id === id) await this.api.client.session.interrupt({ sessionID: answering })
     } catch {
       // It may have finished in the meantime; the card is gone either way.
     }
   }
 
   private open(sessionID: string, directory: string): Promise<string> {
-    let opening = this.opening.get(sessionID)
+    const key = `${sessionID}:${directory}`
+    let opening = this.opening.get(key)
     if (!opening) {
-      opening = this.create(sessionID, directory).finally(() => this.opening.delete(sessionID))
-      this.opening.set(sessionID, opening)
+      opening = this.create(sessionID, directory).finally(() => this.opening.delete(key))
+      this.opening.set(key, opening)
     }
     return opening
   }
@@ -106,7 +111,7 @@ export class Asks {
     await this.api.client.session.update({ sessionID: session.id, archived: true })
     // The host streams a session's messages into its store once they've been read.
     await this.api.data.session.message.sync(session.id)
-    this.update(sessionID, (questions) => ({ ...questions, sessionID: session.id, model: name }))
+    this.update(sessionID, (questions) => ({ ...questions, sessionID: session.id, directory, model: name }))
     return session.id
   }
 

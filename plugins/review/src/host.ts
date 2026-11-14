@@ -13,6 +13,16 @@ import {
 import { mergeLspConfig, type Found, type Lookup, type LspConfig } from "./references"
 import type { Scope } from "./usages"
 import { repliesRemote, symbolsRemote, type SymbolQuery } from "./rpc"
+import { detectWorktree } from "./worktrees"
+
+/** Where a session's work is reviewed: its own directory, or a worktree the agent works in. */
+export interface Workspace {
+  readonly directory?: string
+  /** Set when that's a worktree other than the session's own directory. */
+  readonly worktree?: string
+  /** Picked in the options, rather than found from where the agent's tools worked. */
+  readonly picked: boolean
+}
 
 type Saved = { sessions: Record<string, SessionReview>; settings?: Settings }
 
@@ -94,6 +104,9 @@ export class ReviewController {
   private readonly replySignal = createSignal<Record<string, Record<string, Reply>>>({})
   private readonly inFlight = createSignal<ReadonlySet<string>>(new Set())
   private readonly focusSignal = createSignal(0)
+  /** Each project's worktrees, as OpenCode lists them. */
+  private readonly worktreeSignal = createSignal<Record<string, readonly string[]>>({})
+  private readonly worktreeReads = new Map<string, Promise<readonly string[]>>()
   private readonly sending = new Map<string, Promise<void>>()
   private readonly replyReads = new Map<string, ReturnType<typeof createRefresh<Record<string, Reply>>>>()
   private readonly stops: (() => void)[] = []
@@ -163,7 +176,7 @@ export class ReviewController {
    * asks the language server OpenCode is configured with for the file, and searches by name when there's none.
    */
   async findSymbols(sessionID: string, kind: "usages" | "definition", lookup: Lookup, signal: AbortSignal, searchOnly = false): Promise<Found> {
-    const directory = this.directory(sessionID)
+    const directory = this.workspace(sessionID).directory
     if (!directory) throw new Error("This session has no directory to search.")
     const lsp = searchOnly || this.settings().references === "search" ? null : await this.lspSettings(directory, signal) ?? true
     return await this.symbols(kind, lookup, lsp, directory, signal)
@@ -176,10 +189,55 @@ export class ReviewController {
     return new Map(this.review(sessionID).comments.map((comment) => [comment.id, delivery(comment, pending, inFlight)]))
   }
 
-  /** The session's directory, which picks the repository and the server location. */
+  /** The session's own directory: its server location, where its replies are recorded. */
   directory(sessionID: string): string | undefined {
     return this.api.data.session.get(sessionID)?.location.directory ?? this.api.location?.directory
   }
+
+  /**
+   * Where the session's work is: the directory picked in the options, else the worktree its agent (or a subagent)
+   * last changed files or ran commands in, else its own directory. Diffs, files, usages and questions go there.
+   */
+  workspace(sessionID: string): Workspace {
+    const own = this.directory(sessionID)
+    const picked = this.review(sessionID).worktree
+    if (picked) return { directory: picked, worktree: picked === own ? undefined : picked, picked: true }
+    if (!own) return { picked: false }
+    const projectID = this.api.data.session.get(sessionID)?.projectID
+    const worktrees = projectID ? this.worktreeSignal[0]()[projectID] : undefined
+    if (!projectID || !worktrees) return { directory: own, picked: false }
+    // The family's messages in time order, so a subagent's work counts where it happened.
+    const messages = this.api.data.session.family(sessionID).flatMap((id) => this.api.data.session.message.list(id))
+      .sort((a, b) => a.time.created - b.time.created)
+    const found = detectWorktree(messages, own, worktrees)
+    // A path in no worktree OpenCode knows may be one made since: it looks again, once.
+    if (found.unknown) void this.worktrees(sessionID, "once")
+    return { directory: found.worktree ?? own, worktree: found.worktree, picked: false }
+  }
+
+  /**
+   * The worktrees of the session's project, as read once. OpenCode finds worktrees made without it (such as with
+   * `git worktree add`) when it looks again: `"once"` does that at most once per project, `"now"` every time.
+   */
+  worktrees(sessionID: string, refresh?: "once" | "now"): Promise<readonly string[]> {
+    const projectID = this.api.data.session.get(sessionID)?.projectID
+    if (!projectID) return Promise.resolve([])
+    const key = refresh ? `${projectID}:refresh` : projectID
+    let reading = refresh === "now" ? undefined : this.worktreeReads.get(key)
+    if (!reading) {
+      reading = (async () => {
+        if (refresh) await this.api.client.worktree.refresh({ projectID })
+        const listed = (await this.api.client.worktree.list({ projectID })).map((entry) => entry.directory)
+        this.worktreeSignal[1]((all) => ({ ...all, [projectID]: listed }))
+        return listed
+      })().catch(() => this.worktreeSignal[0]()[projectID] ?? [])
+      this.worktreeReads.set(key, reading)
+    }
+    return reading
+  }
+
+  /** Reviews this directory from now on, or finds it from the agent's work again when unset. */
+  pickWorktree = (sessionID: string, directory: string | undefined) => this.change(sessionID, (review) => ({ ...review, worktree: directory }))
 
   loadReplies(sessionID: string): void {
     let reads = this.replyReads.get(sessionID)

@@ -40,6 +40,8 @@ export function fakeHost(options: {
   diff?: () => FileDiffInfo[]; files?: Record<string, string>; lsp?: unknown
   /** The models OpenCode offers, its default, and the title agent's model, for questions to the small model. */
   models?: { list: ModelInfo[]; default?: ModelInfo; title?: { id: string; providerID: string } }
+  /** The project's worktrees as OpenCode lists them, and any it finds once it looks again. */
+  worktrees?: { listed: string[]; found?: string[] }
 } = {}) {
   const handlers = new Map<string, Set<Handler>>()
   const prompts: SessionPromptInput[] = []
@@ -49,6 +51,9 @@ export function fakeHost(options: {
   // Sessions the plugin makes, with the messages and status the host streams into its store for them.
   const created: (SessionCreateInput & { id: string; archived?: boolean })[] = []
   const interrupted: string[] = []
+  // Where each diff was read, and the worktrees OpenCode knows.
+  const diffs: { mode: string; directory?: string }[] = []
+  let worktrees = options.worktrees?.listed ?? []
   const cancelled: string[] = []
   const sessions = createStore<{ messages: Record<string, SessionMessageInfo[]>; running: Record<string, boolean> }>({ messages: {}, running: {} })
   const slots: { claim: Record<string, unknown>; render: (input: never) => unknown }[] = []
@@ -102,7 +107,11 @@ export function fakeHost(options: {
         default: async () => ({ data: options.models?.default ?? null }),
         list: async () => ({ data: options.models?.list ?? [] }),
       },
-      vcs: { diff: async () => ({ data: files() }), base: async () => ({ data: { name: "main" } }), branch: { list: async () => ({ data: ["main", "dev"] }) } },
+      worktree: {
+        list: async () => worktrees.map((directory) => ({ directory })),
+        refresh: async () => { worktrees = [...new Set([...worktrees, ...options.worktrees?.found ?? []])] },
+      },
+      vcs: { diff: async (input: { mode: string; location?: { directory?: string } }) => { diffs.push({ mode: input.mode, directory: input.location?.directory }); return { data: files() } }, base: async () => ({ data: { name: "main" } }), branch: { list: async () => ({ data: ["main", "dev"] }) } },
     },
     data: {
       on: (type: string, handler: Handler) => {
@@ -112,7 +121,8 @@ export function fakeHost(options: {
       },
       session: {
         root: (id: string) => id,
-        get: () => ({ location: { directory: "/repo" }, title: "Fix auth" }),
+        get: () => ({ location: { directory: "/repo" }, title: "Fix auth", projectID: "prj_repo" }),
+        family: (id: string) => [id],
         status: (id: string) => id in sessions[0].running ? (sessions[0].running[id] ? "running" : "idle") : "running",
         message: { list: (id: string) => sessions[0].messages[id] ?? [], sync: async () => {} },
         pending: { list: () => pending[0].ids.map((id) => ({ id })), sync: async () => {} },
@@ -162,7 +172,7 @@ export function fakeHost(options: {
     choose: (...values: unknown[]) => { choices.push(...values) },
     panelOpen: () => panel[0].current,
     /** Sessions the plugin made, and what it interrupted or took back from their queue. */
-    created, interrupted, cancelled,
+    created, interrupted, cancelled, diffs,
     /** What the host's store holds for a session: its messages, as streamed in, and whether it's working. */
     stream: (sessionID: string, messages: SessionMessageInfo[], running: boolean) => {
       sessions[1]("messages", sessionID, messages)

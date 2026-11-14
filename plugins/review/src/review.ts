@@ -59,6 +59,8 @@ export interface SessionReview {
   readonly base?: string
   /** When each comment's reply was last seen, so newer ones show as new. */
   readonly seen?: Readonly<Record<string, number>>
+  /** The directory picked to review, when it isn't found from the agent's work: a worktree, or the session's own. */
+  readonly worktree?: string
 }
 
 export const emptyReview: SessionReview = { next: 1, comments: [], viewed: {}, mode: "turn" }

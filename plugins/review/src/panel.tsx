@@ -61,18 +61,25 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   // Comments go to the conversation you are in; a subagent's panel reviews its parent.
   const sessionID = createMemo(() => api.data.session.root(props.panel.sessionID))
   const state = () => review.review(sessionID())
-  const mode = () => state().mode
-  const view = () => mode() === "branch" ? `${modeTitle.branch} vs ${state().base ?? "its base"}` : modeTitle[mode()]
+  // The agent may work in a worktree of its own. Snapshots only cover the session's directory, so there the session
+  // views give way to the worktree's uncommitted changes.
+  const workspace = createMemo(() => review.workspace(sessionID()))
+  createEffect(on(sessionID, (id) => void review.worktrees(id)))
+  const elsewhere = (value: Mode) => !!workspace().worktree && (value === "turn" || value === "session")
+  const mode = (): Mode => elsewhere(state().mode) ? "working" : state().mode
+  const worktreeName = () => { const path = workspace().worktree; return path && path.replace(/[\\/]+$/, "").split(/[\\/]/).at(-1) }
+  const view = () => `${mode() === "branch" ? `${modeTitle.branch} vs ${state().base ?? "its base"}` : modeTitle[mode()]}${worktreeName() ? ` in ${worktreeName()}` : ""}`
 
   const [diff, setDiff] = createSignal<RefreshState<FileDiffInfo[]>>({ loading: false })
   const reads = createRefresh((signal) => {
     const id = sessionID()
-    const directory = review.directory(id)
+    const directory = workspace().directory
     if (!directory) throw new Error("This session has no directory to review.")
     return loadDiff(api.client, { sessionID: id, directory }, mode(), state().base, signal)
   }, setDiff, { delay: 200, timer: review.timer })
-  // Only a different view drops the diff; comments and viewed marks change the review without changing what it shows.
-  const source = createMemo(() => JSON.stringify([sessionID(), mode(), state().base]))
+  // Only a different view drops the diff, such as another worktree, or the session moving; comments and viewed marks
+  // change the review without changing what it shows.
+  const source = createMemo(() => JSON.stringify([sessionID(), mode(), state().base, workspace().directory]))
   createEffect(on(source, () => { reads.reset(); void reads.refresh() }))
   createEffect(on(sessionID, (id) => {
     void api.data.session.pending.sync(id).catch(() => undefined)
@@ -207,7 +214,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   // Questions for the small model, under the lines they're about, in the document they were asked in.
   const asks = createMemo(() => review.asks.list(sessionID()).filter((ask) => ask.anchor.file === docFile() && !!ask.anchor.outside === !!doc()?.outside))
   const placedAsks = createMemo(() => asks().map((ask) => ({ ask, at: locate(ask.anchor, rows()) })))
-  const answer = (ask: Ask) => review.asks.answer(sessionID(), ask)
+  const answer = (ask: Ask) => review.asks.answer(ask)
   const editing = () => position().editing
   const editAt = createMemo(() => {
     const edit = editing()
@@ -278,7 +285,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   /** Enter: saves a comment, or asks the question about the lines it's on, with the diff around them. */
   function submitEditor() {
     const edit = editing()
-    const directory = review.directory(sessionID())
+    const directory = workspace().directory
     if (!edit?.ask || !directory) return saveEditor()
     const body = typed()
     // Lines that moved while you typed are asked about as quoted.
@@ -296,7 +303,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     const frame = top()
     return frame?.kind === "file" && frame.content === undefined && !frame.error ? frame.file : undefined
   }, (path) => {
-    const directory = review.directory(sessionID())
+    const directory = workspace().directory
     if (!path || !directory) return
     const controller = new AbortController()
     onCleanup(() => controller.abort())
@@ -467,12 +474,17 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   const openOptions = async () => {
     // What's in effect is checked in the title, so it reads at a glance however narrow the menu is.
     const checked = (on: boolean, title: string) => on ? `✓ ${title}` : `  ${title}`
-    const choice = await api.ui.dialog.select<Mode | "base" | FileListStyle | `refs:${ReferenceEngine}`>({
+    const choice = await api.ui.dialog.select<Mode | "base" | "worktree" | FileListStyle | `refs:${ReferenceEngine}`>({
       title: "Review options",
       current: mode(),
       options: [
-        ...modes.map((value) => ({ title: checked(value === mode(), modeTitle[value]), value, description: describe[value], category: "View" })),
+        ...modes.map((value) => ({
+          title: checked(value === mode(), modeTitle[value]), value, category: "View",
+          description: elsewhere(value) ? `Only covers the session's own directory; ${worktreeName()} shows as Uncommitted` : describe[value],
+        })),
         { title: "  Base branch...", value: "base" as const, description: state().base ? `Comparing against ${state().base}` : "Pick what the branch view compares against", category: "View" },
+        { title: "  Worktree...", value: "worktree" as const, category: "View",
+          description: `${workspace().picked ? "Picked" : workspace().worktree ? "Found from the agent's work" : "The session's own directory"}: ${workspace().directory ?? "none"}` },
         { title: checked(review.settings().fileList === "tree", "Folder tree"), value: "tree" as const, description: "Files under their folders", category: "File list" },
         { title: checked(review.settings().fileList === "paths", "Full paths"), value: "paths" as const, description: "Each file's whole path", category: "File list" },
         { title: checked(review.settings().references === "lsp", "Language server, then search"), value: "refs:lsp" as const, description: "The language server OpenCode is set up with for the file, else a search by name", category: "Usages and definitions" },
@@ -480,12 +492,13 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       ],
     })
     if (choice === "base") return chooseBase()
+    if (choice === "worktree") return chooseWorktree()
     if (choice === "tree" || choice === "paths") return void review.updateSettings({ fileList: choice })
     if (choice === "refs:lsp" || choice === "refs:search") return void review.updateSettings({ references: choice === "refs:lsp" ? "lsp" : "search" })
     if (choice) void review.setView(sessionID(), choice)
   }
   const chooseBase = async () => {
-    const directory = review.directory(sessionID())
+    const directory = workspace().directory
     if (!directory) return
     try {
       const branches = await listBranches(api.client, directory)
@@ -494,6 +507,24 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     } catch (error) {
       api.ui.toast.show({ variant: "error", title: "Review", message: errorMessage(error) })
     }
+  }
+  /** Which checkout to review: found from where the agent works, the session's own directory, or any of the project's worktrees. */
+  const chooseWorktree = async () => {
+    const id = sessionID()
+    const own = review.directory(id)
+    // Worktrees made outside OpenCode, such as with git worktree add, are found by looking again.
+    const listed = await review.worktrees(id, "now")
+    const current = workspace()
+    const choice = await api.ui.dialog.select<string>({
+      title: "Review the changes in",
+      current: current.picked ? current.directory : "auto",
+      options: [
+        { title: "Where the agent works", value: "auto", description: "The worktree it last changed files or ran commands in, else the session's own directory" },
+        ...own ? [{ title: "The session's own directory", value: own, description: own }] : [],
+        ...listed.filter((directory) => directory !== own).map((directory) => ({ title: directory.split(/[\\/]/).at(-1) || directory, value: directory, description: directory })),
+      ],
+    })
+    if (choice) void review.pickWorktree(id, choice === "auto" ? undefined : choice)
   }
   const toggleFileViewed = () => {
     const entry = file()
