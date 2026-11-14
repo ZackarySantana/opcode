@@ -1,25 +1,21 @@
 import type { SetTimer } from "@opcode/core/refresh"
 import { guarded, toJson, type RpcCall } from "@opcode/core/rpc"
 import { Plugin } from "@opencode/plugin"
-import { formatFeedback } from "./comments"
-import { fetchFeedback, runGh, type Runner } from "./gh"
+import { runGh, type Runner } from "./gh"
 import { PLUGIN_ID, readChange } from "./model"
-import { GhPrStatusRpc, type FormattedFeedback } from "./rpc"
+import { GhPrStatusRpc } from "./rpc"
 import { joinService, PullRequestsService, type Ports } from "./service"
 
 const SETTINGS = "settings"
 
 /**
- * Serves the pull requests, settings, and refreshes every terminal shares, from the one service in this server process,
- * and review feedback for the branch in this instance's location. `run` and `timer` serve the service only if this is
- * the first instance in the process to start it.
+ * Serves the pull requests, settings, and refreshes every terminal shares, from the one service in this server process.
+ * `run` and `timer` serve the service only if this is the first instance in the process to start it.
  */
 export function serverPlugin(run: Runner = runGh, timer?: SetTimer) {
   return Plugin.define({
     id: PLUGIN_ID,
     async setup(ctx) {
-      // A server option: the server formats the feedback it fetches.
-      const prompt = typeof ctx.options.commentsPrompt === "string" ? ctx.options.commentsPrompt : undefined
       // Registered before joining, so the service can announce through this instance as soon as it joins.
       const joined = Promise.withResolvers<PullRequestsService>()
       const ready = joined.promise.then(async (service) => { await service.ready; return service })
@@ -31,10 +27,6 @@ export function serverPlugin(run: Runner = runGh, timer?: SetTimer) {
         refresh: (_input, call) => serve(call, (service) => {
           service.refresh()
           return toJson(service.state())
-        }),
-        feedback: (_input, call) => guarded(call, async (): Promise<FormattedFeedback> => {
-          const feedback = await fetchFeedback(run, call.signal, ctx.location.directory)
-          return { number: feedback.pr.number, ...formatFeedback(feedback, prompt) }
         }),
       })
       const ports: Ports = {

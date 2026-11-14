@@ -1,6 +1,5 @@
 import { afterEach, expect, spyOn, test } from "bun:test"
 import { closeServers, eventually, fakeServer, manualTimers, stopped } from "@opcode/core/test-support/server"
-import type { Runner } from "../src/gh"
 import { serverPlugin } from "../src/index"
 import { defaultSettings, type PullRequestsState } from "../src/model"
 import { PullRequestsService, type Ports } from "../src/service"
@@ -124,24 +123,4 @@ test("a stopped service announces nothing more and refuses changes", async () =>
   await expect(service.update({ order: "newest" })).rejects.toThrow("Pull requests stopped on the server")
   expect(published).toHaveLength(announced)
   expect(service.state().settings).toEqual(defaultSettings)
-})
-
-test("review feedback is fetched in the asking location, formatted with the server's commentsPrompt option", async () => {
-  const directories: (string | undefined)[] = []
-  const view = JSON.stringify({ number: 42, title: "Cache", url: "https://github.com/acme/web/pull/42", headRefName: "cache", state: "OPEN" })
-  const feedback = JSON.stringify({ data: { viewer: { login: "me" }, repository: { pullRequest: {
-    reviewThreads: { nodes: [] }, reviews: { nodes: [] },
-    comments: { nodes: [{ author: { __typename: "User", login: "frank" }, body: "Changelog?", url: "https://github.com/acme/web/pull/42#c1" }] },
-  } } } })
-  const run: Runner = async (args, _signal, cwd) => {
-    if (args[0] === "pr") directories.push(cwd)
-    if (cwd === "/work/main") return { stdout: "", stderr: "no pull requests found for branch \"main\"\n", status: 1 }
-    return { stdout: args[0] === "pr" ? view : args.includes("graphql") && cwd ? feedback : "", stderr: "", status: 0 }
-  }
-  const server = fakeServer({ plugin: serverPlugin(run, stopped), options: { commentsPrompt: "Check {branch} (#{pr})." } })
-  const signal = new AbortController().signal
-  const sent = await remote(server).feedback("/work/web", signal)
-  expect(directories).toEqual(["/work/web"])
-  expect(sent).toMatchObject({ number: 42, summary: "Included 1 comment.", text: expect.stringMatching(/^Check cache \(#42\)\.\n/) })
-  await expect(remote(server).feedback("/work/main", signal)).rejects.toEqual({ type: "failed", message: "no pull requests found for branch \"main\"" })
 })

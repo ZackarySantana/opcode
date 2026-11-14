@@ -1,14 +1,14 @@
 import { Command, ComposerPill, createKeyed, Plugin } from "@opencode/plugin/gui"
 import { createSignal, onCleanup } from "solid-js"
-import { createRemote, describeError, PullRequestsClient, type Remote } from "./client"
-import { addReviewComments, pickable } from "./gui/actions"
+import { createRemote, PullRequestsClient } from "./client"
+import { pickable } from "./gui/actions"
 import { en } from "./gui/i18n"
 import { pillView, type Shown } from "./gui/view"
 
 export default Plugin.define({
   i18n: { en },
   setup(ctx) {
-    const [current, setCurrent] = createSignal<{ remote: Remote; prs: PullRequestsClient }>()
+    const [current, setCurrent] = createSignal<PullRequestsClient>()
 
     // A restarted server comes back with a new client, and its announcements start over: follow it afresh.
     createKeyed(() => ctx.client, (client) => {
@@ -20,15 +20,15 @@ export default Plugin.define({
       })
       const prs = new PullRequestsClient(remote)
       prs.start()
-      setCurrent({ remote, prs })
+      setCurrent(prs)
       onCleanup(() => prs.dispose())
     })
 
     const shown = (): Shown | undefined => {
-      const prs = current()?.prs
+      const prs = current()
       return prs && { snapshot: prs.snapshot(), view: prs.view(), settings: prs.settings(), error: prs.error() }
     }
-    const refresh = () => current()?.prs.refresh()
+    const refresh = () => current()?.refresh()
 
     const pick = async () => {
       const now = shown()
@@ -39,23 +39,6 @@ export default Plugin.define({
       }
       const url = await ctx.dialogs.select({ title: ctx.t("select.title"), placeholder: ctx.t("select.placeholder"), options: found.options })
       if (url) ctx.system.openExternal(url)
-    }
-
-    let sending = false
-    const comments = async () => {
-      const remote = current()?.remote
-      if (sending || !remote) return
-      sending = true
-      try {
-        await addReviewComments({
-          session: ctx.sessions.current(),
-          composer: ctx.screen.current()?.composer,
-          feedback: (directory) => remote.feedback(directory, ctx.signal),
-          toast: ctx.toast,
-          copy: ctx,
-          describe: describeError,
-        })
-      } finally { sending = false }
     }
 
     ctx.add(Command, (): Command => ({
@@ -73,17 +56,6 @@ export default Plugin.define({
       keywords: ctx.t("command.keywords"),
       group: ctx.t("command.group"),
       run: refresh,
-    }))
-    ctx.add(Command, (): Command => ({
-      id: "comments",
-      title: ctx.t("command.comments"),
-      description: ctx.t("command.comments.description"),
-      keywords: ctx.t("command.keywords"),
-      group: ctx.t("command.group"),
-      section: "session",
-      slash: { name: "ghpr-comments" },
-      enabled: !!ctx.sessions.current(),
-      run: () => void comments(),
     }))
 
     ctx.add(ComposerPill, {

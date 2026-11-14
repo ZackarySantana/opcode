@@ -70,7 +70,6 @@ function scriptedRemote(initial: PullRequestsState) {
         return answer.promise
       },
       refresh: async () => scripted.latest,
-      feedback: async () => ({ number: 1, summary: "" }),
       changes: (signal) => ({
         async *[Symbol.asyncIterator]() {
           const queue: PullRequestsState[] = []
@@ -144,7 +143,7 @@ test("a refused change shows the server's settings when the server moved on mean
   expect(client.error()).toBe("disk full")
 })
 
-test("calls go to the current location, or none on the desktop's Home, feedback to the session's, through the client of the moment", async () => {
+test("calls go to the current location, or none on the desktop's Home, through the client of the moment", async () => {
   const calls: { client: number; method: string; input: unknown; location: unknown }[] = []
   let current = 0
   let directory: string | undefined = "/home/me"
@@ -153,10 +152,10 @@ test("calls go to the current location, or none on the desktop's Home, feedback 
       expect(definition).toBe(GhPrStatusRpc)
       const method = (name: string) => async (input: unknown, options: { location: unknown }) => {
         calls.push({ client: id, method: name, input, location: options.location })
-        return name === "feedback" ? { number: 7, summary: "s" } : state("a", 1, 1)
+        return state("a", 1, 1)
       }
       return {
-        state: method("state"), update: method("update"), refresh: method("refresh"), feedback: method("feedback"),
+        state: method("state"), update: method("update"), refresh: method("refresh"),
         events: { subscribe: (name: string) => {
           expect(name).toBe("changed")
           return (async function* () { yield { type: "rpc.opcode-gh-pr-status.changed", location: { directory: "/x" }, data: state("a", 1, 9) } })()
@@ -173,12 +172,10 @@ test("calls go to the current location, or none on the desktop's Home, feedback 
   // The server answers a call without a location from its default.
   directory = undefined
   await remote.refresh()
-  expect(await remote.feedback("/work/session", new AbortController().signal)).toEqual({ number: 7, summary: "s" })
   expect(calls).toEqual([
     { client: 0, method: "state", input: {}, location: { directory: "/home/me" } },
     { client: 1, method: "update", input: { settings: { team: null } }, location: { directory: "/work/web" } },
     { client: 1, method: "refresh", input: {}, location: undefined },
-    { client: 1, method: "feedback", input: {}, location: { directory: "/work/session" } },
   ])
   const received: PullRequestsState[] = []
   for await (const changed of remote.changes(new AbortController().signal)) received.push(changed)

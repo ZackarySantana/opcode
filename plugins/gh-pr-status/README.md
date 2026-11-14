@@ -72,12 +72,6 @@ In OpenCode Desktop, a pill above a session's composer counts the pull requests 
 
 Select **Pull requests** in the command palette, or run `/ghpr`, to search every pull request, grouped as the terminal's tabs group them, and open one. **Refresh pull requests** refreshes now. Settings, the team filter, and the orgs shown are changed in a terminal; the desktop app follows them. The desktop app asks the app's own server, at the routed session's location or the server's default on Home.
 
-## Send review comments to the agent
-
-Run `/ghpr-comments` in a session (or select **Send PR review comments** in the command palette) to send the review feedback on the pull request for the branch checked out in the session's directory, as `gh pr view` finds it there on the server; it stops if that pull request isn't open. It arrives as your prompt in that session (in OpenCode Desktop, it goes into the session's composer for you to review and send): instructions to verify each comment against the code and come back with an action for it (reply why not, or change the code and what that changes), then the pull request and its comments, each anchored to its file and line with links.
-
-It sends the unresolved review threads someone else started, with your replies in them, plus others' review summaries and pull request comments. It leaves out resolved threads, threads you started, your own review summaries and comments, pending reviews, and anything from bots. An outdated thread stays, marked with the line it was on and the end of its diff. Long comments are cut at 1,500 characters, a long thread keeps its first comment and last three replies, and the whole message stops at about 40,000 characters; the message and the toast count what was left out. When nothing is left, nothing is sent. It reads the first 100 threads, reviews, and comments, and the first 100 comments in a thread. It only reads from GitHub.
-
 ## Teams and hidden pull requests
 
 Review requests come from GitHub's `review-requested:@me` search, which includes requests to any team you're on, closed and secret teams included, as long as `gh` can see them. Team names come from `gh api /user/teams`, which needs the `read:org` scope that `gh auth login` grants by default; without it, every team requested on a pull request that asks for your review is treated as yours.
@@ -112,24 +106,9 @@ Review requests for you always appear in the sidebar. **Sidebar team reviews** a
 
 Settings and the team filter are saved in the server's plugin storage and shared by every terminal connected to it. If the server can't read them, it shows the defaults and refuses changes until it can, so your saved settings are never replaced. Settings saved by versions before the server kept them aren't carried over: they start at the defaults.
 
-## Options
-
-Set options on the plugin's entry in the **server's** config, `opencode.json(c)`:
-
-```jsonc
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugins": [
-    { "package": "@lidtop/opencode-gh-pr-status", "options": { "commentsPrompt": "Review the comments on {branch} (#{pr}) and propose a fix for each." } }
-  ]
-}
-```
-
-- `commentsPrompt`: the instructions `/ghpr-comments` sends before the comments. `{branch}` becomes the pull request's branch and `{pr}` its number. The default asks the agent to verify each comment, look at the bigger picture, and come back with an actionable item for each.
-
 ## Data and privacy
 
-The server's plugin storage keeps your settings and team filter. Pull requests are kept in the server's memory only, and sent to the terminals connected to it. Requests go to GitHub through `gh` on the server, with its credentials. `/ghpr-comments` sends the comments it reads to your session, and from there to your model provider, like any prompt; nothing else is sent.
+The server's plugin storage keeps your settings and team filter. Pull requests are kept in the server's memory only, and sent to the terminals connected to it. Requests go to GitHub through `gh` on the server, with its credentials. Nothing else is sent.
 
 Earlier versions kept settings in `opcode-gh-pr-status/gh-pr-status.sqlite` in the terminal's OpenCode state directory (`$XDG_STATE_HOME/opencode`, or `~/.local/state/opencode`). Nothing reads it now, so you can delete it.
 

@@ -6,22 +6,20 @@ import { createClock } from "@opcode/tabs/clock"
 import type { LocationRef, OpenCodeClient } from "@opencode/client"
 import { createSignal } from "solid-js"
 import { applyChange, defaultSettings, view, type PullRequestsState, type Settings, type SettingsChange } from "./model"
-import { GhPrStatusRpc, type FormattedFeedback } from "./rpc"
+import { GhPrStatusRpc } from "./rpc"
 
 /** The server's pull request state, as a terminal or the desktop app reaches it. */
 export interface Remote {
   state(signal?: AbortSignal): Promise<PullRequestsState>
   update(change: SettingsChange): Promise<PullRequestsState>
   refresh(): Promise<PullRequestsState>
-  /** For the branch checked out in `directory` on the server. */
-  feedback(directory: string, signal: AbortSignal): Promise<FormattedFeedback>
   /** Each published state, live only: states published while disconnected are missed. */
   changes(signal: AbortSignal): AsyncIterable<PullRequestsState>
 }
 
 /**
  * The state is the same in every location, so calls go to the front end's current one, or the server's default without
- * one, and feedback to the session's. The client is looked up for each call, since it changes when the server restarts.
+ * one. The client is looked up for each call, since it changes when the server restarts.
  */
 export function createRemote(client: () => Pick<OpenCodeClient, "rpc">, location: () => LocationRef | undefined): Remote {
   const rpc = () => client().rpc(GhPrStatusRpc)
@@ -30,7 +28,6 @@ export function createRemote(client: () => Pick<OpenCodeClient, "rpc">, location
     state: async (signal) => await rpc().state({}, call(signal)) as PullRequestsState,
     update: async (change) => await rpc().update({ settings: change }, call()) as PullRequestsState,
     refresh: async () => await rpc().refresh({}, call()) as PullRequestsState,
-    feedback: async (directory, signal) => await rpc().feedback({}, { location: { directory }, signal }) as FormattedFeedback,
     changes: (signal) => ({
       async *[Symbol.asyncIterator]() {
         for await (const event of rpc().events.subscribe("changed", { signal })) yield event.data as unknown as PullRequestsState
