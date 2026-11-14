@@ -1,5 +1,5 @@
 import { mockTheme } from "@opcode/ui/test-support/host"
-import type { FileDiffInfo, SessionPromptInput } from "@opencode/client"
+import type { FileDiffInfo, ModelInfo, SessionCreateInput, SessionMessageInfo, SessionPromptInput } from "@opencode/client"
 import type { Context, KeymapCommand, KeymapLayer, PanelInput } from "@opencode/plugin/tui/context"
 import { RGBA } from "@opentui/core"
 import { createComputed, onCleanup } from "solid-js"
@@ -36,12 +36,21 @@ type Handler = (event: { type: string; data: Record<string, unknown> }) => void
  * A terminal host in memory: synced storage as Solid stores, typed events you emit, a session inbox, prompts you can
  * hold or fail, and keymap layers that honor `enabled` and leave with their owner, as in the host.
  */
-export function fakeHost(options: { diff?: () => FileDiffInfo[]; files?: Record<string, string>; lsp?: unknown } = {}) {
+export function fakeHost(options: {
+  diff?: () => FileDiffInfo[]; files?: Record<string, string>; lsp?: unknown
+  /** The models OpenCode offers, its default, and the title agent's model, for questions to the small model. */
+  models?: { list: ModelInfo[]; default?: ModelInfo; title?: { id: string; providerID: string } }
+} = {}) {
   const handlers = new Map<string, Set<Handler>>()
   const prompts: SessionPromptInput[] = []
   const toasts: { message: string; variant?: string }[] = []
   const pending = createStore<{ ids: string[] }>({ ids: [] })
-  const panel = createStore<{ current?: { name: string; sessionID: string } }>({})
+  const panel = createStore<{ current?: { name: string; sessionID: string; presentation?: string } }>({})
+  // Sessions the plugin makes, with the messages and status the host streams into its store for them.
+  const created: (SessionCreateInput & { id: string; archived?: boolean })[] = []
+  const interrupted: string[] = []
+  const cancelled: string[] = []
+  const sessions = createStore<{ messages: Record<string, SessionMessageInfo[]>; running: Record<string, boolean> }>({ messages: {}, running: {} })
   const slots: { claim: Record<string, unknown>; render: (input: never) => unknown }[] = []
   let respond: (input: SessionPromptInput) => Promise<unknown> = async () => ({})
   let files = options.diff ?? (() => [])
@@ -72,6 +81,10 @@ export function fakeHost(options: { diff?: () => FileDiffInfo[]; files?: Record<
       session: {
         prompt: (input: SessionPromptInput) => { prompts.push(input); return respond(input) },
         diff: async () => files(),
+        create: async (input: SessionCreateInput) => { const session = { ...input, id: `ses_side${created.length + 1}` }; created.push(session); return session },
+        update: async (input: { sessionID: string; archived?: boolean }) => { const session = created.find((entry) => entry.id === input.sessionID)!; session.archived = input.archived },
+        interrupt: async ({ sessionID }: { sessionID: string }) => { interrupted.push(sessionID) },
+        inbox: { cancel: async ({ inboxID }: { inboxID: string }) => { cancelled.push(inboxID) } },
       },
       message: { list: async () => ({ data: [{ id: "msg_first" }], cursor: {} }) },
       file: {
@@ -84,6 +97,11 @@ export function fakeHost(options: { diff?: () => FileDiffInfo[]; files?: Record<
       // Two config documents, as OpenCode layers them; the later one's servers win.
       config: { get: async () => [{ type: "document", info: {} }, { type: "document", info: options.lsp === undefined ? {} : { lsp: options.lsp } }] },
       rpc: () => ({ replies: async () => ({ replies: {} }) }),
+      agent: { get: async () => ({ data: { id: "title", model: options.models?.title } }) },
+      model: {
+        default: async () => ({ data: options.models?.default ?? null }),
+        list: async () => ({ data: options.models?.list ?? [] }),
+      },
       vcs: { diff: async () => ({ data: files() }), base: async () => ({ data: { name: "main" } }), branch: { list: async () => ({ data: ["main", "dev"] }) } },
     },
     data: {
@@ -94,8 +112,9 @@ export function fakeHost(options: { diff?: () => FileDiffInfo[]; files?: Record<
       },
       session: {
         root: (id: string) => id,
-        get: () => ({ location: { directory: "/repo" } }),
-        status: () => "running",
+        get: () => ({ location: { directory: "/repo" }, title: "Fix auth" }),
+        status: (id: string) => id in sessions[0].running ? (sessions[0].running[id] ? "running" : "idle") : "running",
+        message: { list: (id: string) => sessions[0].messages[id] ?? [], sync: async () => {} },
         pending: { list: () => pending[0].ids.map((id) => ({ id })), sync: async () => {} },
       },
     },
@@ -108,7 +127,11 @@ export function fakeHost(options: { diff?: () => FileDiffInfo[]; files?: Record<
       panel: {
         current: () => panel[0].current,
         // Opening works only in a session, as in the host.
-        open: (name: string) => { if (!session.open) return false; panel[1]("current", { name, sessionID: SESSION }); return true },
+        open: (name: string, options?: { presentation?: string }) => {
+          if (!session.open) return false
+          panel[1]("current", { name, sessionID: SESSION, ...options?.presentation ? { presentation: options.presentation } : {} })
+          return true
+        },
         close: () => panel[1]("current", undefined),
       },
     },
@@ -138,6 +161,13 @@ export function fakeHost(options: { diff?: () => FileDiffInfo[]; files?: Record<
     /** Queues what the next dialog.select picks. */
     choose: (...values: unknown[]) => { choices.push(...values) },
     panelOpen: () => panel[0].current,
+    /** Sessions the plugin made, and what it interrupted or took back from their queue. */
+    created, interrupted, cancelled,
+    /** What the host's store holds for a session: its messages, as streamed in, and whether it's working. */
+    stream: (sessionID: string, messages: SessionMessageInfo[], running: boolean) => {
+      sessions[1]("messages", sessionID, messages)
+      sessions[1]("running", sessionID, running)
+    },
     /** Whether the route is a session, where panels can open. */
     session,
   }

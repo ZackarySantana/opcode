@@ -2,7 +2,7 @@
 
 import { expect, test } from "bun:test"
 import { PluginContextProvider } from "@opencode/plugin/tui"
-import type { FileDiffInfo } from "@opencode/client"
+import type { FileDiffInfo, ModelInfo, SessionMessageInfo } from "@opencode/client"
 import { testRender } from "@opentui/solid"
 import { Show } from "solid-js"
 import { ReviewController } from "../src/host"
@@ -17,10 +17,13 @@ const other: FileDiffInfo = { file: "src/db.ts", patch: "@@ -1,1 +1,1 @@\n-const
 /** The fixture with two lines added above the ttl change. */
 const shifted = () => file(patch.replace(" const user = load()", " const user = load()\n+// one\n+// two").replace("@@ -1,4 +1,5 @@", "@@ -1,4 +1,7 @@"))
 
+const model = (id: string, family: string, name: string) => ({ id, providerID: "anthropic", family, name, enabled: true, status: "active" }) as ModelInfo
+const models = { default: model("claude-opus", "claude-opus", "Claude Opus"), list: [model("claude-opus", "claude-opus", "Claude Opus"), model("claude-haiku", "claude-haiku", "Claude Haiku")] }
+
 async function setup(width = 90) {
   let files = [file(), other]
   let answered: Record<string, Reply> = {}
-  const host = fakeHost({ diff: () => files })
+  const host = fakeHost({ diff: () => files, models })
   const panel = fakePanel(width)
   const review = new ReviewController(host.api, { replies: async () => answered, timer: fastTimer })
   const view = await testRender(() => (
@@ -290,13 +293,10 @@ test("/ searches the paths and lines of the diff; a match opens on its row, n go
   } finally { await dispose() }
 })
 
-test("the footer says how to get back to the prompt, or into the panel when it doesn't have the keys, and ? hides the keys", async () => {
-  const { frame, run, panel, view, dispose } = await setup()
+test("the footer says how to get back to the conversation, and ? hides the keys", async () => {
+  const { frame, run, view, dispose } = await setup()
   try {
-    expect(await frame("ctrl+x ← focus prompt")).toContain("? hide keys")
-    panel.set("focused", false)
-    await frame("ctrl+x → focus review")
-    panel.set("focused", true)
+    expect(await frame("q back to the conversation")).toContain("? hide keys")
     await run("keys")
     await view.waitForFrame((current) => current.includes("? keys") && !current.includes("c comment"))
   } finally { await dispose() }
@@ -331,5 +331,72 @@ test("C lists every comment with the agent's reply in full, marks new replies un
     expect(await frame("← diff › comments › src/auth.ts:2")).toMatch(/▶ 2 \+ const ttl = Number/)
     await run("leave")
     await frame("1 comment · 1 replied")
+  } finally { await dispose() }
+})
+
+test("a asks the small model about a line in a hidden session of its own, streams the answer under it, and x dismisses it", async () => {
+  const { frame, run, write, prompts, created, interrupted, stream, view, dispose } = await setup()
+  try {
+    await frame("const ttl = Number(env.TTL ?? 3600)")
+    await run("down", "down", "down", "ask")
+    await frame("Ask the small model about line 2")
+    await write("Why read env here?")
+    await frame("ask line 2 · Claude Haiku · waiting")
+
+    // One archived session, on OpenCode's small model, that can only read, marked as working for this one.
+    expect(created).toHaveLength(1)
+    expect(created[0]).toMatchObject({
+      archived: true, model: { id: "claude-haiku", providerID: "anthropic" }, location: { directory: "/repo" },
+      metadata: { "opcode.side": { parentID: SESSION, plugin: ID } },
+    })
+    expect(created[0]!.permissions).toContainEqual({ action: "*", resource: "*", effect: "deny" })
+    expect(created[0]!.permissions).toContainEqual({ action: "read", resource: "*", effect: "allow" })
+    // The question goes there with the diff around the line, never to the agent's session.
+    expect(prompts).toHaveLength(1)
+    const asked = prompts[0]!
+    expect(asked.sessionID).toBe("ses_side1")
+    expect(asked.text).toContain("About src/auth.ts:2:")
+    expect(asked.text).toContain(">    2 +const ttl = Number(env.TTL ?? 3600)")
+    expect(asked.text).toContain("Don't edit anything.")
+    expect(asked.text).toEndWith("Why read env here?")
+
+    const question = { id: asked.id!, type: "user", text: asked.text, metadata: asked.metadata, time: { created: 1 } }
+    const reply = (text: string) => ({ id: "msg_answer", type: "assistant", agent: "build", model: { id: "claude-haiku", providerID: "anthropic" }, time: { created: 2 },
+      content: [{ type: "tool", name: "read" }, { type: "text", text }] })
+    stream("ses_side1", [question, reply("TTL comes from")] as SessionMessageInfo[], true)
+    expect(await frame("answering... · looked with read")).toContain("TTL comes from")
+    stream("ses_side1", [question, reply("TTL comes from the environment so ops can tune it.")] as SessionMessageInfo[], false)
+    expect(await frame("ask line 2 · Claude Haiku · answered")).toContain("TTL comes from the environment so ops can tune it.")
+
+    // A follow-up shares the session, without the instructions again.
+    await run("down", "ask")
+    await write("Is zero handled?")
+    expect(created).toHaveLength(1)
+    expect(prompts[1]).toMatchObject({ sessionID: "ses_side1" })
+    expect(prompts[1]!.text).not.toContain("Don't edit anything.")
+
+    // Dismissing the one being answered stops it.
+    stream("ses_side1", [question, reply("TTL comes from the environment so ops can tune it."), { ...question, id: prompts[1]!.id!, metadata: prompts[1]!.metadata }] as SessionMessageInfo[], true)
+    await frame("ask line 3 · Claude Haiku · thinking...")
+    await run("delete")
+    await view.waitForFrame((current) => !current.includes("Is zero handled?"))
+    expect(interrupted).toEqual(["ses_side1"])
+    await run("up", "delete")
+    await view.waitForFrame((current) => !current.includes("TTL comes from the environment"))
+    expect(interrupted).toEqual(["ses_side1"])
+  } finally { await dispose() }
+})
+
+test("esc leaves a question unasked", async () => {
+  const { frame, run, view, prompts, created, dispose } = await setup()
+  try {
+    await frame("const ttl = Number(env.TTL ?? 3600)")
+    await run("down", "down", "down", "ask")
+    await frame("Ask the small model about line 2")
+    await view.mockInput.typeText("Never mind")
+    await run("editor.save")
+    await view.waitForFrame((current) => !current.includes("Ask the small model"))
+    expect(prompts).toHaveLength(0)
+    expect(created).toHaveLength(0)
   } finally { await dispose() }
 })

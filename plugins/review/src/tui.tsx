@@ -30,7 +30,9 @@ export default Plugin.define({
       run() {
         // Already open: take input instead, so /diffs always lands in the panel.
         if (api.ui.panel.current()?.name === PLUGIN_ID) review.requestFocus()
-        else if (!api.ui.panel.open(PLUGIN_ID)) api.ui.toast.show({ variant: "warning", title: "Review", message: "Open a session first: /diffs reviews its changes." })
+        // Full screen in place of the conversation, on every terminal: the diff needs the width, and the host would
+        // force it on a narrow one anyway.
+        else if (!api.ui.panel.open(PLUGIN_ID, { presentation: "fullscreen" })) api.ui.toast.show({ variant: "warning", title: "Review", message: "Open a session first: /diffs reviews its changes." })
       },
     }] }))
     return () => {

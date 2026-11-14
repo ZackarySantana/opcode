@@ -4,6 +4,7 @@ import { createRefresh, type SetTimer, setTimer } from "@opcode/core/refresh"
 import type { Context } from "@opencode/plugin/tui/context"
 import { Identifier } from "@opencode/schema/identifier"
 import { createSignal } from "solid-js"
+import { Asks } from "./asks"
 import { formatReview } from "./message"
 import {
   addComment, confirm, delivery, drafts, editComment, emptyReview, isViewed, markSeen, markSent, moveComment, PLUGIN_ID, removeComment, toggleViewed, unconfirmed, unsend, unseenReplies,
@@ -56,8 +57,8 @@ export type Frame = { readonly id: number } & (
 export interface Position extends Cursor {
   /** Views opened from the diff, innermost last. */
   readonly stack?: readonly Frame[]
-  /** A comment being written: a new one on its anchor, or the draft with this ID. */
-  readonly editing?: { readonly id?: string; readonly anchor: Anchor; readonly text: string }
+  /** A comment being written: a new one on its anchor, or the draft with this ID. Or a question for the small model, when `ask`. */
+  readonly editing?: { readonly id?: string; readonly anchor: Anchor; readonly text: string; readonly ask?: true }
 }
 
 type Replies = (sessionID: string, directory: string, signal: AbortSignal) => Promise<Record<string, Reply>>
@@ -102,6 +103,8 @@ export class ReviewController {
   private readonly lspSettings: LspSettings
   readonly now: () => number
   readonly timer: SetTimer
+  /** Questions about the diff, answered by a small model beside the session. */
+  readonly asks: Asks
 
   constructor(private readonly api: Pick<Context, "client" | "data" | "storage" | "ui" | "location">, options: ControllerOptions = {}) {
     this.replies = options.replies ?? repliesRemote(api.client)
@@ -111,6 +114,7 @@ export class ReviewController {
       mergeLspConfig((await api.client.config.get({ location: { directory } }, { signal })).flatMap((entry) => entry.type === "document" ? [entry.info as { lsp?: LspConfig }] : [])))
     this.now = options.now ?? Date.now
     this.timer = options.timer ?? setTimer
+    this.asks = new Asks(api, this.now)
     ;[this.saved, this.save] = api.storage.store<Saved>("reviews", { initial: { sessions: {} } })
     ;[this.positions, this.place] = api.storage.memory<{ sessions: Record<string, Position> }>("positions", { initial: { sessions: {} } })
     // A message cancelled from the host's queue never reached the agent: its comments are drafts again.

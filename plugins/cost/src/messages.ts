@@ -1,4 +1,5 @@
 import type { SessionInfo, SessionMessageAssistant, SessionMessageInfo } from "@opencode/client"
+import { sideSessionOf } from "@opcode/core/side"
 import { usageMetrics } from "@opcode/core/usage"
 import type { Activity, TimedSession, Usage } from "./domain.js"
 
@@ -24,9 +25,12 @@ export function activityFromMessage(message: SessionMessageInfo): Activity | und
   return undefined
 }
 
-/** Only root sessions are timed, so subagent work is not counted twice. */
+/**
+ * Only root sessions are timed, so subagent work is not counted twice. A side session a plugin started for another
+ * one, such as Review's questions, is helper work too: its spend counts, its time doesn't.
+ */
 export function timedSession(session: SessionInfo): TimedSession | undefined {
-  if (session.parentID !== undefined) return undefined
+  if (session.parentID !== undefined || sideSessionOf(session)) return undefined
   return {
     sessionID: session.id, projectID: session.projectID, directory: session.location.directory,
     title: session.title, createdAt: session.time.created,

@@ -23,7 +23,7 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 
 ## Use
 
-In a session, run `/diffs` or select **Review changes** in the command palette. The panel opens beside the conversation and takes the keyboard; `f` makes it full screen. The changed files are listed as a folder tree (click a folder to fold it), `●` until you mark one viewed and `✓` after: beside the diff when the panel is wide, and in a few rows above it when it's narrow. `b` hides or shows the list. `n` and `p` go through the files in the order the list shows them.
+In a session, run `/diffs` or select **Review changes** in the command palette. The panel opens full screen in place of the conversation and takes the keyboard; `q` (or `esc`) goes back to the conversation. The changed files are listed as a folder tree (click a folder to fold it), `●` until you mark one viewed and `✓` after: beside the diff when the terminal is wide, and in a few rows above it when it's narrow. `b` hides or shows the list. `n` and `p` go through the files in the order the list shows them.
 
 Move to a line, press `c`, type, and press `enter`. The comment is a **draft** until you send it with `S`, or press `esc`, which sends the drafts and closes the panel. All drafts go in one message, which steers the running agent: it reads them at its next step instead of waiting for the turn to end. Each comment shows its state:
 
@@ -33,11 +33,19 @@ Move to a line, press `c`, type, and press `enter`. The comment is a **draft** u
 
 Cancelling the message from OpenCode's queue turns its comments back into drafts, as does a send the server refuses, such as one to a session that no longer exists. Sent comments can't be edited, since the agent already has them.
 
-End a comment with `??` to ask a question: the agent is told to answer it rather than change the code.
+End a comment with `??` to ask the agent a question: it's told to answer it rather than change the code. For a question the agent doesn't need to see, ask the small model instead (below).
 
 The agent answers with `review_reply`, once per batch: **done** (it changed the code), **answered**, or **declined** (with why). Each reply shows under its comment. The tool only appears in sessions that have been sent review comments, so other sessions spend no context on it.
 
 As the agent edits, drafts and the cursor follow the text they were on, and a draft's lines are updated to where that text is now. A comment whose lines are gone from the view is listed at the top as **Not in this diff any more**, with the lines it was on.
+
+### Ask the small model
+
+Press `a` on a line (or on a range, after `v`), type a question, and press `enter`. The answer streams in under the line, from the model OpenCode uses for small jobs: the title agent's model (`agents.title.model`), else your default provider's small model as OpenCode picks it, else the default model. The card names the model and shows **waiting**, **thinking...**, **answering...**, then **answered**. `x` on the line dismisses the answer, stopping it if it's still being written. `esc` in the question box leaves it unasked.
+
+The question goes with the diff around its lines, and the model can read and search the repository to check callers and definitions before answering. It can't edit files, run commands, or ask you anything. Nothing reaches the agent.
+
+The questions of a session share a session of their own, made on the first one, so follow-ups keep their context. It's archived, so it stays out of OpenCode's session lists, and its usage and cost are recorded like any session's. The [Cost](../cost/README.md) plugin counts them, but not as agent time. Answers stay until you dismiss them or OpenCode exits.
 
 ### What to review
 
@@ -84,15 +92,15 @@ Usages are grouped by file: the definition first, then the files the diff change
 | `d` | Definition of the name |
 | `c`, `enter` | Comment on the line, or edit the draft there |
 | `v` | Start a range, then `c` comments on it |
-| `x` | Delete the draft on the line |
+| `a` | Ask the small model about the line or range |
+| `x` | Delete the draft on the line, or dismiss the answer there |
 | `m` | Mark the file viewed, or not |
 | `o` | Options: what to review, how files are listed, and how usages are found |
 | `b` | Show or hide the file list |
-| `f` | Full screen |
 | `r` | Refresh now |
 | `S` | Send the drafts |
 | `esc`, `ctrl+o` | Back from a usage or file; in the diff, `esc` sends the drafts and closes |
-| `q` | Close, keeping the drafts |
+| `q` | Back to the conversation, keeping the drafts |
 | `?` | Show or hide the key hints |
 | `C` | All comments and the agent's replies |
 
@@ -100,11 +108,9 @@ Usages are grouped by file: the definition first, then the files the diff change
 
 `/` searches the diff as you type: the changed files whose path matches, those whose name matches first, then every diff line that does, removed lines included. It ignores case unless you type a capital letter. `↑` / `↓` move through the results while you type and `enter` opens one on its diff row; `esc` leaves the box with the results kept, where `j` / `k` move and `/` types again. In a match you opened, `n` / `p` go to the next and previous one, and `esc` comes back to the results.
 
-The bar at the bottom shows how to get back to the prompt (`ctrl+x ←` by default, OpenCode's **Focus session pane**), or into the panel when it doesn't have the keys.
-
 In a usages list, `j` / `k` (or `n` / `p`) move, `enter` opens, `c` comments on the usage, `tab` changes the scope, `d` finds the definition, and `esc` goes back.
 
-In the comment box, `enter` saves, `shift+enter` adds a line, and `esc` saves and closes the box. An empty comment is discarded.
+In the comment box, `enter` saves, `shift+enter` adds a line, and `esc` saves and closes the box. An empty comment is discarded. In a question box, `enter` asks and `esc` cancels.
 
 ### All comments
 
@@ -112,4 +118,4 @@ In the comment box, `enter` saves, `shift+enter` adds a line, and `esc` saves an
 
 ## Storage
 
-Comments and viewed files are kept in OpenCode's terminal storage, synced across terminals on the same machine and kept across restarts. The line you were on and a half-written comment survive closing the panel, until OpenCode exits. Replies are kept in the server's plugin storage.
+Comments and viewed files are kept in OpenCode's terminal storage, synced across terminals on the same machine and kept across restarts. The line you were on, a half-written comment, and the small model's answers survive closing the panel, until OpenCode exits. Replies are kept in the server's plugin storage.
