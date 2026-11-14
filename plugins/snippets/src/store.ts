@@ -1,3 +1,4 @@
+import { watch, type FSWatcher } from "node:fs"
 import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises"
 import { randomUUID } from "node:crypto"
 import { homedir } from "node:os"
@@ -95,5 +96,33 @@ export class SnippetStore {
     if (!(await this.file(scope, path))?.isFile()) return false
     await rm(path)
     return true
+  }
+
+  /**
+   * Calls `changed` when anything in a snippet directory changes, including edits made outside OpenCode. A directory that
+   * doesn't exist yet is watched once `arm` runs after it appears.
+   */
+  watch(changed: () => void): { arm(): void; close(): void } {
+    const watchers = new Map<Scope, FSWatcher>()
+    let closed = false
+    const arm = () => {
+      for (const scope of scopes) {
+        if (closed || watchers.has(scope)) continue
+        try {
+          const watcher = watch(this.directories[scope], { persistent: false }, changed)
+          // A removed or unreadable directory stops its watcher; the next arm starts a new one.
+          watcher.on("error", () => { watcher.close(); watchers.delete(scope) })
+          watchers.set(scope, watcher)
+        } catch { /* Not there yet. */ }
+      }
+    }
+    return {
+      arm,
+      close() {
+        closed = true
+        for (const watcher of watchers.values()) watcher.close()
+        watchers.clear()
+      },
+    }
   }
 }

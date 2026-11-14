@@ -180,13 +180,13 @@ export function expandWrite<T extends Expandable>(snippets: readonly T[], snippe
   return expandSnippet<T | Expandable>(snippet, referenceKeys<T | Expandable>([...beside(snippets, snippet), snippet], blocked))
 }
 
-/** Snippets with a reference that stops resolving once `removed` is deleted. */
-export function brokenBy<T extends Expandable>(snippets: readonly T[], removed: T, blocked?: ReadonlySet<string>): T[] {
-  const before = referenceKeys(snippets, blocked)
-  const after = referenceKeys(snippets.filter((snippet) => snippet !== removed), blocked)
-  return [...new Set(after.values())].filter((snippet) => {
-    const was = new Set(expandSnippet(snippet, before).missing)
-    return expandSnippet(snippet, after).missing.some((key) => !was.has(key))
+/** Snippets in `after` with a reference that resolved in `before` and no longer does, such as after a delete or rename. */
+export function newlyBroken<T extends Expandable>(before: readonly T[], after: readonly T[], blocked?: ReadonlySet<string>): T[] {
+  const was = referenceKeys(before, blocked)
+  const now = referenceKeys(after, blocked)
+  return [...new Set(now.values())].filter((snippet) => {
+    const missing = new Set(expandSnippet(snippet, was).missing)
+    return expandSnippet(snippet, now).missing.some((key) => !missing.has(key))
   })
 }
 
@@ -201,52 +201,28 @@ export function skillDescription(key: string, snippet: Snippet): string {
   return `Snippet · ${summary.length > 80 ? `${summary.slice(0, 79)}…` : summary}`
 }
 
-/** Session metadata key marking an authoring session, and its optional target snippet. */
-export const AUTHORING = PLUGIN_ID
-export type Authoring = { name?: string; scope?: Scope }
 export const WRITE_ACTION = "snippet_write"
 export const DELETE_ACTION = "snippet_delete"
-const authoringRules = [WRITE_ACTION, DELETE_ACTION].map((action) => ({ action, resource: "*", effect: "ask" as const }))
 
 type Rule = { action: string; resource: string; effect: string }
 
-/** An authoring session carries its marker and still has the rules that make writes and deletes ask. */
-export function authoringOf(session: { metadata?: unknown; permissions?: readonly Rule[] }): Authoring | undefined {
-  const value = session.metadata && typeof session.metadata === "object" ? (session.metadata as Record<string, unknown>)[AUTHORING] : undefined
-  if (!value || typeof value !== "object") return undefined
-  const rules = session.permissions ?? []
-  if (!authoringRules.every((rule) => rules.some((other) => other.action === rule.action && other.resource === rule.resource && other.effect === rule.effect))) return undefined
-  const { name, scope } = value as Record<string, unknown>
-  return { ...(validName(name) ? { name } : {}), ...(scope === "global" || scope === "project" ? { scope } : {}) }
+/**
+ * Makes an agent ask before snippet writes and deletes, which the base policy would allow silently. The rules go first
+ * among the agent's own, so a rule configured for that agent, or one the user saved with "Allow always", still wins.
+ */
+export function askFirst(permissions: Rule[]): void {
+  for (const action of [DELETE_ACTION, WRITE_ACTION]) {
+    if (!permissions.some((rule) => rule.action === action)) permissions.unshift({ action, resource: "*", effect: "ask" })
+  }
 }
 
-/** Session fields for a new authoring session: its marker, and rules so every write and delete asks first. */
-export function authoringSession(target: Authoring) {
-  return { title: target.name ? `Snippet @${target.name}` : "New snippet", metadata: { [AUTHORING]: target }, permissions: authoringRules }
-}
+/** Starts a request in the current session that the agent answers with its snippet tools. */
+export const SAVE_LEAD = "Save as a snippet: "
 
-/** How snippets work, opening an authoring session; the user's request follows it after a few blank lines. */
-export function authoringGuide(target: Authoring): string {
-  return [
-    "You are helping the user make a snippet: reusable prompt text they insert into a message with @name. This is how it works:",
-    "- Use snippet_list, snippet_write, and snippet_delete. Never edit snippet files directly.",
-    "- Names are lowercase kebab-case. Global snippets apply everywhere; project snippets apply to this project and override a global snippet with the same name.",
-    "- A snippet is only the text to insert, with no templating, arguments, or shell substitution.",
-    "- A snippet can use another one by writing @name on its own between spaces. Each time it is sent, that @name is replaced by the other snippet's current text, so later edits to it carry over. Every @name in a body must be a snippet, with no loops, and a global snippet can only use global ones.",
-    "- Before writing any snippet, walk the user through a human-digestible example: the name and scope you propose, the exact text, and a sample message that uses it (such as \"@name fix the login bug\") with what the agent would take from it. Write it only once the user agrees; they also approve each write and delete.",
-    ...target.name ? [`- This session is about the existing snippet @${target.name}${target.scope ? ` (${target.scope})` : ""}. Read it with snippet_list first. If the user's message doesn't say what to change, ask them.`] : [],
-  ].join("\n") + "\n\n\n\n"
-}
-
-/** Leads the user's own message when the guide waits in the prompt for them to finish. */
-export const AUTHORING_LEAD = "The following message is what the user wants: "
-
-/** The guide and the user's request, sent as the first message of an authoring session. */
-export const authoringRequest = (target: Authoring, request: string) =>
-  `${authoringGuide(target)}${target.name ? `The user wants this change to @${target.name}: ` : "The user wants to create a snippet that "}${request}`
-
-/** `/snippets new [what it should do]` starts authoring; anything else opens the list. */
-export function parseCommand(input = ""): { verb: "new"; request: string } | { verb: "open" } {
+/** `/snippets new` opens the editor, `/snippets save [what]` asks the agent; anything else opens the list. */
+export function parseCommand(input = ""): { verb: "new" } | { verb: "save"; request: string } | { verb: "open" } {
   const [, verb, request = ""] = /^\s*(?:\/\S+)?\s*(\S*)\s*([\s\S]*)$/.exec(input) ?? []
-  return verb === "new" ? { verb, request } : { verb: "open" }
+  if (verb === "new") return { verb }
+  if (verb === "save") return { verb, request: request.trim() }
+  return { verb: "open" }
 }

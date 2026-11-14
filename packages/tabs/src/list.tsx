@@ -52,6 +52,8 @@ export function ItemList(props: {
   handlers?: Partial<TabHandlers>
   /** The outlined item's key, owned by the caller so it survives the list being replaced by a picker. */
   focus?: Signal<string | undefined>
+  /** Shown to the right of the list, at its height, such as a preview of the outlined item. */
+  aside?: () => JSX.Element
 }) {
   const tab = useTab()
   const palette = usePalette()
@@ -68,21 +70,29 @@ export function ItemList(props: {
       if (item) props.open(item)
     },
   })
+  const list = (width?: `${number}%`) => (
+    <scrollbox ref={scroll} height={tab.height()} width={width} flexShrink={width ? 0 : undefined}>
+      <box flexDirection="column" minWidth={0}>
+        {props.header}
+        <For each={groups()} fallback={<text fg={palette.muted} paddingTop={1}>{props.empty}</text>}>{(group) => <>
+          <text fg={palette.accent} flexShrink={0} paddingTop={1}><b>{group.title}</b></text>
+          <For each={group.items}>{(item) => {
+            const position = () => items().indexOf(item)
+            return <ItemCard item={item} id={id(position())} focused={position() === focus.focused()}
+              click={() => { focus.focus(item.key); props.open(item) }} />
+          }}</For>
+        </>}</For>
+      </box>
+    </scrollbox>
+  )
   return (
     <TabFrame hints={props.hints}>
-      <scrollbox ref={scroll} height={tab.height()}>
-        <box flexDirection="column" minWidth={0}>
-          {props.header}
-          <For each={groups()} fallback={<text fg={palette.muted} paddingTop={1}>{props.empty}</text>}>{(group) => <>
-            <text fg={palette.accent} flexShrink={0} paddingTop={1}><b>{group.title}</b></text>
-            <For each={group.items}>{(item) => {
-              const position = () => items().indexOf(item)
-              return <ItemCard item={item} id={id(position())} focused={position() === focus.focused()}
-                click={() => { focus.focus(item.key); props.open(item) }} />
-            }}</For>
-          </>}</For>
+      <Show when={props.aside} fallback={list()}>{(aside) => (
+        <box flexDirection="row" gap={2} height={tab.height()} minWidth={0}>
+          {list("45%")}
+          <box flexGrow={1} flexShrink={1} flexBasis={0} minWidth={0} height={tab.height()} overflow="hidden">{aside()()}</box>
         </box>
-      </scrollbox>
+      )}</Show>
     </TabFrame>
   )
 }

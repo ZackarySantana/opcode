@@ -1,25 +1,36 @@
 import { Plugin, Skill } from "@opencode/plugin"
 import { errorMessage } from "@opcode/core"
-import { guarded } from "@opcode/core/rpc"
-import { authoringOf, MENTION, PLUGIN_ID, type Authoring, type Scope } from "./domain"
+import { guarded, toJson } from "@opcode/core/rpc"
+import { askFirst, MENTION, PLUGIN_ID, type Scope } from "./domain"
 import { SnippetsRpc } from "./rpc"
-import { SnippetService } from "./service"
+import { SnippetService, type SaveRequest } from "./service"
 import { snippetDirectories, SnippetStore } from "./store"
-import { snippetTools, TOOL_NAMES } from "./tools"
+import { snippetTools } from "./tools"
 
 export default Plugin.define({
   id: PLUGIN_ID,
   async setup(ctx) {
-    const service = new SnippetService(new SnippetStore(snippetDirectories(ctx.location)), {
-      reload: () => ctx.skill.reload(),
-      list: () => ctx.skill.list(),
+    const store = new SnippetStore(snippetDirectories(ctx.location))
+    // Hand edits reach `@` completion without waiting for a prompt that mentions a snippet. Bursts of events, as an
+    // editor's save makes, refresh once.
+    let pending: ReturnType<typeof setTimeout> | undefined
+    const watcher = store.watch(() => {
+      clearTimeout(pending)
+      pending = setTimeout(() => void service.refresh().catch((error) => console.warn(`${PLUGIN_ID}: could not reread snippets: ${errorMessage(error)}`)), 100)
     })
-    const authoring = async (sessionID: string): Promise<Authoring | undefined> => authoringOf(await ctx.session.get({ sessionID }))
+    const service = new SnippetService(store, { reload: () => ctx.skill.reload(), list: () => ctx.skill.list() }, watcher.arm)
     await ctx.skill.transform((editor) => service.register(editor))
     await service.refresh()
-    await ctx.tool.transform((editor) => {
-      for (const tool of snippetTools({ service, authoring, assert: ctx.permission.assert })) editor.add(tool)
-    })
+    // `agentTools: false` in the plugin's options keeps the agent from seeing the snippet tools at all.
+    const agentTools = ctx.options.agentTools !== false
+    if (agentTools) {
+      await ctx.tool.transform((editor) => {
+        for (const tool of snippetTools({ service, assert: ctx.permission.assert })) editor.add(tool)
+      })
+      await ctx.agent.transform((editor) => {
+        for (const agent of editor.list()) editor.update(agent.id, (info) => askFirst(info.permissions))
+      })
+    }
 
     // Only `@` completion makes a mention; pasted or typed `@name` text (as /snippets inserts) is attached here instead.
     // The message keeps its text, and the body is frozen at send time.
@@ -44,21 +55,22 @@ export default Plugin.define({
       }
     })
 
-    await ctx.session.hook("context", async (event) => {
-      const target = await authoring(event.sessionID).catch((error) => {
-        console.warn(`${PLUGIN_ID}: could not read session ${event.sessionID}: ${errorMessage(error)}`)
-        return undefined
-      })
-      if (!target) for (const name of TOOL_NAMES) delete event.tools[name]
-    })
-
     const registration = await ctx.rpc.register(SnippetsRpc, {
-      list: async (_input, call) => guarded(call, async () => ({ snippets: await service.entries() })),
+      list: async (_input, call) => guarded(call, async () => toJson({ snippets: await service.entries(), agentTools })),
+      // The user saves through their own client, so nothing asks; a save over another snippet needs `replace`.
+      save: async (input, call) => guarded(call, async () => {
+        const save = await service.prepare(input as SaveRequest)
+        return toJson({ path: await service.commit(save), breaks: save.breaks })
+      }),
       remove: async (input, call) => guarded(call, async () => {
         const { name, scope } = input as { name: string; scope: Scope }
         return { removed: await service.remove(scope, name) }
       }),
     })
-    return () => registration.dispose()
+    return async () => {
+      clearTimeout(pending)
+      watcher.close()
+      await registration.dispose()
+    }
   },
 })
