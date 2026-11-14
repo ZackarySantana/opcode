@@ -29,7 +29,7 @@ function shorten(text: string, length: number): string {
 export function snippetOptions(rows: readonly SnippetEntry[], t: Translate, options: { create?: boolean } = {}): Option[] {
   const create: Option[] = options.create ? [{ title: t("select.new"), description: t("select.new.description"), value: { type: "new" } }] : []
   return [...create, ...order.flatMap((scope) => rows.filter((row) => row.scope === scope).map((row): Option => {
-    const flag = row.conflict ? t("flag.conflict") : row.overridden ? t("flag.overridden") : undefined
+    const flag = row.conflict ? t("flag.conflict") : row.overridden ? t("flag.overridden") : row.problems.length ? t("flag.broken") : undefined
     const description = [
       shorten(row.description ?? row.body, PREVIEW),
       row.aliases.map((alias) => `@${alias}`).join(" "),

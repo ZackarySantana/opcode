@@ -1,14 +1,11 @@
 import { Plugin, Skill } from "@opencode/plugin"
 import { errorMessage } from "@opcode/core"
 import { guarded } from "@opcode/core/rpc"
-import { authoringOf, PLUGIN_ID, type Authoring, type Scope } from "./domain"
+import { authoringOf, MENTION, PLUGIN_ID, type Authoring, type Scope } from "./domain"
 import { SnippetsRpc } from "./rpc"
 import { SnippetService } from "./service"
 import { snippetDirectories, SnippetStore } from "./store"
 import { snippetTools, TOOL_NAMES } from "./tools"
-
-/** `@name` standing on its own between spaces, so file paths, scoped packages, and emails never match. */
-const MENTION = /(?<!\S)@([a-z0-9-]+)(?!\S)/g
 
 export default Plugin.define({
   id: PLUGIN_ID,

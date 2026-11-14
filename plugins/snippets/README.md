@@ -82,8 +82,29 @@ Review the current changes for correctness, missing tests, and unclear names. Be
 
 - Names are lowercase letters and digits joined by single hyphens, with at least one letter, such as `review` or `pr-2`.
 - A project snippet replaces a global one with the same name. A name always wins over another snippet's alias.
-- The body is inserted as written. There is no templating, arguments, shell substitution, or including other snippets.
+- The body is inserted as written. There is no templating, arguments, or shell substitution.
 - Files you edit by hand are picked up the next time you send a message that mentions a snippet, open `/snippets`, or write a snippet. Global snippet files may be symlinks, for example into a dotfiles checkout, and writes update the file they point to. Project snippets must be regular files, so a cloned repository cannot point a snippet at a file elsewhere on your machine. Bodies are limited to 64 KiB.
+
+### Use other snippets
+
+A snippet can use another one by writing `@name` on its own between spaces, the same way you would in a message:
+
+```markdown
+---
+description: "Work a ticket end to end"
+---
+
+Read the ticket, implement it, then:
+
+@review
+```
+
+Sending `@ticket` attaches its text with `@review` replaced by the current text of `review`, so editing `review` changes what `@ticket` sends without touching `ticket`. References nest, and resolve the way `@name` does in a prompt: by name or alias, with a project snippet in place of a global one with the same name, even inside a global snippet.
+
+- A reference that is no snippet, such as `@someone`, or that leads back to a snippet already being expanded stays as typed. The same goes for every reference in a snippet that would grow past 64 KiB with them.
+- Snippets written in chat must use only existing snippets, with no loops, and global snippets only global ones. Deleting a snippet in chat names the snippets that used it.
+- `/snippets` and the desktop list mark a snippet with a reference that stays as typed **broken reference**.
+- A message that mentions both `@ticket` and `@review` gets the review text twice.
 
 ## Limitations
 

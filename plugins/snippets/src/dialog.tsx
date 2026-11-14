@@ -45,13 +45,13 @@ function Snippets(props: { browser: Browser }) {
     return {
       key: key(row),
       mark: {
-        glyph: row.conflict ? "!" : unavailable ? "○" : "●",
-        color: row.conflict ? palette.warning : unavailable ? palette.muted : row.scope === "project" ? palette.accent : palette.value,
+        glyph: row.conflict || row.problems.length ? "!" : unavailable ? "○" : "●",
+        color: row.conflict || row.problems.length ? palette.warning : unavailable ? palette.muted : row.scope === "project" ? palette.accent : palette.value,
         title: unavailable ? palette.muted : palette.text,
         strong: false,
       },
       head: `@${row.name}`,
-      detail: row.conflict ? "skill conflict" : row.overridden ? "overridden" : undefined,
+      detail: row.conflict ? "skill conflict" : row.overridden ? "overridden" : row.problems.length ? "broken reference" : undefined,
       time: row.aliases.map((alias) => `@${alias}`).join(" "),
       title: row.description ?? preview,
       summary: row.description ? preview : undefined,

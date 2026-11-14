@@ -17,7 +17,7 @@ const cleanups: (() => unknown)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
 const entry = (scope: "global" | "project", name: string, body: string, extra: Partial<SnippetEntry> = {}): SnippetEntry =>
-  ({ scope, name, path: `/${scope}/${name}.md`, aliases: [], body, overridden: false, conflict: false, ...extra })
+  ({ scope, name, path: `/${scope}/${name}.md`, aliases: [], body, overridden: false, conflict: false, problems: [], ...extra })
 
 async function until(check: () => unknown) {
   for (let attempt = 0; attempt < 200 && !check(); attempt++) await new Promise((resolve) => setTimeout(resolve, 5))
@@ -33,6 +33,7 @@ async function harness(route: Route, sessions = false) {
     entry("global", "review", "GLOBAL REVIEW", { overridden: true }),
     entry("project", "later", "Loses to a skill", { conflict: true }),
     entry("project", "review", "Review the current changes\nfor correctness.", { description: "Review the diff", aliases: ["rv"] }),
+    entry("global", "ticket", "Do it, then @gone", { problems: ["@gone is not a snippet."] }),
   ]
   const [dialog, setDialog] = createSignal<{ render: () => JSX.Element; close?: () => void }>()
   const layers = new Set<() => KeymapLayer>()
@@ -108,7 +109,7 @@ test("enter closes /snippets and inserts @name into the prompt it was opened ove
   const h = await harness({ type: "session", sessionID: "work" })
   await h.dispatch("open")
   expect(await h.frame((frame) => frame.includes("GLOBAL"))).toMatch(
-    /PROJECT[\s\S]*@later\s+skill conflict[\s\S]*@review[\s\S]*@rv[\s\S]*Review the diff[\s\S]*Review the current changes for correctness\.[\s\S]*GLOBAL[\s\S]*@review\s+overridden/,
+    /PROJECT[\s\S]*@later\s+skill conflict[\s\S]*@review[\s\S]*@rv[\s\S]*Review the diff[\s\S]*Review the current changes for correctness\.[\s\S]*GLOBAL[\s\S]*@review\s+overridden[\s\S]*@ticket\s+broken reference/,
   )
 
   // A snippet that @name can't reach is never inserted.

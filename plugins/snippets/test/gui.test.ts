@@ -4,7 +4,7 @@ import type { SnippetEntry } from "../src/service"
 
 const t = (key: string, params?: Record<string, unknown>) => params ? `${key}:${JSON.stringify(params)}` : key
 const row = (name: string, scope: SnippetEntry["scope"], extra: Partial<SnippetEntry> = {}): SnippetEntry =>
-  ({ name, scope, path: `/${scope}/${name}.md`, aliases: [], body: `${name} body`, overridden: false, conflict: false, ...extra })
+  ({ name, scope, path: `/${scope}/${name}.md`, aliases: [], body: `${name} body`, overridden: false, conflict: false, problems: [], ...extra })
 
 test("options list project snippets before global ones, searchable by summary, aliases, and flags", () => {
   const rows = [
@@ -12,6 +12,7 @@ test("options list project snippets before global ones, searchable by summary, a
     row("plan", "global", { description: "Plan first", aliases: ["p", "pl"] }),
     row("review", "project", { body: `  Review\n\nthe ${"diff ".repeat(40)}` }),
     row("todo", "global", { conflict: true }),
+    row("ticket", "global", { problems: ["@gone is not a snippet."] }),
   ]
   const options = snippetOptions(rows, t)
   expect(options.map((option) => [option.title, option.group, option.description])).toEqual([
@@ -19,6 +20,7 @@ test("options list project snippets before global ones, searchable by summary, a
     ["@review", "group.global", "review body · flag.overridden"],
     ["@plan", "group.global", "Plan first · @p @pl"],
     ["@todo", "group.global", "todo body · flag.conflict"],
+    ["@ticket", "group.global", "ticket body · flag.broken"],
   ])
   expect(options[1]!.value).toEqual({ type: "snippet", snippet: rows[0]! })
 })

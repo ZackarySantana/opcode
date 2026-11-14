@@ -9,8 +9,8 @@ const scope = { type: "string", enum: scopes } as const
 const text = { type: "string" } as const
 const flag = { type: "boolean" } as const
 const entry = object(
-  { name, scope, path: text, description: text, aliases: { type: "array", items: name }, body: text, overridden: flag, conflict: flag },
-  ["name", "scope", "path", "aliases", "body", "overridden", "conflict"],
+  { name, scope, path: text, description: text, aliases: { type: "array", items: name }, body: text, overridden: flag, conflict: flag, problems: { type: "array", items: text } },
+  ["name", "scope", "path", "aliases", "body", "overridden", "conflict", "problems"],
 )
 
 export const SnippetsRpc = Rpc.define({
