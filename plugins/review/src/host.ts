@@ -127,7 +127,7 @@ export class ReviewController {
       mergeLspConfig((await api.client.config.get({ location: { directory } }, { signal })).flatMap((entry) => entry.type === "document" ? [entry.info as { lsp?: LspConfig }] : [])))
     this.now = options.now ?? Date.now
     this.timer = options.timer ?? setTimer
-    this.asks = new Asks(api, this.now)
+    this.asks = new Asks(api, this.now, this.timer)
     ;[this.saved, this.save] = api.storage.store<Saved>("reviews", { initial: { sessions: {} } })
     ;[this.positions, this.place] = api.storage.memory<{ sessions: Record<string, Position> }>("positions", { initial: { sessions: {} } })
     // A message cancelled from the host's queue never reached the agent: its comments are drafts again.
@@ -324,5 +324,6 @@ export class ReviewController {
   dispose(): void {
     for (const stop of this.stops) stop()
     for (const reads of this.replyReads.values()) reads.dispose()
+    this.asks.dispose()
   }
 }

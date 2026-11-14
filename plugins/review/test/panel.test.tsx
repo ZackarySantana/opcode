@@ -335,7 +335,7 @@ test("C lists every comment with the agent's reply in full, marks new replies un
 })
 
 test("a asks the conversation's model about a line in a hidden session of its own, streams the answer under it, and x dismisses it", async () => {
-  const { frame, run, write, prompts, created, interrupted, switched, setChatModel, stream, view, dispose } = await setup()
+  const { frame, run, write, prompts, created, interrupted, switched, setChatModel, serve, emit, view, dispose } = await setup()
   try {
     await frame("const ttl = Number(env.TTL ?? 3600)")
     await run("down", "down", "down", "ask")
@@ -361,11 +361,15 @@ test("a asks the conversation's model about a line in a hidden session of its ow
     expect(asked.text).toEndWith("Why read env here?")
 
     const question = { id: asked.id!, type: "user", text: asked.text, metadata: asked.metadata, time: { created: 1 } }
+    const idle = { id: "msg_idle", type: "idle", outcome: "succeeded", time: { created: 3 } }
     const reply = (text: string) => ({ id: "msg_answer", type: "assistant", agent: "build", model: { id: "claude-opus", providerID: "anthropic" }, time: { created: 2 },
       content: [{ type: "tool", name: "read" }, { type: "text", text }] })
-    stream("ses_side1", [question, reply("TTL comes from")] as SessionMessageInfo[], true)
+    await serve("ses_side1", [question, reply("TTL comes from")] as SessionMessageInfo[])
     expect(await frame("answering... · looked with read")).toContain("TTL comes from")
-    stream("ses_side1", [question, reply("TTL comes from the environment so ops can tune it.")] as SessionMessageInfo[], false)
+    // Text streams in between reads.
+    emit("session.text.delta", { sessionID: "ses_side1", assistantMessageID: "msg_answer", delta: " the environment" })
+    await frame("TTL comes from the environment")
+    await serve("ses_side1", [question, reply("TTL comes from the environment so ops can tune it."), idle] as SessionMessageInfo[])
     expect(await frame("ask line 2 · Claude Opus · answered")).toContain("TTL comes from the environment so ops can tune it.")
 
     // A follow-up shares the session, without the instructions again, on the model the conversation switched to.
@@ -378,7 +382,7 @@ test("a asks the conversation's model about a line in a hidden session of its ow
     expect(prompts[1]!.text).not.toContain("Don't edit anything.")
 
     // Dismissing the one being answered stops it.
-    stream("ses_side1", [question, reply("TTL comes from the environment so ops can tune it."), { ...question, id: prompts[1]!.id!, metadata: prompts[1]!.metadata }] as SessionMessageInfo[], true)
+    await serve("ses_side1", [question, reply("TTL comes from the environment so ops can tune it."), idle, { ...question, id: prompts[1]!.id!, metadata: prompts[1]!.metadata }] as SessionMessageInfo[])
     await frame("ask line 3 · Claude Sonnet · thinking...")
     await run("delete")
     await view.waitForFrame((current) => !current.includes("Is zero handled?"))
@@ -437,13 +441,13 @@ test("an agent working in a worktree of its own is reviewed there, as Uncommitte
 })
 
 test("esc cancels a question still being answered before it closes the view", async () => {
-  const { frame, run, write, prompts, stream, interrupted, panel, view, dispose } = await setup()
+  const { frame, run, write, prompts, serve, interrupted, panel, view, dispose } = await setup()
   try {
     await frame("const ttl = Number(env.TTL ?? 3600)")
     await run("down", "down", "down", "ask")
     await write("Why read env here?")
     const asked = prompts[0]!
-    stream("ses_side1", [{ id: asked.id!, type: "user", text: asked.text, metadata: asked.metadata, time: { created: 1 } }] as SessionMessageInfo[], true)
+    await serve("ses_side1", [{ id: asked.id!, type: "user", text: asked.text, metadata: asked.metadata, time: { created: 1 } }] as SessionMessageInfo[])
     await frame("esc cancel question")
     await run("leave")
     await view.waitForFrame((current) => !current.includes("Why read env here?"))

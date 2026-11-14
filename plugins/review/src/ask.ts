@@ -86,24 +86,63 @@ const askOf = (message: SessionMessageInfo) => (message.metadata?.[PLUGIN_ID] as
 
 /**
  * A question's answer, from the answering session's messages: what the model wrote after the question and before
- * the next one. `running` is whether the session is working now; the latest question is the one it works on.
+ * the next one. It's done once the session went idle after it, or moved on to the next question.
  */
-export function answerOf(messages: readonly SessionMessageInfo[], ask: Ask, running: boolean): Answer {
+export function answerOf(messages: readonly SessionMessageInfo[], ask: Ask): Answer {
   if (ask.error) return { state: "failed", text: "", looked: [], error: ask.error }
   const at = messages.findIndex((message) => message.type === "user" && askOf(message) === ask.id)
   if (at < 0) return { state: "waiting", text: "", looked: [] }
   const next = messages.findIndex((message, index) => index > at && message.type === "user")
-  const replies = messages.slice(at + 1, next < 0 ? undefined : next).flatMap((message) => message.type === "assistant" ? [message] : [])
+  const after = messages.slice(at + 1, next < 0 ? undefined : next)
+  const replies = after.flatMap((message) => message.type === "assistant" ? [message] : [])
   const parts = replies.flatMap((message) => message.content)
   // Text before a tool call is the model thinking aloud; the answer is what it wrote after its last look around.
   let lastTool = -1
   parts.forEach((part, index) => { if (part.type === "tool") lastTool = index })
   const text = parts.slice(lastTool + 1).flatMap((part) => part.type === "text" ? [part.text] : []).join("").trim()
   const looked = parts.flatMap((part) => part.type === "tool" ? [part.name] : [])
-  const error = [...replies].reverse().find((message) => message.error)?.error
-  const working = running && next < 0
-  if (working) return { state: text ? "answering" : "thinking", text, looked }
-  if (error && !text) return { state: "failed", text, looked, error: error.message }
-  // Done is only known once the session stops, or moves on to the next question.
-  return { state: replies.length ? "done" : "thinking", text, looked }
+  const idle = after.find((message) => message.type === "idle")
+  if (!idle && next < 0) return { state: text ? "answering" : "thinking", text, looked }
+  const error = (idle?.type === "idle" ? idle.error : undefined) ?? [...replies].reverse().find((message) => message.error)?.error
+  if (!text && (error || idle?.type === "idle" && idle.outcome !== "succeeded")) {
+    return { state: "failed", text, looked, error: error?.message ?? (idle?.type === "idle" && idle.outcome === "interrupted" ? "Stopped" : "No answer") }
+  }
+  return { state: "done", text, looked }
+}
+
+/** Live text of an answer as it streams, before the session's stored messages have it. */
+export type TextEvent =
+  | { readonly type: "started"; readonly messageID: string; readonly at: number }
+  | { readonly type: "delta"; readonly messageID: string; readonly delta: string }
+  | { readonly type: "ended"; readonly messageID: string; readonly text: string }
+
+/** The messages with a streamed text event applied to the assistant message it's for, added if it isn't read yet. */
+export function streamText(messages: readonly SessionMessageInfo[], event: TextEvent): SessionMessageInfo[] {
+  const index = messages.findIndex((message) => message.id === event.messageID)
+  const found = index < 0 ? undefined : messages[index]
+  if (found && found.type !== "assistant") return [...messages]
+  const assistant = found ?? ({ id: event.messageID, type: "assistant", time: { created: event.type === "started" ? event.at : 0 }, content: [] } as unknown as Extract<SessionMessageInfo, { type: "assistant" }>)
+  const content = [...assistant.content]
+  const last = content.length - 1
+  const lastText = content[last]?.type === "text" ? content[last] : undefined
+  if (event.type === "started" || !lastText) content.push({ type: "text", text: event.type === "started" ? "" : event.type === "delta" ? event.delta : event.text })
+  else content[last] = { ...lastText, text: event.type === "delta" ? lastText.text + event.delta : event.text }
+  const next = { ...assistant, content }
+  return index < 0 ? [...messages, next] : messages.map((message, at) => at === index ? next : message)
+}
+
+/**
+ * The session's messages as read, keeping text streamed in since for a message the read caught mid-answer: the
+ * server stores it as it goes, so a read can be behind the stream.
+ */
+export function mergeRead(local: readonly SessionMessageInfo[], read: readonly SessionMessageInfo[]): SessionMessageInfo[] {
+  const length = (message: SessionMessageInfo | undefined) => message?.type === "assistant" ? message.content.reduce((total, part) => total + (part.type === "text" ? part.text.length : 0), 0) : 0
+  const kept = read.map((message) => {
+    if (message.type !== "assistant" || message.time.completed) return message
+    const mine = local.find((candidate) => candidate.id === message.id)
+    return length(mine) > length(message) ? mine! : message
+  })
+  // Streamed messages the read doesn't have yet stay, after it.
+  const ids = new Set(read.map((message) => message.id))
+  return [...kept, ...local.filter((message) => message.type === "assistant" && !message.time.completed && !ids.has(message.id))]
 }

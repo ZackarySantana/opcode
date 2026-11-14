@@ -59,6 +59,8 @@ export function fakeHost(options: {
   let worktrees = options.worktrees?.listed ?? []
   const cancelled: string[] = []
   const sessions = createStore<{ messages: Record<string, SessionMessageInfo[]>; running: Record<string, boolean> }>({ messages: {}, running: {} })
+  // What the server has stored for sessions the host's store doesn't hold, such as the archived ones questions run in.
+  const served: Record<string, SessionMessageInfo[]> = {}
   const slots: { claim: Record<string, unknown>; render: (input: never) => unknown }[] = []
   let respond: (input: SessionPromptInput) => Promise<unknown> = async () => ({})
   let files = options.diff ?? (() => [])
@@ -95,7 +97,13 @@ export function fakeHost(options: {
         switchModel: async (input: { sessionID: string; model: { id: string; providerID: string } }) => { switched.push(input) },
         inbox: { cancel: async ({ inboxID }: { inboxID: string }) => { cancelled.push(inboxID) } },
       },
-      message: { list: async () => ({ data: [{ id: "msg_first" }], cursor: {} }) },
+      message: {
+        list: async ({ sessionID, order }: { sessionID: string; order?: string }) => {
+          const stored = served[sessionID]
+          if (!stored) return { data: [{ id: "msg_first" }], cursor: {} }
+          return { data: order === "desc" ? [...stored].reverse() : [...stored], cursor: {} }
+        },
+      },
       file: {
         read: async ({ path }: { path: string }) => {
           const content = options.files?.[path]
@@ -106,7 +114,7 @@ export function fakeHost(options: {
       // Two config documents, as OpenCode layers them; the later one's servers win.
       config: { get: async () => [{ type: "document", info: {} }, { type: "document", info: options.lsp === undefined ? {} : { lsp: options.lsp } }] },
       rpc: () => ({ replies: async () => ({ replies: {} }) }),
-      model: { list: async () => ({ data: options.models ?? [] }) },
+      model: { list: async () => ({ data: options.models ?? [] }), default: async () => ({ data: options.models?.[0] ?? null }) },
       worktree: {
         list: async () => worktrees.map((directory) => ({ directory })),
         refresh: async () => { worktrees = [...new Set([...worktrees, ...options.worktrees?.found ?? []])] },
@@ -175,6 +183,14 @@ export function fakeHost(options: {
     created, interrupted, cancelled, diffs, switched,
     /** Switches the conversation to another model, as the host's model picker does. */
     setChatModel: (model: { id: string; providerID: string }) => chat[1]("model", model),
+    /** The server stores these messages for a session, and says so with an event, as a step ending does. */
+    serve: async (sessionID: string, messages: SessionMessageInfo[]) => {
+      served[sessionID] = messages
+      for (const handler of handlers.get("session.step.ended") ?? []) handler({ type: "session.step.ended", data: { sessionID } })
+      // The read it starts is debounced, then answered.
+      await settle()
+      await settle()
+    },
     /** What the host's store holds for a session: its messages, as streamed in, and whether it's working. */
     stream: (sessionID: string, messages: SessionMessageInfo[], running: boolean) => {
       sessions[1]("messages", sessionID, messages)
