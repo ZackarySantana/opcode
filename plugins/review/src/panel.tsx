@@ -2,13 +2,15 @@
 
 import { errorMessage } from "@opcode/core"
 import { createRefresh, type RefreshState } from "@opcode/core/refresh"
-import { KeyHints, usePalette, useText, type KeyHint } from "@opcode/ui"
+import { KeyHints, ThemeSurface, usePalette, useText, type KeyHint } from "@opcode/ui"
 import type { FileDiffInfo } from "@opencode/client"
 import { usePlugin } from "@opencode/plugin/tui"
 import type { PanelInput } from "@opencode/plugin/tui/context"
 import { CliRenderEvents, type BoxRenderable, type ScrollBoxRenderable, type SyntaxStyle, type TextareaRenderable } from "@opentui/core"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js"
 import { excerpt, type Answer, type Ask } from "./ask"
+import { parseDeck } from "./guide"
+import { GuideDialog } from "./guide-dialog"
 import type { Cursor, Frame, Position, ReviewController } from "./host"
 import { CommentsView } from "./comments"
 import { frameFor, frameID, trail } from "./frames"
@@ -217,6 +219,44 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   const answer = (ask: Ask) => review.asks.answer(ask)
   /** The latest question still waiting or being answered, in any file. */
   const unanswered = () => [...review.asks.list(sessionID())].reverse().find((ask) => ["waiting", "thinking", "answering"].includes(answer(ask).state))
+
+  // A guided review: the conversation's model presents the diff as a slide deck, in a dialog over the panel.
+  const guideRun = () => review.guides.run(sessionID())
+  const guideAnswer = createMemo(() => { const run = guideRun(); return run && review.guides.answer(run) })
+  const guideWriting = () => { const run = guideRun(); return !!run && review.guides.writing(run) }
+  const guideLabel = () => guideWriting() ? "guide: writing..." : "guide"
+  // A finished answer becomes a deck once, against the diff as it is then; after that its code follows its lines.
+  createEffect(on(() => {
+    const run = guideRun()
+    return run && !run.deck && !run.unreadable && guideAnswer()?.state === "done" && diff().value ? run.id : undefined
+  }, (id) => { if (id) review.guides.settle(sessionID(), id, parseDeck(guideAnswer()!.text, (file) => parsed().get(file))) }))
+  /** Opens the guide's dialog, which shows the model at work until the deck is ready. */
+  const showGuide = () => {
+    const id = sessionID()
+    const run = () => review.guides.run(id)
+    api.ui.dialog.show(() => (
+      <ThemeSurface name="dialog">
+        <GuideDialog run={run} answer={() => { const current = run(); return current && review.guides.answer(current) }}
+          activity={() => { const current = run(); return current ? review.guides.activity(current) : [] }}
+          writing={() => { const current = run(); return !!current && review.guides.writing(current) }}
+          model={() => review.guides.model(id)} rowsOf={(file) => parsed().get(file)} syntax={props.syntax}
+          onSlide={(index) => review.guides.setSlide(id, index)} onRestart={() => startGuide(true)}
+          onStop={() => { void review.guides.stop(id); api.ui.dialog.clear() }} />
+      </ThemeSurface>
+    ))
+    api.ui.dialog.set({ size: "xlarge" })
+  }
+  /** The header's guide button, and w: opens the guide of this view, writing one first when there's none. `fresh` writes a new one. */
+  const startGuide = (fresh = false) => {
+    const run = guideRun()
+    const failed = run && (run.error || run.unreadable || guideAnswer()?.state === "failed")
+    if (!fresh && run && run.view === view() && !failed) return showGuide()
+    const directory = workspace().directory
+    if (!directory) return
+    if (!files().length) return api.ui.toast.show({ title: "Review", message: `Nothing changed in ${view().toLowerCase()} to walk through.` })
+    void review.guides.start(sessionID(), directory, view(), ordered().map(({ file, patch, additions, deletions }) => ({ file, patch, additions, deletions })))
+    showGuide()
+  }
   const editing = () => position().editing
   const editAt = createMemo(() => {
     const edit = editing()
@@ -476,7 +516,8 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   const openOptions = async () => {
     // What's in effect is checked in the title, so it reads at a glance however narrow the menu is.
     const checked = (on: boolean, title: string) => on ? `✓ ${title}` : `  ${title}`
-    const choice = await api.ui.dialog.select<Mode | "base" | "worktree" | FileListStyle | `refs:${ReferenceEngine}`>({
+    const run = guideRun()
+    const choice = await api.ui.dialog.select<Mode | "base" | "worktree" | "guide:new" | FileListStyle | `refs:${ReferenceEngine}`>({
       title: "Review options",
       current: mode(),
       options: [
@@ -487,6 +528,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
         { title: "  Base branch...", value: "base" as const, description: state().base ? `Comparing against ${state().base}` : "Pick what the branch view compares against", category: "View" },
         { title: "  Worktree...", value: "worktree" as const, category: "View",
           description: `${workspace().picked ? "Picked" : workspace().worktree ? "Found from the agent's work" : "The session's own directory"}: ${workspace().directory ?? "none"}` },
+        ...run ? [{ title: "  Start a new guided review", value: "guide:new" as const, description: `Asks the conversation's model for a fresh walk through ${view()}`, category: "Guided review" }] : [],
         { title: checked(review.settings().fileList === "tree", "Folder tree"), value: "tree" as const, description: "Files under their folders", category: "File list" },
         { title: checked(review.settings().fileList === "paths", "Full paths"), value: "paths" as const, description: "Each file's whole path", category: "File list" },
         { title: checked(review.settings().references === "lsp", "Language server, then search"), value: "refs:lsp" as const, description: "The language server OpenCode is set up with for the file, else a search by name", category: "Usages and definitions" },
@@ -495,6 +537,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     })
     if (choice === "base") return chooseBase()
     if (choice === "worktree") return chooseWorktree()
+    if (choice === "guide:new") return startGuide(true)
     if (choice === "tree" || choice === "paths") return void review.updateSettings({ fileList: choice })
     if (choice === "refs:lsp" || choice === "refs:search") return void review.updateSettings({ references: choice === "refs:lsp" ? "lsp" : "search" })
     if (choice) void review.setView(sessionID(), choice)
@@ -652,6 +695,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     enabled: () => props.panel.focused && !editing() && !typing(),
     commands: [
       { id: `${PLUGIN_ID}.options`, title: "Review options", bind: "o", run: () => void openOptions() },
+      { id: `${PLUGIN_ID}.guide`, title: "Guided review: the changes as slides, by the conversation's model", bind: "w", run: () => startGuide() },
       { id: `${PLUGIN_ID}.files`, title: "Toggle the file list", bind: "b", run: () => setListShown((shown) => !shown) },
       { id: `${PLUGIN_ID}.refresh`, title: "Refresh", bind: "r", run: () => void reads.refresh() },
       { id: `${PLUGIN_ID}.send`, title: "Send the drafts to the agent", bind: "shift+s", run: send },
@@ -748,6 +792,9 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
           <text fg={palette.muted} wrapMode="none">
             [<span style={{ fg: palette.text }}>C</span> {allComments().length} {allComments().length === 1 ? "comment" : "comments"}<Show when={unseen().length}><span style={{ fg: palette.accent }}> ● {unseen().length} new</span></Show>]
           </text>
+        </box>
+        <box flexShrink={0} onMouseDown={() => startGuide()}>
+          <text fg={guideWriting() ? palette.accent : palette.muted} wrapMode="none">[<span style={{ fg: palette.text }}>w</span> {guideLabel()}]</text>
         </box>
         <box flexShrink={0} onMouseDown={() => void openOptions()}><text fg={palette.muted} wrapMode="none">[<span style={{ fg: palette.text }}>o</span> options]</text></box>
       </box>

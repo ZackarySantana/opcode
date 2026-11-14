@@ -45,7 +45,15 @@ Press `a` on a line (or on a range, after `v`), type a question, and press `ente
 
 The question goes with the diff around its lines, and the model can read and search the repository to check callers and definitions before answering. It can't edit files, run commands, or ask you anything. Nothing reaches the agent.
 
-The questions of a session share a session of their own, made on the first one, so follow-ups keep their context. It's archived, so it stays out of OpenCode's session lists, and its usage and cost are recorded like any session's. The [Cost](../cost/README.md) plugin counts them, but not as agent time. Answers stay until you dismiss them or OpenCode exits.
+The questions of a session, and its guided reviews, share a helper session of their own, made when first needed, so follow-ups keep their context: a question can ask about a slide of the guide. It's archived, so it stays out of OpenCode's session lists, and its usage and cost are recorded like any session's. The [Cost](../cost/README.md) plugin counts them, but not as agent time. Answers stay until you dismiss them or OpenCode exits.
+
+### Guided review
+
+Press `w` (or click **guide** in the panel's header) and the conversation's model presents the changes as a short slide deck, in a dialog over the panel. It reads the diff of the view you're on, and the repository where it needs to, and organizes the deck by idea rather than by file: an overview, then the core change, what builds on it, and a last slide on risks and what to check before merging. Each slide explains what the code does, why, and what deserves a careful look, with the changed lines it's about, from any files.
+
+While the model writes, the dialog shows what it's doing as it goes: the files it reads, what it searches for, what it's thinking, and each slide's title as it's written. When it's done, the deck opens right there. `←` / `→` (or `h` / `l`, `n` / `p`, `space`) go between slides, `↑` / `↓` scroll a long one, and the dots at the bottom show where you are.
+
+`esc` closes the dialog, leaving the guide as it is: if it's still being written, it keeps going, and the button reads **guide: writing...**. `w` opens it again, at the slide you were on, without asking the model again. `x` stops a guide still being written, and `r` asks for a new one, such as after the agent changed more. Excerpts follow their lines as the agent edits.
 
 ### What to review
 
@@ -98,6 +106,7 @@ Usages are grouped by file: the definition first, then the files the diff change
 | `x` | Delete the draft on the line, or dismiss the answer there |
 | `m` | Mark the file viewed, or not |
 | `o` | Options: what to review, how files are listed, and how usages are found |
+| `w` | Guided review: the changes as slides, by the conversation's model |
 | `b` | Show or hide the file list |
 | `r` | Refresh now |
 | `S` | Send the drafts |
@@ -120,4 +129,4 @@ In the comment box, `enter` saves, `shift+enter` adds a line, and `esc` saves an
 
 ## Storage
 
-Comments and viewed files are kept in OpenCode's terminal storage, synced across terminals on the same machine and kept across restarts. The line you were on, a half-written comment, and the answers to your questions survive closing the panel, until OpenCode exits. Replies are kept in the server's plugin storage.
+Comments and viewed files are kept in OpenCode's terminal storage, synced across terminals on the same machine and kept across restarts. The line you were on, a half-written comment, the answers to your questions, and the guided review, at the slide you were on, survive closing the panel, until OpenCode exits. Replies are kept in the server's plugin storage.

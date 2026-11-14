@@ -5,6 +5,8 @@ import type { Context } from "@opencode/plugin/tui/context"
 import { Identifier } from "@opencode/schema/identifier"
 import { createSignal } from "solid-js"
 import { Asks } from "./asks"
+import { Guides } from "./guides"
+import { Helpers } from "./helper"
 import { formatReview } from "./message"
 import {
   addComment, confirm, delivery, drafts, editComment, emptyReview, isViewed, markSeen, markSent, moveComment, PLUGIN_ID, removeComment, toggleViewed, unconfirmed, unsend, unseenReplies,
@@ -116,8 +118,12 @@ export class ReviewController {
   private readonly lspSettings: LspSettings
   readonly now: () => number
   readonly timer: SetTimer
+  /** The sessions beside each reviewed one that answer questions and write guided reviews. */
+  readonly helpers: Helpers
   /** Questions about the diff, answered by the conversation's model beside the session. */
   readonly asks: Asks
+  /** Guided reviews of the diff, written by the conversation's model beside the session. */
+  readonly guides: Guides
 
   constructor(private readonly api: Pick<Context, "client" | "data" | "storage" | "ui" | "location">, options: ControllerOptions = {}) {
     this.replies = options.replies ?? repliesRemote(api.client)
@@ -127,7 +133,9 @@ export class ReviewController {
       mergeLspConfig((await api.client.config.get({ location: { directory } }, { signal })).flatMap((entry) => entry.type === "document" ? [entry.info as { lsp?: LspConfig }] : [])))
     this.now = options.now ?? Date.now
     this.timer = options.timer ?? setTimer
-    this.asks = new Asks(api, this.now, this.timer)
+    this.helpers = new Helpers(api, this.now, this.timer)
+    this.asks = new Asks(api, this.helpers)
+    this.guides = new Guides(api, this.helpers)
     ;[this.saved, this.save] = api.storage.store<Saved>("reviews", { initial: { sessions: {} } })
     ;[this.positions, this.place] = api.storage.memory<{ sessions: Record<string, Position> }>("positions", { initial: { sessions: {} } })
     // A message cancelled from the host's queue never reached the agent: its comments are drafts again.
@@ -324,6 +332,6 @@ export class ReviewController {
   dispose(): void {
     for (const stop of this.stops) stop()
     for (const reads of this.replyReads.values()) reads.dispose()
-    this.asks.dispose()
+    this.helpers.dispose()
   }
 }
