@@ -1,5 +1,16 @@
 # @lidtop/opencode-cost
 
+## 0.5.0
+
+### Minor Changes
+
+- b4b8592: Sessions an Opcode plugin starts beside yours, such as Review's questions about a diff, count toward usage and cost but not toward agent time, turns, or parallel time.
+
+### Patch Changes
+
+- 9c2b277: The shared card list every plugin bundles can show a pane beside the list, which Snippets uses for its preview. Nothing changes for this plugin.
+- 2540a17: Rebuilt with the shared dialog components, whose Settings tab now draws its choices with a component GH PR Status also uses. Nothing visible changes.
+
 ## 0.4.0
 
 ### Minor Changes

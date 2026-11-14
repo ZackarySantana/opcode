@@ -1,5 +1,13 @@
 # @lidtop/opencode-feed
 
+## 0.6.1
+
+### Patch Changes
+
+- b4b8592: Bundles the updated shared core, which adds the side-session metadata tag that Review and Cost use. No change in behavior.
+- 9c2b277: The shared card list every plugin bundles can show a pane beside the list, which Snippets uses for its preview. Nothing changes for this plugin.
+- 2540a17: Rebuilt with the shared dialog components, whose Settings tab now draws its choices with a component GH PR Status also uses. Nothing visible changes.
+
 ## 0.6.0
 
 ### Minor Changes

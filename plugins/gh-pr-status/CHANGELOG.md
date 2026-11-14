@@ -1,5 +1,17 @@
 # @lidtop/opencode-gh-pr-status
 
+## 0.5.0
+
+### Minor Changes
+
+- 2540a17: `/ghpr` has an **Orgs** tab, before Settings, to choose which orgs' pull requests show, everywhere: exclude the chosen orgs, or include only theirs. It lists every org with an open pull request, and your teams' orgs, with counts, to choose from and search. The other tabs say how many pull requests it hides.
+
+### Patch Changes
+
+- b4b8592: Bundles the updated shared core, which adds the side-session metadata tag that Review and Cost use. No change in behavior.
+- 1394e9e: Remove `/ghpr-comments` (**Send PR review comments**) from the terminal and the desktop app, along with its `commentsPrompt` server option.
+- 9c2b277: The shared card list every plugin bundles can show a pane beside the list, which Snippets uses for its preview. Nothing changes for this plugin.
+
 ## 0.4.0
 
 ### Minor Changes

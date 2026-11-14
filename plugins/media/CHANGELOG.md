@@ -1,5 +1,11 @@
 # @lidtop/opencode-media
 
+## 0.2.1
+
+### Patch Changes
+
+- b4b8592: Bundles the updated shared core, which adds the side-session metadata tag that Review and Cost use. No change in behavior.
+
 ## 0.2.0
 
 ### Minor Changes

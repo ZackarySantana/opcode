@@ -1,5 +1,14 @@
 # @lidtop/opencode-review
 
+## 0.3.0
+
+### Minor Changes
+
+- b4b8592: The panel always opens full screen, in place of the conversation, so it looks the same on every terminal; `f` is gone, and `q` goes back to the conversation. New: press `a` on a line or range to ask about it, answered by the conversation's model without the agent seeing it. The answer streams in under the line, `x` dismisses it, and `esc` cancels one still being answered. Questions run in an archived session of their own, made on the first one: it can only read and search the repository, and its usage is recorded like any session's.
+- 1624f92: New: a guided review. Press `w` (or click **guide** in the panel's header) and the conversation's model presents the changes as a short slide deck, in a dialog: organized by idea rather than by file, each slide explaining what the code does and what to look at, with the changed lines it's about. While it writes, the dialog streams what the model is doing, then the deck opens there. `←` / `→` move between slides; closing keeps the guide, and `w` opens it again at the same slide. Guides and questions share one helper session per reviewed session, so a question can ask about a slide.
+- 22daac6: The panel's slash command is now `/diffs`. OpenCode's built-in `/review` command (a code-review prompt) took precedence over the plugin's, so `/review` sent that prompt instead of opening the panel. **Review changes** in the command palette is unchanged.
+- b4b8592: Review follows an agent into its worktree. When the agent changes files or runs commands in a worktree other than its session's directory, Review reviews that worktree, as Uncommitted (OpenCode's snapshots don't cover it), and names it in the header. Usages, opened files, and questions go there too. **Worktree...** in the options picks a checkout for the session, and the diff now reloads when a session moves.
+
 ## 0.2.0
 
 ### Minor Changes
