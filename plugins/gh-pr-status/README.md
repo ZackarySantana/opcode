@@ -29,11 +29,12 @@ Or add it to `plugins` in your global `~/.config/opencode/opencode.jsonc` (or `o
 
 ## Use
 
-Run `/ghpr` or select **Pull requests** in the command palette. The dialog has four tabs:
+Run `/ghpr` or select **Pull requests** in the command palette. The dialog has five tabs:
 
 - **Mine:** your open pull requests. The ones that need you come first, then the ones waiting on others, then drafts.
 - **Reviewing:** pull requests requesting your review by name, then open ones you've already reviewed. Requests only for your teams are on Teams.
 - **Teams:** review requests for your teams, with every requested reviewer listed. Press `f` to show one team; the choice is saved until you pick **All your teams** there.
+- **Orgs:** which orgs' pull requests show. See [Orgs](#orgs).
 - **Settings:** the order of pull requests, which inactive ones to leave out, what the sidebar shows, and how often it refreshes.
 
 Each pull request shows its status, author, repository and number, when it came to you, and who is requested and when: you first, then your teams, then everyone else. It came to you when your review, or your team's, was requested; for your own, when a reviewer first commented or requested changes; otherwise when it opened.
@@ -47,10 +48,10 @@ The **Order** setting sorts each group, and the sidebar, by that time:
 | --- | --- |
 | `tab` / `shift+tab` | Next / previous tab |
 | `↑` / `↓`, `j` / `k` | Move the outline |
-| `/` | Search titles, authors, repositories, statuses, and reviewers |
-| `enter`, `space` | Open the outlined pull request in your browser (clicking one does too) |
+| `/` | Search titles, authors, repositories, statuses, and reviewers (orgs on Orgs) |
+| `enter`, `space` | Open the outlined pull request in your browser (clicking one does too); choose the outlined org (Orgs) |
 | `f` | Show one team's review requests, or all of them (Teams) |
-| `←` / `→`, `h` / `l` | Change the outlined setting (Settings) |
+| `←` / `→`, `h` / `l` | Change the outlined setting (Settings); switch between Exclude and Include (Orgs) |
 | `r` | Refresh now |
 | `esc` | Leave the box, clear the search, close the team picker, then close |
 
@@ -69,7 +70,7 @@ Links open in your browser with `open` (macOS), `rundll32` (Windows), or `xdg-op
 
 In OpenCode Desktop, a pill above a session's composer counts the pull requests waiting on you, colored by the most urgent. Its menu lists them as the sidebar does (following the sidebar settings, team filter, and **Sidebar items**, then "N more in Pull requests", which opens the full list); pick one to open it in your browser. When pull requests can't be read, the pill turns red and its first row says why; pick it to refresh.
 
-Select **Pull requests** in the command palette, or run `/ghpr`, to search every pull request, grouped as the terminal's tabs group them, and open one. **Refresh pull requests** refreshes now. Settings and the team filter are changed in a terminal; the desktop app follows them. The desktop app asks the app's own server, at the routed session's location or the server's default on Home.
+Select **Pull requests** in the command palette, or run `/ghpr`, to search every pull request, grouped as the terminal's tabs group them, and open one. **Refresh pull requests** refreshes now. Settings, the team filter, and the orgs shown are changed in a terminal; the desktop app follows them. The desktop app asks the app's own server, at the routed session's location or the server's default on Home.
 
 ## Send review comments to the agent
 
@@ -82,6 +83,17 @@ It sends the unresolved review threads someone else started, with your replies i
 Review requests come from GitHub's `review-requested:@me` search, which includes requests to any team you're on, closed and secret teams included, as long as `gh` can see them. Team names come from `gh api /user/teams`, which needs the `read:org` scope that `gh auth login` grants by default; without it, every team requested on a pull request that asks for your review is treated as yours.
 
 GitHub sometimes withholds results. A pull request in an organization that enforces SAML single sign-on stays hidden until you authorize `gh`'s token for that organization, and a team your token can't see shows as **hidden team**. `/ghpr` counts what was withheld and says what to do, such as authorizing GitHub CLI for an organization's single sign-on at [github.com/settings/connections/applications](https://github.com/settings/connections/applications).
+
+## Orgs
+
+The **Orgs** tab narrows every tab, the sidebar, and the desktop pill and list by the org that owns each pull request's repository (a user, for personal repositories). It lists every org that owns a repository with an open pull request in the last refresh, plus the orgs of your teams and any you chose before, each with how many pull requests the lists show for it.
+
+- Press `enter` or `space`, or click, to choose an org or unchoose it. Press `/` to search them; `enter` in the box chooses the outlined match, so you can choose several in a row.
+- In **Exclude** mode (the default) the chosen orgs' pull requests are hidden; in **Include** mode only theirs show. `←` / `→` switches the mode and keeps what you chose. With nothing chosen, everything shows in either mode.
+
+The other tabs say how many pull requests the Orgs tab hides. The choices are saved with the settings, and each change applies to what's saved, so changes made at once in different terminals all stick.
+
+Only what GitHub's searches return is listed, up to 50 pull requests per list, and the searches aren't narrowed: a hidden org's pull requests still count toward that limit.
 
 ## Settings
 

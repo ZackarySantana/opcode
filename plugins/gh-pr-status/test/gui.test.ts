@@ -16,7 +16,7 @@ const snapshot = { ...parseResponse(response, ""), teams: ["acme/web", "acme/api
 /** As `PullRequestsClient` shows a snapshot: inactive pull requests left out by the settings. */
 const shown = (from: Snapshot | undefined, settings: Partial<Settings> = {}, error?: string): Shown => {
   const all = { ...defaultSettings, ...settings }
-  return { snapshot: from, view: view(from, all.ignoreDays), settings: all, error }
+  return { snapshot: from, view: view(from, all), settings: all, error }
 }
 const loaded = (settings: Partial<Settings> = {}) => shown(snapshot, settings)
 

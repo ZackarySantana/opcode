@@ -9,11 +9,14 @@ export function pr(number: number, title: string, options: {
   author?: string; opened?: number; updated?: number; draft?: boolean; conflicts?: boolean; decision?: string; checks?: string
   requested?: { reviewer: Reviewer; hours?: number }[]; review?: { state: string; hours?: number }
   reviews?: { author: string; state: string; hours: number; bot?: boolean }[]
+  /** "owner/name"; acme/web by default. */
+  repo?: string
 } = {}) {
+  const repo = options.repo ?? "acme/web"
   return {
-    url: `https://github.com/acme/web/pull/${number}`, number, title, isDraft: options.draft ?? false, createdAt: hoursAgo(options.opened ?? 72), updatedAt: hoursAgo(options.updated ?? 1),
+    url: `https://github.com/${repo}/pull/${number}`, number, title, isDraft: options.draft ?? false, createdAt: hoursAgo(options.opened ?? 72), updatedAt: hoursAgo(options.updated ?? 1),
     reviewDecision: options.decision ?? null, mergeable: options.conflicts ? "CONFLICTING" : "MERGEABLE",
-    author: { login: options.author ?? "me" }, repository: { nameWithOwner: "acme/web" },
+    author: { login: options.author ?? "me" }, repository: { nameWithOwner: repo },
     commits: { nodes: [{ commit: { statusCheckRollup: options.checks ? { state: options.checks } : null } }] },
     reviewRequests: { nodes: (options.requested ?? []).map(({ reviewer }) => ({ requestedReviewer: reviewer })) },
     viewerLatestReview: options.review ? { state: options.review.state, submittedAt: hoursAgo(options.review.hours ?? 1) } : null,

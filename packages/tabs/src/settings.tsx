@@ -15,6 +15,19 @@ export interface SettingRow<Settings, Value = unknown> {
   update(value: Value): Partial<Settings>
 }
 
+/** Every choice on one line, the current one bracketed. */
+export function Choices<Value>(props: { choices: readonly { value: Value; label: string }[]; current: Value; selected?: boolean }) {
+  const palette = usePalette()
+  return (
+    <box flexDirection="row" gap={1}>
+      <For each={props.choices}>{(choice) => {
+        const active = () => choice.value === props.current
+        return <text fg={props.selected ? palette.selectedText : active() ? palette.value : palette.muted}>{active() ? `[${choice.label}]` : ` ${choice.label} `}</text>
+      }}</For>
+    </box>
+  )
+}
+
 /** Every choice stays visible; ←/→ move between them, stopping at either end. */
 export function SettingsTab<Settings>(props: { rows: readonly SettingRow<Settings>[]; settings: Settings; update(change: Partial<Settings>): void }) {
   const tab = useTab()
@@ -42,12 +55,7 @@ export function SettingsTab<Settings>(props: { rows: readonly SettingRow<Setting
             <box flexDirection="column" minWidth={0}>
               <box flexDirection="row" height={1} gap={2} backgroundColor={selected() ? palette.selectedBackground : undefined}>
                 <text width={22} flexShrink={0} fg={selected() ? palette.selectedText : palette.text}>{selected() ? ">" : " "} {row.label}</text>
-                <box flexDirection="row" gap={1}>
-                  <For each={row.choices}>{(choice) => {
-                    const active = () => choice.value === row.current(props.settings)
-                    return <text fg={selected() ? palette.selectedText : active() ? palette.value : palette.muted}>{active() ? `[${choice.label}]` : ` ${choice.label} `}</text>
-                  }}</For>
-                </box>
+                <Choices choices={row.choices} current={row.current(props.settings)} selected={selected()} />
               </box>
               <box paddingLeft={2}><text minWidth={0} wrapMode="word" fg={palette.muted}>{row.description}</text></box>
             </box>

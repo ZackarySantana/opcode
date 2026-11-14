@@ -5,7 +5,7 @@ import { describeRpcError } from "@opcode/core/rpc"
 import { createClock } from "@opcode/tabs/clock"
 import type { LocationRef, OpenCodeClient } from "@opencode/client"
 import { createSignal } from "solid-js"
-import { defaultSettings, readSettings, view, type PullRequestsState, type Settings, type SettingsChange } from "./model"
+import { applyChange, defaultSettings, view, type PullRequestsState, type Settings, type SettingsChange } from "./model"
 import { GhPrStatusRpc, type FormattedFeedback } from "./rpc"
 
 /** The server's pull request state, as a terminal or the desktop app reaches it. */
@@ -73,13 +73,13 @@ export class PullRequestsClient {
   snapshot = () => this.current[0]()?.state.snapshot
   error = () => this.problem[0]() ?? this.current[0]()?.state.error
   refreshing = () => this.current[0]()?.state.refreshing ?? false
-  settings = (): Settings => this.pending[0]().reduce<Settings>((settings, change) => readSettings({ ...settings, ...change }), this.current[0]()?.state.settings ?? defaultSettings)
+  settings = (): Settings => this.pending[0]().reduce<Settings>(applyChange, this.current[0]()?.state.settings ?? defaultSettings)
   /** Ages are relative to this, so views re-render as time passes. */
   now = () => this.clock.now()
   /** When the server's next automatic refresh starts, on this terminal's clock. */
   nextRefresh = () => this.current[0]()?.nextRefresh
-  /** The snapshot's lists, without the pull requests inactive longer than the ignore setting. */
-  view = () => view(this.snapshot(), this.settings().ignoreDays, this.now())
+  /** The snapshot's lists, without the pull requests inactive longer than the ignore setting or out of scope. */
+  view = () => view(this.snapshot(), this.settings(), this.now())
 
   /** Follows the server's changes, reading the whole state whenever it may have missed one. */
   start(): void {

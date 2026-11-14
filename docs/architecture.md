@@ -9,7 +9,7 @@
 | Later | Ordered active items, completed history, and settings | One server-process service shared by every location: the whole list as one server plugin storage document, changed one read-modify-write at a time; RPC with a change event and the agent tools both use it; terminals follow it live; isolated prompt-paste bridge | Later/History/Settings dialog, native edit/confirmation dialogs, sidebar; desktop: side panel tab, panel launcher, `/later`, composer pill |
 | Sessions | Searchable user/assistant text and session metadata | Server-owned SQLite, live events, RPC; client history import | Browser, filters, preview |
 | Feed | Subscriptions, settings, and an interpreted timeline of feed items | One server-process service shared by every location: server plugin storage, the refresh schedule, feed fetching, RPC with a change event; terminals follow it live | Status/Upcoming/Releases/Subscribe/Settings dialog, feed picker, sidebar; desktop: in-progress incidents titlebar pill, Status/Upcoming/Releases/Subscriptions dialog |
-| GH PR Status | Pull requests classified by what waits on you, settings, and a saved team filter | One server-process service shared by every location: server plugin storage, the refresh schedule, `gh` GraphQL and REST calls, RPC with a change event; terminals follow it live | Mine/Reviewing/Teams/Settings dialog, team picker, sidebar; desktop composer pill, grouped pull request picker, review comments into the composer |
+| GH PR Status | Pull requests classified by what waits on you, settings, and a saved team filter | One server-process service shared by every location: server plugin storage, the refresh schedule, `gh` GraphQL and REST calls, RPC with a change event; terminals follow it live | Mine/Reviewing/Teams/Orgs/Settings dialog, team picker, sidebar; desktop composer pill, grouped pull request picker, review comments into the composer |
 | Snippets | Global and project snippet files, precedence, and `@name` mentions | Server-owned files, skill registration, prompt/context hooks, authoring tools, RPC | Dialog with previews, prompt paste bridge, authoring sessions; desktop: commands to insert, write, edit, and delete snippets |
 | Media | Project-relative output paths, image naming, PCM-to-WAV framing | OpenRouter media API with the `openrouter` integration credential; agent tools | None: server-only agent tools |
 | Review | Patch rows and segments, line comments that follow their text, delivery states, viewed-by-patch-hash, the review message, names and definitions per language, usages arranged against the diff | Host session/VCS diffs and inbox; synced terminal storage; server plugin storage, prompt/context hooks, a reply tool, RPC; language servers from OpenCode's `lsp` config in a server-side pool, ripgrep / `git grep` | Session panel with the file tree or paths and the diff, inline comment editor, usages list, search, comments list, read-only file view, options menu |
@@ -133,7 +133,9 @@ polled from an outside service. The shared parts live in `@opcode/core`:
   receipt on its own clock.
 - **Tests (`@opcode/core/test-support/server`).** `fakeServer` runs a server plugin as the host does, an instance per
   location sharing storage, with JSON-checked calls, live-only events, storage and location faults, and
-  `closeServers` for `afterEach`.
+  `closeServers` for `afterEach`. It doesn't apply the RPC's schemas: `withOpenCodeHost`
+  (`@opcode/core/test-support/opencode-host`) runs a disposable OpenCode server with the plugin built and active, for
+  tests of what the host itself validates, skipped where no OpenCode binary is installed.
 
 `@opcode/core` contains small host-independent utilities, including the XDG
 state directory and owner-only WAL SQLite setup shared by Cost and

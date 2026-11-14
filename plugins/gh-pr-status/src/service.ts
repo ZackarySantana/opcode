@@ -3,7 +3,7 @@ import { failover, joinShared, packageVersion } from "@opcode/core/process"
 import { createRefresh, setTimer, type RefreshState, type SetTimer } from "@opcode/core/refresh"
 import { createSchedule, type Schedule } from "@opcode/core/schedule"
 import { fetchSnapshot, type Runner } from "./gh"
-import { defaultSettings, PLUGIN_ID, readSettings, type PullRequestsState, type Settings, type SettingsChange, type Snapshot } from "./model"
+import { applyChange, defaultSettings, PLUGIN_ID, readSettings, type PullRequestsState, type Settings, type SettingsChange, type Snapshot } from "./model"
 
 /** How long to wait before reading the saved settings again after a read failed. */
 const LOAD_RETRY = 10_000
@@ -63,7 +63,7 @@ export class PullRequestsService {
     if (this.disposed) return Promise.reject(new Error("Pull requests stopped on the server"))
     return this.writes(async () => {
       if (!this.loaded && !await this.loadSettings()) throw new Error("The saved settings can't be read right now, so they can't be changed. Try again shortly.")
-      const next = readSettings({ ...this.settings, ...change })
+      const next = applyChange(this.settings, change)
       await this.ports.saveSettings(next)
       this.settings = next
       this.schedule.reschedule()
