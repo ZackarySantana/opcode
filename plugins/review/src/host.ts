@@ -138,7 +138,7 @@ export class ReviewController {
     if (stack.some((frame) => frame.id === id)) this.setPosition(sessionID, { ...position, stack: stack.map((frame) => frame.id === id ? update(frame) : frame) })
   }
 
-  /** Asks the open panel to take input, as /review does when the panel is already showing. */
+  /** Asks the open panel to take input, as /diffs does when the panel is already showing. */
   focusRequests = () => this.focusSignal[0]()
   requestFocus = () => this.focusSignal[1]((count) => count + 1)
 

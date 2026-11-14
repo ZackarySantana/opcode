@@ -184,12 +184,12 @@ try {
   await key("\x1b", "Opcode keyboard smoke", "All sessions")
   console.log("Sessions: a real root session loads through the validated search RPC")
   // The panel opens beside the session and takes the keyboard: Escape reaches the panel and closes it.
-  await open("review", "Review This turn")
+  await open("diffs", "Review This turn")
   await requireText("Nothing changed in this turn", 0)
   await key("\x1b", "Opcode keyboard smoke", "Review This turn")
   console.log("Review: the real session panel opens with the session's diff and closes on Escape")
   // Usages go through the real RPC: with no language server installed here, a search by name answers.
-  await open("review", "Review This turn")
+  await open("diffs", "Review This turn")
   await key("o", "Review options")
   terminal.write("Uncommitted")
   await key("\r", "Review Uncommitted")
