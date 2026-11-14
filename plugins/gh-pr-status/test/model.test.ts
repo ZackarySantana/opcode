@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test"
 import { fetchSnapshot, parseResponse, type Runner } from "../src/gh"
-import { defaultSettings, HIDDEN_TEAM, readChange, readSettings, sidebarEntries, view, type Order, type Snapshot } from "../src/model"
+import {
+  applyChange, defaultScope, defaultSettings, HIDDEN_TEAM, readChange, readSettings, scopeChoices, scopeCount, sidebarEntries, view,
+  type Order, type Scope, type SettingsChange, type Snapshot,
+} from "../src/model"
 import { NOW, pr, response, team, teams, user } from "./fixtures"
 
 const snapshot: Snapshot = { ...parseResponse(response, ""), teams: ["acme/web", "acme/api"] }
@@ -98,7 +101,7 @@ test("ignoring inactive pull requests leaves out every one with no activity in t
     ],
   ), ""), teams: ["acme/web"] }
   const listed = (ignoreDays: number) => {
-    const lists = view(searched, ignoreDays, NOW)
+    const lists = view(searched, { ...defaultSettings, ignoreDays }, NOW)
     return { mine: numbers(lists.mine), reviewing: numbers(lists.reviewing), teams: numbers(lists.teams) }
   }
   expect(listed(7)).toEqual({ mine: [], reviewing: [10], teams: [] })
@@ -106,6 +109,47 @@ test("ignoring inactive pull requests leaves out every one with no activity in t
   expect(listed(30)).toEqual({ mine: [1], reviewing: [10], teams: [11] })
   expect(listed(365)).toEqual({ mine: [1], reviewing: [10, 20], teams: [11] })
   expect(listed(0)).toEqual({ mine: [1, 2], reviewing: [10, 20], teams: [11] })
+})
+
+test("the scope hides the chosen orgs' pull requests, or shows only theirs, everywhere; nothing chosen shows them all", () => {
+  const searched: Snapshot = { ...parseResponse(searches(
+    [
+      pr(10, "Cache build artifacts", { author: "alice", repo: "acme/api", requested: [{ reviewer: user("me"), hours: 2 }] }),
+      pr(11, "Speed up CI", { author: "bob", repo: "Globex/infra", requested: [{ reviewer: team("acme/web"), hours: 5 }] }),
+    ],
+    [pr(20, "Docs for webhooks", { author: "erin", repo: "acme/docs", review: { state: "APPROVED" } })],
+    [pr(1, "Fix login redirect"), pr(2, "Add dark mode", { repo: "me/dotfiles" })],
+  ), ""), teams: ["acme/web", "initech/ops"] }
+  const listed = (scope: Partial<Scope>) => {
+    const lists = view(searched, { ignoreDays: 0, scope: { ...defaultScope, ...scope } })
+    return { mine: numbers(lists.mine), reviewing: numbers(lists.reviewing), teams: numbers(lists.teams) }
+  }
+  expect(listed({})).toEqual({ mine: [1, 2], reviewing: [10, 20], teams: [11] })
+  expect(listed({ mode: "include" })).toEqual(listed({}))
+  // An org covers every repository it owns; names match regardless of case.
+  expect(listed({ orgs: ["ACME"] })).toEqual({ mine: [2], reviewing: [], teams: [11] })
+  expect(listed({ mode: "include", orgs: ["globex", "ME"] })).toEqual({ mine: [2], reviewing: [], teams: [11] })
+
+  // Every org that owns a pull request's repository is a choice, with your teams' orgs and the saved ones, once each.
+  const scope: Scope = { mode: "exclude", orgs: ["acme", "gone"] }
+  const rows = (query?: string) => scopeChoices(searched, { ignoreDays: 0, scope }, query).map((choice) => [choice.name, choice.count, choice.chosen])
+  expect(rows()).toEqual([["acme", 3, true], ["Globex", 1, false], ["gone", 0, true], ["initech", 0, false], ["me", 1, false]])
+  expect(rows("glo")).toEqual([["Globex", 1, false]])
+  expect(scopeCount(searched, { ignoreDays: 0, scope })).toEqual({ shown: 2, total: 5 })
+})
+
+test("scope changes say what each org becomes, so repeats and changes from elsewhere all apply", () => {
+  const choose = (name: string, chosen = true): SettingsChange => ({ scopeOrg: { name, chosen } })
+  const after = (...changes: SettingsChange[]) => changes.reduce(applyChange, defaultSettings).scope
+  // Choosing twice, as when a change still on its way arrives in the state too, is choosing once.
+  expect(after(choose("acme"), choose("acme"))).toEqual({ ...defaultScope, orgs: ["acme"] })
+  expect(after(choose("acme"), choose("ACME", false))).toEqual(defaultScope)
+  expect(new Set(after(choose("acme"), choose("Globex")).orgs)).toEqual(new Set(["acme", "Globex"]))
+  // The mode keeps what was chosen.
+  expect(after(choose("acme"), { scopeMode: "include" })).toEqual({ mode: "include", orgs: ["acme"] })
+  // Other settings and the team are kept, or the team cleared.
+  expect(applyChange({ ...defaultSettings, team: "acme/web" }, { order: "oldest" })).toEqual({ ...defaultSettings, order: "oldest", team: "acme/web" })
+  expect(applyChange({ ...defaultSettings, team: "acme/web" }, { team: null })).toEqual(defaultSettings)
 })
 
 test("gh's own message explains a failure, and results GitHub withheld are counted", async () => {
@@ -128,4 +172,13 @@ test("stored settings read over the defaults: a field that isn't one of its choi
   expect(readSettings({ team: "" })).toEqual(defaultSettings)
   // A change keeps only valid fields, and null to clear the team.
   expect(readChange({ order: "sideways", sidebarTeams: false, team: null, extra: 1 })).toEqual({ sidebarTeams: false, team: null })
+  // A stored scope reads as saved, each org once; one that isn't valid throughout is left out rather than turned into another.
+  const valid: Scope = { mode: "include", orgs: ["acme", "Globex"] }
+  expect(readSettings({ scope: valid }).scope).toEqual(valid)
+  expect(readSettings({ scope: { ...valid, orgs: ["acme", "Globex", "ACME"] } }).scope).toEqual(valid)
+  for (const scope of [{ ...valid, mode: "Include" }, { ...valid, orgs: ["acme/web"] }, { ...valid, orgs: [" acme"] }, { mode: "include" }, "acme"]) {
+    expect(readSettings({ scope }).scope).toEqual(defaultScope)
+  }
+  // The scope changes a part at a time, never whole, and only by an org's name.
+  expect(readChange({ scopeMode: "include", scopeOrg: { name: "acme/web", chosen: true }, scope: valid })).toEqual({ scopeMode: "include" })
 })

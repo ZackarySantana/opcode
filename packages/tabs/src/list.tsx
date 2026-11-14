@@ -134,7 +134,8 @@ export function Heading(props: { title: string }) {
   return <text fg={palette.accent} flexShrink={0}><b>{props.title}</b></text>
 }
 
-const LABEL_WIDTH = 34
+/** The width of a `Line`'s label, which its detail follows. */
+export const LABEL_WIDTH = 34
 
 /** A row's content: a fixed-width label, then a detail in its own color. */
 export function Line(props: { label: string; labelColor: Color; detail?: string; detailColor?: Color; selected: boolean }) {

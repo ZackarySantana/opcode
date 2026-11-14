@@ -7,7 +7,8 @@ import { usePalette, type KeyHint } from "@opcode/ui"
 import { usePlugin } from "@opencode/plugin/tui"
 import { createMemo, createSignal, Show } from "solid-js"
 import type { PullRequestsClient } from "./client"
-import { matches, onTeam, ordered, PLUGIN_ID, refreshChoices, sidebarItemChoices, teamChoices, type Entry, type Order, type Search, type Settings } from "./model"
+import { matches, onTeam, ordered, PLUGIN_ID, refreshChoices, scopeCount, sidebarItemChoices, teamChoices, type Entry, type Order, type Search, type Settings } from "./model"
+import { OrgsTab } from "./orgs"
 import { card } from "./style"
 
 export const TITLE = "Pull requests"
@@ -30,6 +31,7 @@ export function PullRequestsDialog(props: { prs: PullRequestsClient }) {
         ]} />
       ) },
       { label: "Teams", placeholder: "search your teams' review requests", render: () => <Teams prs={props.prs} entries={current().teams} /> },
+      { label: "Orgs", placeholder: "search orgs", render: () => <OrgsTab prs={props.prs} /> },
       { label: "Settings", placeholder: "search settings",
         render: () => <SettingsTab rows={settingRows(props.prs.settings().team)} settings={props.prs.settings()} update={(change) => props.prs.updateSettings(change)} /> },
     ]} />
@@ -50,6 +52,7 @@ function PullList(props: {
   const palette = usePalette()
   const hidden = () => props.searches.reduce((sum, search) => sum + (search?.hidden ?? 0), 0)
   const reason = () => props.searches.find((search) => search?.reason)?.reason
+  const scoped = () => { const { shown, total } = scopeCount(props.prs.snapshot(), props.prs.settings(), props.prs.now()); return total - shown }
   const empty = () => tab.query() ? "No matching pull requests." : props.prs.snapshot() ? "Nothing here." : props.prs.error() ? "Couldn't load pull requests." : "Loading…"
   return (
     <ItemList handlers={props.handlers} empty={empty()}
@@ -71,6 +74,9 @@ function PullList(props: {
         <Show when={props.prs.error()}>{(error) => <text minWidth={0} wrapMode="word" fg={palette.error}>! {error()}</text>}</Show>
         <Show when={hidden()}>{(count) => (
           <text minWidth={0} wrapMode="word" fg={palette.warning}>! {count()} pull request{count() === 1 ? "" : "s"} hidden{reason() ? `: ${reason()}` : ""}</text>
+        )}</Show>
+        <Show when={scoped()}>{(count) => (
+          <text minWidth={0} wrapMode="word" fg={palette.muted}>{count()} pull request{count() === 1 ? "" : "s"} hidden by the Orgs tab</text>
         )}</Show>
       </>} />
   )

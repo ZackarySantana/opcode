@@ -5,12 +5,12 @@ import type { PullRequestsState } from "../src/model"
 import type { FormattedFeedback } from "../src/rpc"
 import { response, teams } from "./fixtures"
 
-/** gh answering the pull request searches from the fixtures, counting them. */
-export function ghRunner() {
+/** gh answering the pull request searches from the fixtures, or `searched`, counting them. */
+export function ghRunner(searched = response) {
   const searches: string[] = []
   const run: Runner = async (args) => {
     if (args.includes("graphql")) searches.push(args.join(" "))
-    return { stdout: args.includes("graphql") ? response : teams, stderr: "", status: 0 }
+    return { stdout: args.includes("graphql") ? searched : teams, stderr: "", status: 0 }
   }
   return { run, searches }
 }

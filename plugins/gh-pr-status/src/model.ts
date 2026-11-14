@@ -84,10 +84,26 @@ export interface Since {
 
 export type Order = "smart" | "newest" | "oldest"
 
+export type ScopeMode = "exclude" | "include"
+
+/**
+ * Which pull requests every list shows, by the org (or user) that owns their repository, compared case-insensitively:
+ * all but the chosen orgs', or only theirs. Nothing chosen shows them all, in either mode.
+ */
+export interface Scope {
+  readonly mode: ScopeMode
+  readonly orgs: readonly string[]
+}
+
+export const scopeModes: readonly ScopeMode[] = ["exclude", "include"]
+export const defaultScope: Scope = { mode: "exclude", orgs: [] }
+
 export interface Settings {
   readonly order: Order
   /** Pull requests with no activity in this many days are left out everywhere; 0 keeps them all. */
   readonly ignoreDays: number
+  /** The orgs whose pull requests show everywhere. */
+  readonly scope: Scope
   /** Your open pull requests, in the sidebar. */
   readonly sidebarMine: boolean
   /** Review requests for your teams, in the sidebar, narrowed to `team` when set. */
@@ -98,27 +114,70 @@ export interface Settings {
   readonly team?: string
 }
 
-export const defaultSettings: Settings = { order: "smart", ignoreDays: 30, sidebarMine: true, sidebarTeams: true, sidebarItems: 5, refreshMinutes: 5 }
+export const defaultSettings: Settings = { order: "smart", ignoreDays: 30, scope: defaultScope, sidebarMine: true, sidebarTeams: true, sidebarItems: 5, refreshMinutes: 5 }
 export const orderChoices: readonly Order[] = ["smart", "newest", "oldest"]
 export const ignoreChoices: readonly number[] = [0, 7, 14, 30, 90, 365]
 export const sidebarItemChoices: readonly number[] = [3, 5, 10, 15, 20]
 export const refreshChoices: readonly number[] = [1, 2, 5, 10, 15, 30]
 
-/** A change to some settings; a null team clears the Teams tab's filter. */
-export type SettingsChange = Partial<Omit<Settings, "team">> & { readonly team?: string | null }
+/** Chooses an org, or unchooses it. */
+export interface ScopeOrgChange {
+  readonly name: string
+  readonly chosen: boolean
+}
 
-const fieldChoices: { readonly [Key in Exclude<keyof Settings, "team">]: readonly Settings[Key][] } = {
+/**
+ * A change to some settings; a null team clears the Teams tab's filter. The scope changes a part at a time, and each
+ * part says what it becomes rather than flipping it, so changes made at once, here or in another terminal, all apply.
+ */
+export type SettingsChange = Partial<Omit<Settings, "team" | "scope">> & {
+  readonly team?: string | null
+  readonly scopeMode?: ScopeMode
+  readonly scopeOrg?: ScopeOrgChange
+}
+
+/** GitHub's names are case-insensitive. */
+const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+const byName = (a: string, b: string) => a.localeCompare(b)
+const ownerOf = (repository: string) => repository.split("/")[0]!
+/** An org's name, as a repository's owner: no slash or space. */
+const isOrg = (value: unknown): value is string => typeof value === "string" && /^[^/\s]+$/.test(value)
+
+const fieldChoices: { readonly [Key in Exclude<keyof Settings, "team" | "scope">]: readonly Settings[Key][] } = {
   order: orderChoices, ignoreDays: ignoreChoices, sidebarMine: [true, false], sidebarTeams: [true, false],
   sidebarItems: sidebarItemChoices, refreshMinutes: refreshChoices,
 }
 
-/** The fields of `value` that are one of their choices; a team is a name, or null to clear it. Anything else is left out. */
+const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" ? { ...value } : {}
+
+/** The fields of `input` that are one of their choices, and a team as a name, or null to clear it. */
+function readFields(input: Record<string, unknown>): Partial<Omit<Settings, "team" | "scope">> & { team?: string | null } {
+  const fields: Record<string, unknown> = {}
+  for (const [key, choices] of Object.entries(fieldChoices)) if ((choices as readonly unknown[]).includes(input[key])) fields[key] = input[key]
+  if (input.team === null || typeof input.team === "string" && input.team) fields.team = input.team
+  return fields
+}
+
+/** A stored scope; undefined unless its mode is one of the modes and its orgs are all names, kept once each, sorted. */
+function readScope(value: unknown): Scope | undefined {
+  const input = record(value)
+  const mode = scopeModes.find((mode) => mode === input.mode)
+  const orgs = input.orgs
+  if (!mode || !Array.isArray(orgs) || !orgs.every(isOrg)) return undefined
+  return { mode, orgs: orgs.filter((name, index) => orgs.findIndex((other) => sameName(other, name)) === index).sort(byName) }
+}
+
+function readScopeOrg(value: unknown): ScopeOrgChange | undefined {
+  const input = record(value)
+  return isOrg(input.name) && typeof input.chosen === "boolean" ? { name: input.name, chosen: input.chosen } : undefined
+}
+
+/** The parts of `value` that are valid changes. Anything else is left out. */
 export function readChange(value: unknown): SettingsChange {
-  const input: Record<string, unknown> = value && typeof value === "object" ? { ...value } : {}
-  const change: Record<string, unknown> = {}
-  for (const [key, choices] of Object.entries(fieldChoices)) if ((choices as readonly unknown[]).includes(input[key])) change[key] = input[key]
-  if (input.team === null || typeof input.team === "string" && input.team) change.team = input.team
-  return change
+  const input = record(value)
+  const scopeMode = scopeModes.find((mode) => mode === input.scopeMode)
+  const scopeOrg = readScopeOrg(input.scopeOrg)
+  return { ...readFields(input), ...scopeMode ? { scopeMode } : {}, ...scopeOrg ? { scopeOrg } : {} }
 }
 
 /**
@@ -126,8 +185,24 @@ export function readChange(value: unknown): SettingsChange {
  * data from any version reads. The team is left out unless set, as JSON has no undefined.
  */
 export function readSettings(stored: unknown): Settings {
-  const { team, ...change } = readChange(stored)
-  return { ...defaultSettings, ...change, ...team ? { team } : {} }
+  const input = record(stored)
+  const { team, ...fields } = readFields(input)
+  return { ...defaultSettings, ...fields, scope: readScope(input.scope) ?? defaultScope, ...team ? { team } : {} }
+}
+
+/** Chooses an org, or unchooses it, regardless of case. */
+function chooseOrg(scope: Scope, { name, chosen }: ScopeOrgChange): Scope {
+  const others = scope.orgs.filter((org) => !sameName(org, name))
+  return { ...scope, orgs: chosen ? [...others, name].sort(byName) : others }
+}
+
+/** The settings after a change, as the server saves it and a client shows it while it's on its way. */
+export function applyChange(settings: Settings, change: SettingsChange): Settings {
+  const { team, scopeMode, scopeOrg, ...fields } = change
+  const { team: current, ...rest } = settings
+  const moded = scopeMode ? { ...settings.scope, mode: scopeMode } : settings.scope
+  const kept = team === null ? undefined : team ?? current
+  return { ...rest, ...fields, scope: scopeOrg ? chooseOrg(moded, scopeOrg) : moded, ...kept ? { team: kept } : {} }
 }
 
 /** What the server shares with every client: the settings, and the latest refresh from GitHub and when the next starts. */
@@ -220,11 +295,20 @@ export interface View {
   readonly teams: readonly Entry[]
 }
 
-/** Leaves out pull requests with no activity in the `ignoreDays` before `now`; 0 keeps them all. */
-export function view(snapshot: Snapshot | undefined, ignoreDays = 0, now = Date.now()): View {
+/** Whether the pull requests of a repository ("owner/name") show: nothing chosen shows every one. */
+export function inScope(scope: Scope, repository: string): boolean {
+  if (!scope.orgs.length) return true
+  return scope.orgs.some((org) => sameName(org, ownerOf(repository))) === (scope.mode === "include")
+}
+
+/** What leaves pull requests out of every list. */
+export type Filter = Pick<Settings, "ignoreDays" | "scope">
+
+/** Leaves out pull requests with no activity in the `ignoreDays` before `now` (0 keeps them all), and those out of scope. */
+export function view(snapshot: Snapshot | undefined, filter: Filter = { ignoreDays: 0, scope: defaultScope }, now = Date.now()): View {
   if (!snapshot) return { mine: [], reviewing: [], teams: [] }
-  const after = ignoreDays ? now - ignoreDays * 86_400_000 : -Infinity
-  const active = (search: Search) => search.prs.filter((pr) => pr.updatedAt >= after)
+  const after = filter.ignoreDays ? now - filter.ignoreDays * 86_400_000 : -Infinity
+  const active = (search: Search) => search.prs.filter((pr) => pr.updatedAt >= after && inScope(filter.scope, pr.repository))
   const requests = active(snapshot.requested).filter((pr) => pr.author !== snapshot.viewer).flatMap((pr) => requested(pr, snapshot) ?? [])
   const direct = requests.filter((entry) => entry.direct)
   const byName = new Set(direct.map((entry) => entry.pr.url))
@@ -246,6 +330,39 @@ export const onTeam = (entries: readonly Entry[], team: string | undefined) => t
 /** Teams to filter by: yours, any requested of you, and the saved filter, so it can be cleared even once gone. */
 export function teamChoices(snapshot: Snapshot, entries: readonly Entry[], saved: string | undefined): string[] {
   return [...new Set([...snapshot.teams, ...entries.flatMap((entry) => entry.teams), ...saved ? [saved] : []])].sort()
+}
+
+/** Each pull request once, from every list. */
+const listed = (current: View) => new Map([...current.mine, ...current.reviewing, ...current.teams].map((entry) => [entry.pr.url, entry.pr]))
+
+export interface ScopeChoice {
+  readonly name: string
+  /** Pull requests the lists show for it, before the scope applies. */
+  readonly count: number
+  readonly chosen: boolean
+}
+
+/**
+ * The orgs to choose from, matching `query`: the owners of every open pull request in the snapshot, active or not, the
+ * orgs of your teams, and the chosen ones, so they can be unchosen once gone. Each once regardless of case, sorted.
+ */
+export function scopeChoices(snapshot: Snapshot | undefined, filter: Filter, query = "", now = Date.now()): ScopeChoice[] {
+  const { orgs: chosen } = filter.scope
+  const prs = snapshot ? [snapshot.mine, snapshot.requested, snapshot.reviewed].flatMap((search) => search.prs) : []
+  const counted = [...listed(view(snapshot, { ...filter, scope: defaultScope }, now)).values()]
+  const names = [...prs.map((pr) => ownerOf(pr.repository)), ...(snapshot?.teams ?? []).map(ownerOf), ...chosen]
+  // The last spelling of each wins, so a chosen org shows as it was chosen.
+  const orgs = [...new Map(names.map((name) => [name.toLowerCase(), name])).values()].sort(byName)
+  return orgs.filter((name) => matchesText(name, query)).map((name) => ({
+    name,
+    chosen: chosen.some((org) => sameName(org, name)),
+    count: counted.filter((pr) => sameName(ownerOf(pr.repository), name)).length,
+  }))
+}
+
+/** How many pull requests the scope leaves listed, of how many it could. */
+export function scopeCount(snapshot: Snapshot | undefined, filter: Filter, now = Date.now()): { shown: number; total: number } {
+  return { shown: listed(view(snapshot, filter, now)).size, total: listed(view(snapshot, { ...filter, scope: defaultScope }, now)).size }
 }
 
 /** The sidebar's one list: review requests waiting on you, your teams' (narrowed by the filter), and your open pull requests. */

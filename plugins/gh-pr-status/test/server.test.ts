@@ -42,7 +42,7 @@ test("every location shares one service: one poll, settings saved once for all, 
     const announcer = announced(server).at(-1)!.directory
     await server.unload(announcer)
     const other = announcer === "/home/me" ? web : home
-    await other.update({ order: "newest" })
+    await other.update({ order: "newest", scopeMode: "include", scopeOrg: { name: "acme", chosen: true } })
     expect(announced(server).at(-1)).toMatchObject({ directory: announcer === "/home/me" ? "/work/web" : "/home/me", state: { settings: { order: "newest" } } })
     expect(gh.searches).toHaveLength(2)
 
@@ -50,7 +50,7 @@ test("every location shares one service: one poll, settings saved once for all, 
     const before = await other.state()
     await server.close()
     const after = await home.state()
-    expect(after.settings).toEqual({ ...defaultSettings, order: "newest", sidebarItems: 10, refreshMinutes: 30 })
+    expect(after.settings).toEqual({ ...defaultSettings, order: "newest", sidebarItems: 10, refreshMinutes: 30, scope: { mode: "include", orgs: ["acme"] } })
     expect(after.server).not.toBe(before.server)
     expect(after.started).toBeGreaterThanOrEqual(before.started)
     await eventually(() => expect(gh.searches).toHaveLength(3))

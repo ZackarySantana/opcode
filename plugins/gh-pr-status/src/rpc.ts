@@ -1,15 +1,20 @@
 import { versionedSchema } from "@opcode/core/follow"
 import { empty, failed as errors, object } from "@opcode/core/rpc"
 import { Rpc } from "@opencode/plugin/rpc"
-import { ignoreChoices, orderChoices, PLUGIN_ID, refreshChoices, sidebarItemChoices, type SettingsChange } from "./model"
+import { ignoreChoices, orderChoices, PLUGIN_ID, refreshChoices, scopeModes, sidebarItemChoices, type SettingsChange } from "./model"
 
 const text = { type: "string" } as const
 const flag = { type: "boolean" } as const
+const mode = { type: "string", enum: scopeModes }
+// The host refuses patterns, so `readChange` checks that a name is an org's.
 const choices = {
   order: { type: "string", enum: orderChoices }, ignoreDays: { type: "integer", enum: ignoreChoices }, sidebarMine: flag, sidebarTeams: flag,
   sidebarItems: { type: "integer", enum: sidebarItemChoices }, refreshMinutes: { type: "integer", enum: refreshChoices },
 }
-const settings = object({ ...choices, team: text }, Object.keys(choices))
+const scope = object({ mode, orgs: { type: "array", items: text } }, ["mode", "orgs"])
+const settings = object({ ...choices, scope, team: text }, [...Object.keys(choices), "scope"])
+/** `ScopeOrgChange` in model.ts. */
+const scopeOrg = object({ name: text, chosen: flag }, ["name", "chosen"])
 /** `PullRequestsState` in model.ts. */
 const state = object({
   ...versionedSchema, settings, refreshing: flag, error: text, nextRefreshIn: { type: "number" },
@@ -22,7 +27,7 @@ export const GhPrStatusRpc = Rpc.define({
   id: PLUGIN_ID,
   methods: {
     state: { input: empty, output: state, errors },
-    update: { input: object({ settings: object({ ...choices, team: { type: ["string", "null"] } }, []) }, ["settings"]), output: state, errors },
+    update: { input: object({ settings: object({ ...choices, team: { type: ["string", "null"] }, scopeMode: mode, scopeOrg }, []) }, ["settings"]), output: state, errors },
     /** Refreshes now and restarts the countdown. */
     refresh: { input: empty, output: state, errors },
     /** Review feedback on the pull request for the branch checked out in the call's location, as the prompt to send. */
