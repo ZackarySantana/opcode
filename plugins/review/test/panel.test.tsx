@@ -29,6 +29,7 @@ async function setup(width = 90, options: Parameters<typeof fakeHost>[0] = {}) {
   const view = await testRender(() => (
     <PluginContextProvider value={host.api}>
       <Show when={!panel.state.closed}><ReviewPanel panel={panel.input} review={review} /></Show>
+      <Show when={host.dialog()}>{(render) => render()()}</Show>
     </PluginContextProvider>
   ), { width, height: 40 })
   // The current frame may already show it: waiting only sees frames rendered later, and a settled tree renders none.
@@ -458,72 +459,89 @@ test("esc cancels a question still being answered before it closes the view", as
   } finally { await dispose() }
 })
 
-test("a guided review walks through the diff in the model's order, one step's lines at a time, and esc leaves it to resume later", async () => {
-  const { frame, run, review, prompts, created, serve, panel, view, dispose } = await setup()
+test("w opens a guided review in a dialog: the model's work streams in, then the deck opens there, slide by slide", async () => {
+  const { frame, run, prompts, created, serve, dialog, api, view, dispose } = await setup(120)
   try {
-    await frame("const ttl = Number(env.TTL ?? 3600)")
-    review.guides.request()
-    await settle()
-    expect(await frame("Guided review of This turn")).toContain("esc cancel guide")
+    expect(await frame("const ttl = Number(env.TTL ?? 3600)")).toContain("[w guide]")
+    await run("guide")
+    const writing = await frame("writing slides for them")
+    expect(writing).toContain("Guided review This turn")
+    expect(writing).toContain("[w guide: writing...]")
     // The helper on the conversation's model gets the whole diff.
     expect(created).toHaveLength(1)
     const asked = prompts[0]!
     expect(asked.sessionID).toBe("ses_side1")
-    expect(asked.text).toContain("guided code review")
+    expect(asked.text).toContain("slide deck")
     expect(asked.text).toContain("--- src/db.ts")
 
-    const guide = { summary: "Moves the TTL to the environment and grows the pool.", steps: [
-      { file: "src/db.ts", start: 1, title: "Bigger pool", note: "Check the connection limit." },
-      { file: "src/auth.ts", start: 2, end: 3, title: "TTL from env", note: "Zero throws on startup." },
+    const question = { id: asked.id!, type: "user", text: asked.text, metadata: asked.metadata, time: { created: 1 } }
+    const deck = { title: "Env TTL and a bigger pool", slides: [
+      { title: "What changed", body: "The TTL comes from the environment, and the pool grows.", code: [] },
+      { title: "Configuration from the environment", body: "Zero throws on startup; check the pool limit too.", code: [
+        { file: "src/auth.ts", start: 2, end: 3 }, { file: "src/db.ts", start: 1, end: 1 },
+      ] },
     ], skipped: [] }
-    await serve("ses_side1", [
-      { id: asked.id!, type: "user", text: asked.text, metadata: asked.metadata, time: { created: 1 } },
-      { id: "msg_guide", type: "assistant", agent: "build", model: { id: "claude-opus", providerID: "anthropic" }, time: { created: 2, completed: 3 },
-        content: [{ type: "text", text: `\`\`\`json\n${JSON.stringify(guide)}\n\`\`\`` }] },
-      { id: "msg_idle", type: "idle", outcome: "succeeded", time: { created: 3 } },
-    ] as SessionMessageInfo[])
-    // Step one is the model's first, in another file than the one shown: the cursor goes to its lines.
-    const first = await frame("step 1/2 Bigger pool")
-    expect(first).toContain("2/2 src/db.ts")
-    expect(first).toContain("Moves the TTL to the environment and grows the pool.")
-    expect(first).toMatch(/▶ 1 \+ const pool = 2/)
-    expect(first).toContain("agent working · step 1/2")
+    const json = `\`\`\`json\n${JSON.stringify(deck)}\n\`\`\``
+    const assistant = (content: unknown[], completed?: number) => ({ id: "msg_guide", type: "assistant", agent: "build", model: { id: "claude-opus", providerID: "anthropic" },
+      time: { created: 2, ...completed ? { completed } : {} }, content })
+    // While it writes: the tools it uses, what it's thinking, and the slides so far.
+    await serve("ses_side1", [question, assistant([
+      { type: "reasoning", text: "The pool change matters for load." },
+      { type: "tool", id: "t", name: "read", time: { created: 2 }, state: { status: "completed", input: { path: "src/db.ts" }, content: [{ type: "text", text: "" }] } },
+      { type: "text", text: json.slice(0, json.indexOf("Configuration") + 20) },
+    ])] as SessionMessageInfo[])
+    const log = await frame("▸ Slide: What changed")
+    expect(log).toContain("~ The pool change matters for load.")
+    expect(log).toContain("· Reading src/db.ts")
 
+    await serve("ses_side1", [question, assistant([{ type: "text", text: json }], 3), { id: "msg_idle", type: "idle", outcome: "succeeded", time: { created: 3 } }] as SessionMessageInfo[])
+    const first = await frame("slide 1/2")
+    expect(first).toContain("Guided review Env TTL and a bigger pool")
+    expect(first).toContain("The TTL comes from the environment, and the pool grows.")
+    expect(first).toContain("[w guide]")
+
+    // Slides are ideas, with code from any files, drawn from the diff.
     await run("guide.next")
-    const second = await frame("step 2/2 TTL from env")
-    expect(second).toContain("1/2 src/auth.ts")
-    expect(second).toMatch(/▶ 2 \+ const ttl = Number/)
-    expect(second).toContain("Zero throws on startup.")
-    // Comments work on the way, as anywhere.
-    await run("comment")
-    await view.mockInput.typeText("Guard it")
-    view.mockInput.pressEnter()
-    await settle()
-    await frame("r1 line 2 · draft")
+    const second = await frame("slide 2/2")
+    expect(second).toContain("Configuration from the environment")
+    expect(second).toContain("src/auth.ts:2-3")
+    expect(second).toContain("const ttl = Number(env.TTL ?? 3600)")
+    expect(second).toContain("src/db.ts:1")
+    expect(second).toContain("const pool = 2")
 
-    // Esc leaves the guide without closing; asking again resumes at the same step, without asking the model again.
-    await run("leave")
-    await view.waitForFrame((current) => !current.includes("step 2/2 TTL from env"))
-    expect(panel.state.closed).toBe(0)
-    review.guides.request()
-    await settle()
-    await frame("step 2/2 TTL from env")
+    // Closed and opened again, it's where you left it, without asking the model again.
+    api.ui.dialog.clear()
+    await view.waitForFrame((current) => !current.includes("slide 2/2"))
+    expect(dialog()).toBeUndefined()
+    await run("guide")
+    await frame("slide 2/2")
     expect(prompts).toHaveLength(1)
   } finally { await dispose() }
 })
 
-test("esc cancels a guided review still being written", async () => {
-  const { frame, run, review, prompts, serve, interrupted, panel, dispose } = await setup()
+test("x stops a guided review still being written, and r writes a new one", async () => {
+  const { frame, run, prompts, serve, interrupted, review, dialog, dispose } = await setup(120)
   try {
     await frame("const ttl = Number(env.TTL ?? 3600)")
-    review.guides.request()
-    await settle()
-    await frame("Guided review of This turn")
+    await run("guide")
+    await frame("writing slides for them")
     const asked = prompts[0]!
     await serve("ses_side1", [{ id: asked.id!, type: "user", text: asked.text, metadata: asked.metadata, time: { created: 1 } }] as SessionMessageInfo[])
-    await run("leave")
+    await run("guide.stop")
     expect(interrupted).toEqual(["ses_side1"])
     expect(review.guides.run(SESSION)).toBeUndefined()
-    expect(panel.state.closed).toBe(0)
+    expect(dialog()).toBeUndefined()
+
+    // The model answered with no deck: r asks again.
+    await run("guide")
+    const again = prompts[1]!
+    await serve("ses_side1", [
+      { id: again.id!, type: "user", text: again.text, metadata: again.metadata, time: { created: 4 } },
+      { id: "msg_prose", type: "assistant", agent: "build", model: { id: "claude-opus", providerID: "anthropic" }, time: { created: 5, completed: 6 }, content: [{ type: "text", text: "Sorry, no." }] },
+      { id: "msg_idle2", type: "idle", outcome: "succeeded", time: { created: 6 } },
+    ] as SessionMessageInfo[])
+    await frame("no slides in it. Press r to try again.")
+    await run("guide.restart")
+    expect(prompts).toHaveLength(3)
   } finally { await dispose() }
 })

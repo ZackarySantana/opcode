@@ -2,15 +2,15 @@
 
 import { errorMessage } from "@opcode/core"
 import { createRefresh, type RefreshState } from "@opcode/core/refresh"
-import { KeyHints, usePalette, useText, type KeyHint } from "@opcode/ui"
+import { KeyHints, ThemeSurface, usePalette, useText, type KeyHint } from "@opcode/ui"
 import type { FileDiffInfo } from "@opencode/client"
 import { usePlugin } from "@opencode/plugin/tui"
 import type { PanelInput } from "@opencode/plugin/tui/context"
 import { CliRenderEvents, type BoxRenderable, type ScrollBoxRenderable, type SyntaxStyle, type TextareaRenderable } from "@opentui/core"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js"
 import { excerpt, type Answer, type Ask } from "./ask"
-import { parseGuide, type Guide, type GuideStep } from "./guide"
-import type { GuideRun } from "./guides"
+import { parseDeck } from "./guide"
+import { GuideDialog } from "./guide-dialog"
 import type { Cursor, Frame, Position, ReviewController } from "./host"
 import { CommentsView } from "./comments"
 import { frameFor, frameID, trail } from "./frames"
@@ -220,64 +220,50 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   /** The latest question still waiting or being answered, in any file. */
   const unanswered = () => [...review.asks.list(sessionID())].reverse().find((ask) => ["waiting", "thinking", "answering"].includes(answer(ask).state))
 
-  // A guided review: the conversation's model walks you through the diff, one step's lines at a time.
+  // A guided review: the conversation's model presents the diff as a slide deck, in a dialog over the panel.
   const guideRun = () => review.guides.run(sessionID())
   const guideAnswer = createMemo(() => { const run = guideRun(); return run && review.guides.answer(run) })
-  const guiding = () => !!guideRun()?.active
-  const guideSteps = () => guideRun()?.guide?.steps ?? []
-  /** The step you're on, while walking through a guide that's ready. */
-  const guideStep = (): GuideStep | undefined => guiding() ? guideSteps()[guideRun()!.step] : undefined
-  const preparing = () => guiding() && !guideRun()?.guide && !guideRun()?.unreadable && guideAnswer()?.state !== "failed"
-  // A finished answer becomes steps once, against the diff as it is then; after that they follow their lines.
+  const guideWriting = () => { const run = guideRun(); return !!run && review.guides.writing(run) }
+  const guideLabel = () => guideWriting() ? "guide: writing..." : "guide"
+  // A finished answer becomes a deck once, against the diff as it is then; after that its code follows its lines.
   createEffect(on(() => {
     const run = guideRun()
-    return run && !run.guide && !run.unreadable && guideAnswer()?.state === "done" && diff().value ? run.id : undefined
-  }, (id) => {
-    if (!id) return
-    review.guides.settle(sessionID(), id, parseGuide(guideAnswer()!.text, (file) => parsed().get(file)))
-  }))
-  /** Puts the cursor on a step's lines: in their file's diff, or at the top of it when the diff no longer shows them. */
-  const goToStep = (step: GuideStep) => {
-    saveEditor()
-    const fileRows = parsed().get(step.anchor.file)
-    const at = fileRows && locate(step.anchor, fileRows)
-    const row = at && fileRows[at.from]
-    place({ file: step.anchor.file, line: row ? lineOf(row) : undefined, old: row?.kind === "del", text: row?.text, token: undefined, stack: [] })
+    return run && !run.deck && !run.unreadable && guideAnswer()?.state === "done" && diff().value ? run.id : undefined
+  }, (id) => { if (id) review.guides.settle(sessionID(), id, parseDeck(guideAnswer()!.text, (file) => parsed().get(file))) }))
+  /** Opens the guide's dialog, which shows the model at work until the deck is ready. */
+  const showGuide = () => {
+    const id = sessionID()
+    const run = () => review.guides.run(id)
+    api.ui.dialog.show(() => (
+      <ThemeSurface name="dialog">
+        <GuideDialog run={run} answer={() => { const current = run(); return current && review.guides.answer(current) }}
+          activity={() => { const current = run(); return current ? review.guides.activity(current) : [] }}
+          writing={() => { const current = run(); return !!current && review.guides.writing(current) }}
+          model={() => review.guides.model(id)} rowsOf={(file) => parsed().get(file)} syntax={props.syntax}
+          onSlide={(index) => review.guides.setSlide(id, index)} onRestart={() => startGuide(true)}
+          onStop={() => { void review.guides.stop(id); api.ui.dialog.clear() }} />
+      </ThemeSurface>
+    ))
+    api.ui.dialog.set({ size: "xlarge" })
   }
-  createEffect(on(() => { const step = guideStep(); return step && `${guideRun()!.id}:${guideRun()!.step}` }, () => { const step = guideStep(); if (step) goToStep(step) }))
-  const stepBy = (by: number) => {
-    const run = guideRun()
-    if (!run?.guide) return
-    const next = Math.max(0, Math.min(run.guide.steps.length - 1, run.step + by))
-    if (next === run.step) goToStep(run.guide.steps[next]!)
-    else review.guides.setStep(sessionID(), next)
-  }
-  /** Walks through the view: resumes the guide of this view, or starts one. */
+  /** The header's guide button, and w: opens the guide of this view, writing one first when there's none. `fresh` writes a new one. */
   const startGuide = (fresh = false) => {
     const run = guideRun()
-    if (!fresh && run && run.view === view() && !run.error && !run.unreadable && guideAnswer()?.state !== "failed") return review.guides.setActive(sessionID(), true)
+    const failed = run && (run.error || run.unreadable || guideAnswer()?.state === "failed")
+    if (!fresh && run && run.view === view() && !failed) return showGuide()
     const directory = workspace().directory
     if (!directory) return
     if (!files().length) return api.ui.toast.show({ title: "Review", message: `Nothing changed in ${view().toLowerCase()} to walk through.` })
     void review.guides.start(sessionID(), directory, view(), ordered().map(({ file, patch, additions, deletions }) => ({ file, patch, additions, deletions })))
+    showGuide()
   }
-  // /diffs-guided asks for it, once the changes are in.
-  createEffect(() => {
-    if (!review.guides.pending() || !diff().value) return
-    review.guides.take()
-    startGuide()
-  })
-  const stepsShown = createMemo(() => {
-    const step = guideStep()
-    return step && step.anchor.file === docFile() ? [{ step, at: locate(step.anchor, rows()) }] : []
-  })
   const editing = () => position().editing
   const editAt = createMemo(() => {
     const edit = editing()
     if (!edit || edit.anchor.file !== docFile()) return undefined
     return locate(edit.anchor, rows())?.to ?? rows().length - 1
   })
-  const breaks = createMemo(() => new Set([...[...placed(), ...placedAsks(), ...stepsShown()].flatMap(({ at }) => at ? [at.to] : []), ...editAt() === undefined ? [] : [editAt()!]]))
+  const breaks = createMemo(() => new Set([...[...placed(), ...placedAsks()].flatMap(({ at }) => at ? [at.to] : []), ...editAt() === undefined ? [] : [editAt()!]]))
   const parts = createMemo<Segment[]>((previous) => {
     const kept = new Map(previous?.map((part) => [`${part.start}:${part.patch}`, part]))
     return segments(rows(), breaks()).map((part) => kept.get(`${part.start}:${part.patch}`) ?? part)
@@ -531,7 +517,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     // What's in effect is checked in the title, so it reads at a glance however narrow the menu is.
     const checked = (on: boolean, title: string) => on ? `✓ ${title}` : `  ${title}`
     const run = guideRun()
-    const choice = await api.ui.dialog.select<Mode | "base" | "worktree" | "guide" | "guide:new" | FileListStyle | `refs:${ReferenceEngine}`>({
+    const choice = await api.ui.dialog.select<Mode | "base" | "worktree" | "guide:new" | FileListStyle | `refs:${ReferenceEngine}`>({
       title: "Review options",
       current: mode(),
       options: [
@@ -542,8 +528,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
         { title: "  Base branch...", value: "base" as const, description: state().base ? `Comparing against ${state().base}` : "Pick what the branch view compares against", category: "View" },
         { title: "  Worktree...", value: "worktree" as const, category: "View",
           description: `${workspace().picked ? "Picked" : workspace().worktree ? "Found from the agent's work" : "The session's own directory"}: ${workspace().directory ?? "none"}` },
-        ...run && !run.active ? [{ title: "  Resume the guided review", value: "guide" as const, description: `Step ${run.step + 1} of ${run.guide?.steps.length ?? "?"} through ${run.view}`, category: "Guided review" }] : [],
-        { title: run ? "  Start a new guided review" : "  Guided review", value: "guide:new" as const, description: `The conversation's model walks you through ${view()}, step by step`, category: "Guided review" },
+        ...run ? [{ title: "  Start a new guided review", value: "guide:new" as const, description: `Asks the conversation's model for a fresh walk through ${view()}`, category: "Guided review" }] : [],
         { title: checked(review.settings().fileList === "tree", "Folder tree"), value: "tree" as const, description: "Files under their folders", category: "File list" },
         { title: checked(review.settings().fileList === "paths", "Full paths"), value: "paths" as const, description: "Each file's whole path", category: "File list" },
         { title: checked(review.settings().references === "lsp", "Language server, then search"), value: "refs:lsp" as const, description: "The language server OpenCode is set up with for the file, else a search by name", category: "Usages and definitions" },
@@ -552,7 +537,6 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     })
     if (choice === "base") return chooseBase()
     if (choice === "worktree") return chooseWorktree()
-    if (choice === "guide") return review.guides.setActive(sessionID(), true)
     if (choice === "guide:new") return startGuide(true)
     if (choice === "tree" || choice === "paths") return void review.updateSettings({ fileList: choice })
     if (choice === "refs:lsp" || choice === "refs:search") return void review.updateSettings({ references: choice === "refs:lsp" ? "lsp" : "search" })
@@ -624,8 +608,6 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       { id: `${PLUGIN_ID}.file.next`, title: "Next file", bind: "shift+j,alt+down", run: () => selectFile(fileIndex() + 1) },
       { id: `${PLUGIN_ID}.file.previous`, title: "Previous file", bind: "shift+k,alt+up", run: () => selectFile(fileIndex() - 1) },
       // Opened from a list of usages or matches, the next or previous one in its place.
-      { id: `${PLUGIN_ID}.guide.next`, title: "Next step of the guided review", bind: "n", enabled: () => guiding() && !!guideSteps().length && !stack().length, run: () => stepBy(1) },
-      { id: `${PLUGIN_ID}.guide.previous`, title: "Previous step of the guided review", bind: "p", enabled: () => guiding() && !!guideSteps().length && !stack().length, run: () => stepBy(-1) },
       { id: `${PLUGIN_ID}.result.next`, title: "Next usage or match", bind: "n", enabled: () => stack().at(-2)?.kind === "refs" || stack().at(-2)?.kind === "search", run: () => stepResult(1) },
       { id: `${PLUGIN_ID}.result.previous`, title: "Previous usage or match", bind: "p", enabled: () => stack().at(-2)?.kind === "refs" || stack().at(-2)?.kind === "search", run: () => stepResult(-1) },
       { id: `${PLUGIN_ID}.symbol.previous`, title: "Previous name on the line", bind: "h,left", run: () => stepToken(-1) },
@@ -651,9 +633,6 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
         // A question still being answered is cancelled first, as escape stops the agent in the conversation.
         const asking = unanswered()
         if (asking) return void review.asks.dismiss(sessionID(), asking.id)
-        // A guide still being written is cancelled; a ready one is left, keeping your place for /diffs-guided.
-        if (preparing()) return void review.guides.stop(sessionID())
-        if (guiding()) return review.guides.setActive(sessionID(), false)
         if (hasUnsent()) send()
         props.panel.close()
       } },
@@ -716,6 +695,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     enabled: () => props.panel.focused && !editing() && !typing(),
     commands: [
       { id: `${PLUGIN_ID}.options`, title: "Review options", bind: "o", run: () => void openOptions() },
+      { id: `${PLUGIN_ID}.guide`, title: "Guided review: the changes as slides, by the conversation's model", bind: "w", run: () => startGuide() },
       { id: `${PLUGIN_ID}.files`, title: "Toggle the file list", bind: "b", run: () => setListShown((shown) => !shown) },
       { id: `${PLUGIN_ID}.refresh`, title: "Refresh", bind: "r", run: () => void reads.refresh() },
       { id: `${PLUGIN_ID}.send`, title: "Send the drafts to the agent", bind: "shift+s", run: send },
@@ -766,7 +746,6 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     if (draftCount()) parts.push(`${draftCount()} ${draftCount() === 1 ? "draft" : "drafts"}`)
     if (api.data.session.status(sessionID()) === "running") parts.push("agent working")
     if (diff().loading) parts.push("refreshing")
-    if (guiding() && guideSteps().length) parts.push(`step ${guideRun()!.step + 1}/${guideSteps().length}`)
     return parts.join(" · ")
   }
   const hints = (): KeyHint[] => {
@@ -799,8 +778,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       { key: "/", label: "search", command: `${PLUGIN_ID}.search` },
       ...stack().length ? [] : [{ key: "S", label: hasUnsent() ? `send ${draftCount() || ""}`.trim() : "send", command: `${PLUGIN_ID}.send` }, { key: "m", label: "viewed", command: `${PLUGIN_ID}.viewed` }],
       { key: "o", label: "options", command: `${PLUGIN_ID}.options` },
-      ...guiding() && guideSteps().length && !stack().length ? [{ key: "n/p", label: "next/prev step" }] : [],
-      { key: "esc", label: stack().length ? "back" : unanswered() ? "cancel question" : preparing() ? "cancel guide" : guiding() ? "end guide" : hasUnsent() ? "send & close" : "close", command: `${PLUGIN_ID}.leave` },
+      { key: "esc", label: stack().length ? "back" : unanswered() ? "cancel question" : hasUnsent() ? "send & close" : "close", command: `${PLUGIN_ID}.leave` },
     ]
   }
 
@@ -815,10 +793,12 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
             [<span style={{ fg: palette.text }}>C</span> {allComments().length} {allComments().length === 1 ? "comment" : "comments"}<Show when={unseen().length}><span style={{ fg: palette.accent }}> ● {unseen().length} new</span></Show>]
           </text>
         </box>
+        <box flexShrink={0} onMouseDown={() => startGuide()}>
+          <text fg={guideWriting() ? palette.accent : palette.muted} wrapMode="none">[<span style={{ fg: palette.text }}>w</span> {guideLabel()}]</text>
+        </box>
         <box flexShrink={0} onMouseDown={() => void openOptions()}><text fg={palette.muted} wrapMode="none">[<span style={{ fg: palette.text }}>o</span> options]</text></box>
       </box>
       <Show when={diff().error}>{(error) => <text fg={palette.error} wrapMode="word" flexShrink={0}>! {error()}</text>}</Show>
-      <Show when={guiding() && !guideRun()?.guide ? guideRun() : undefined}>{(run) => <GuideStatus run={run()} answer={guideAnswer()} model={review.guides.model(sessionID())} />}</Show>
       <box flexDirection="row" flexGrow={1} minHeight={0} minWidth={0} gap={1}>
         <Show when={listAt() === "side"}>
           <FileList files={ordered()} selected={file()?.file} style={review.settings().fileList} width={Math.min(44, Math.max(28, Math.floor(props.panel.width * 0.3)))}
@@ -875,12 +855,11 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
               <scrollbox ref={(element: ScrollBoxRenderable) => { scroll = element }} flexGrow={1} minHeight={0}>
                 <For each={[false, true]}>{(outside) => (
                   // Comments left outside the diff aren't gone from it; they were never in it.
-                  <Show when={placed().some(({ comment, at }) => !at && !!comment.outside === outside) || (!outside && [...placedAsks(), ...stepsShown()].some(({ at }) => !at))}>
+                  <Show when={placed().some(({ comment, at }) => !at && !!comment.outside === outside) || (!outside && placedAsks().some(({ at }) => !at))}>
                     <box flexDirection="column" marginBottom={1}>
                       <text fg={palette.muted}>{outside ? "Outside the diff:" : "Not in this diff any more:"}</text>
                       <For each={placed().filter(({ comment, at }) => !at && !!comment.outside === outside)}>{({ comment }) => <CommentCard comment={comment} delivery={deliveries().get(comment.id) ?? "draft"} reply={replies()[comment.id]} quote />}</For>
                       <Show when={!outside}><For each={placedAsks().filter(({ at }) => !at)}>{({ ask }) => <AskCard ask={ask} answer={answer(ask)} model={review.asks.model(sessionID())} quote />}</For></Show>
-                      <Show when={!outside}><For each={stepsShown().filter(({ at }) => !at)}>{({ step }) => <GuideCard step={step} guide={guideRun()!.guide!} index={guideRun()!.step} quote />}</For></Show>
                     </box>
                   </Show>
                 )}</For>
@@ -903,7 +882,6 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
                           picked={cursor() >= part.start && cursor() <= end && pickedToken() ? { line: cursor() - part.start, start: pickedToken()!.start } : undefined} />
                       </box>
                       <For each={placed().filter(({ at }) => at?.to === end)}>{({ comment }) => <CommentCard comment={comment} delivery={deliveries().get(comment.id) ?? "draft"} reply={replies()[comment.id]} />}</For>
-                      <For each={stepsShown().filter(({ at }) => at?.to === end)}>{({ step }) => <GuideCard step={step} guide={guideRun()!.guide!} index={guideRun()!.step} />}</For>
                       <For each={placedAsks().filter(({ at }) => at?.to === end)}>{({ ask }) => <AskCard ask={ask} answer={answer(ask)} model={review.asks.model(sessionID())} />}</For>
                       <Show when={editAt() === end && editing()}>{(edit) => (
                         <Editor anchor={edit().anchor} id={edit().id} ask={edit().ask} model={review.asks.model(sessionID())} text={edit().text} ref={(element) => { editor = element }} onSubmit={submitEditor}
@@ -964,46 +942,6 @@ function CommentCard(props: { comment: Comment; delivery: Delivery; reply?: Repl
       <Show when={props.quote}><text fg={palette.muted} wrapMode="none">{props.comment.quote.slice(0, 2).join("\n")}</text></Show>
       <text fg={palette.text} wrapMode="word">{props.comment.text}</text>
       <Show when={props.reply}>{(reply) => <text fg={replyColor()} wrapMode="word">↳ {reply().status}: {reply().reply}</text>}</Show>
-    </box>
-  )
-}
-
-/** While a guide is being written, or when it couldn't be: what's happening, above the diff. */
-function GuideStatus(props: { run: GuideRun; answer?: Answer; model?: string }) {
-  const palette = usePalette()
-  const failed = () => props.run.error ?? (props.answer?.state === "failed" ? props.answer.error ?? "No answer" : undefined)
-  const looked = () => [...new Set(props.answer?.looked ?? [])].join(", ")
-  return (
-    <box flexShrink={0} minWidth={0} marginBottom={1} paddingX={1} border={["left"]} borderColor={failed() || props.run.unreadable ? palette.error : palette.accent}>
-      <Show when={failed()} fallback={
-        <Show when={props.run.unreadable} fallback={
-          <text fg={palette.muted} wrapMode="word">
-            <span style={{ fg: palette.accent }}>Guided review</span> of {props.run.view}: {props.model ?? "the conversation's model"} is {props.answer?.state === "waiting" ? "about to start" : "reading the changes"}{looked() ? ` (looked with ${looked()})` : ""}... You can review meanwhile; esc cancels.
-          </text>
-        }>
-          <text fg={palette.error} wrapMode="word">! The model's answer had no guided review in it. Press o to start a new one.</text>
-        </Show>
-      }>{(error) => <text fg={palette.error} wrapMode="word">! Couldn't write the guided review: {error()}. Press o to start a new one.</text>}</Show>
-    </box>
-  )
-}
-
-/** The step you're on, under its lines: where it is in the walk, what the lines do, and what to look at. */
-function GuideCard(props: { step: GuideStep; guide: Guide; index: number; quote?: boolean }) {
-  const palette = usePalette()
-  const last = () => props.index === props.guide.steps.length - 1
-  return (
-    <box flexDirection="column" minWidth={0} marginLeft={2} paddingX={1} border={["left"]} borderColor={palette.accent}>
-      <Show when={props.index === 0 && props.guide.summary}><text fg={palette.text} wrapMode="word">{props.guide.summary}</text></Show>
-      <text fg={palette.muted} wrapMode="none">
-        <span style={{ fg: palette.accent }}>step {props.index + 1}/{props.guide.steps.length}</span> <b><span style={{ fg: palette.text }}>{props.step.title}</span></b> · {where(props.step.anchor)}
-      </text>
-      <Show when={props.quote}><text fg={palette.muted} wrapMode="none">{props.step.anchor.quote.slice(0, 2).join("\n")}</text></Show>
-      <Show when={props.step.note}><text fg={palette.text} wrapMode="word">{props.step.note}</text></Show>
-      <Show when={last() && props.guide.skipped.length}>
-        <text fg={palette.muted} wrapMode="word">Left out: {props.guide.skipped.map((entry) => entry.why ? `${entry.file} (${entry.why})` : entry.file).join(", ")}</text>
-      </Show>
-      <text fg={palette.muted} wrapMode="none">{last() ? "Last step · p previous · esc ends the guide" : props.index === 0 ? "n next" : "n next · p previous"}</text>
     </box>
   )
 }

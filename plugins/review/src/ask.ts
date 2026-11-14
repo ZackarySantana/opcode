@@ -82,7 +82,7 @@ export function askPrompt(input: { anchor: Anchor; question: string; excerpt: st
 
 /** Metadata that tags a prompt to a helper, a question or a guided review, so its user message can be found again. */
 export const promptMetadata = (id: string) => ({ [PLUGIN_ID]: { prompt: id } })
-const promptOf = (message: SessionMessageInfo) => (message.metadata?.[PLUGIN_ID] as { prompt?: unknown } | undefined)?.prompt
+export const promptOf = (message: SessionMessageInfo) => (message.metadata?.[PLUGIN_ID] as { prompt?: unknown } | undefined)?.prompt
 
 /**
  * A question's answer, from the answering session's messages: what the model wrote after the question and before

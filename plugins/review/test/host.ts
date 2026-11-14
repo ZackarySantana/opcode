@@ -2,7 +2,7 @@ import { mockTheme } from "@opcode/ui/test-support/host"
 import type { FileDiffInfo, ModelInfo, SessionCreateInput, SessionMessageInfo, SessionPromptInput } from "@opencode/client"
 import type { Context, KeymapCommand, KeymapLayer, PanelInput } from "@opencode/plugin/tui/context"
 import { RGBA } from "@opentui/core"
-import { createComputed, onCleanup } from "solid-js"
+import { createComputed, createSignal, onCleanup, type JSX } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 
 export const SESSION = "ses_review"
@@ -75,6 +75,8 @@ export function fakeHost(options: {
   }
   const session = { open: true }
   const choices: unknown[] = []
+  // The dialog shown, which a test renders beside what it's testing, as the host draws it over everything.
+  const [dialog, setDialog] = createSignal<(() => JSX.Element) | undefined>()
   const layers = new Set<() => KeymapLayer>()
   const active = (layer: KeymapLayer) => typeof layer.enabled === "function" ? layer.enabled() : layer.enabled ?? true
   const dispatch = (id: string) => {
@@ -140,7 +142,12 @@ export function fakeHost(options: {
     ui: {
       toast: { show: (toast: { message: string; variant?: string }) => { toasts.push(toast) } },
       // Each select answers with the next queued choice, as if picked.
-      dialog: { select: async () => choices.shift() },
+      dialog: {
+        select: async () => choices.shift(),
+        show: (render: () => JSX.Element) => setDialog(() => render),
+        set: () => {},
+        clear: () => setDialog(undefined),
+      },
       slot: (claim: { render: (input: never) => unknown }) => { slots.push({ claim, render: claim.render }); return () => {} },
       panel: {
         current: () => panel[0].current,
@@ -179,6 +186,8 @@ export function fakeHost(options: {
     /** Queues what the next dialog.select picks. */
     choose: (...values: unknown[]) => { choices.push(...values) },
     panelOpen: () => panel[0].current,
+    /** The dialog the host shows now, if any. */
+    dialog,
     /** Sessions the plugin made, and what it interrupted or took back from their queue. */
     created, interrupted, cancelled, diffs, switched,
     /** Switches the conversation to another model, as the host's model picker does. */

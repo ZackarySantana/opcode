@@ -45,15 +45,15 @@ Press `a` on a line (or on a range, after `v`), type a question, and press `ente
 
 The question goes with the diff around its lines, and the model can read and search the repository to check callers and definitions before answering. It can't edit files, run commands, or ask you anything. Nothing reaches the agent.
 
-The questions of a session, and its guided reviews, share a helper session of their own, made when first needed, so follow-ups keep their context: a question can ask about a step of the guide. It's archived, so it stays out of OpenCode's session lists, and its usage and cost are recorded like any session's. The [Cost](../cost/README.md) plugin counts them, but not as agent time. Answers stay until you dismiss them or OpenCode exits.
+The questions of a session, and its guided reviews, share a helper session of their own, made when first needed, so follow-ups keep their context: a question can ask about a slide of the guide. It's archived, so it stays out of OpenCode's session lists, and its usage and cost are recorded like any session's. The [Cost](../cost/README.md) plugin counts them, but not as agent time. Answers stay until you dismiss them or OpenCode exits.
 
 ### Guided review
 
-Run `/diffs-guided` (or **Guided review of changes** in the command palette, or **Guided review** in the options) to have the conversation's model walk you through the changes. It reads the diff of the view you're on, and the repository where it needs to, then orders the changes the way that explains them best: where the change starts, then what depends on it, tests last. Each step is some lines with a title and a note on what they do and what deserves a careful look; the first step opens with a summary, and the last says which files it left out and why.
+Press `w` (or click **guide** in the panel's header) and the conversation's model presents the changes as a short slide deck, in a dialog over the panel. It reads the diff of the view you're on, and the repository where it needs to, and organizes the deck by idea rather than by file: an overview, then the core change, what builds on it, and a last slide on risks and what to check before merging. Each slide explains what the code does, why, and what deserves a careful look, with the changed lines it's about, from any files.
 
-While the model writes it, a line above the diff says so, and you can review as usual meanwhile; `esc` cancels it. When it's ready, the cursor goes to the first step's lines with its note under them. `n` and `p` go to the next and previous step, across files, and the header shows **step 2/7**. Everything else works on the way: comment, ask, look up usages. Steps follow their lines as the agent edits.
+While the model writes, the dialog shows what it's doing as it goes: the files it reads, what it searches for, what it's thinking, and each slide's title as it's written. When it's done, the deck opens right there. `←` / `→` (or `h` / `l`, `n` / `p`, `space`) go between slides, `↑` / `↓` scroll a long one, and the dots at the bottom show where you are.
 
-`esc` leaves the guide, keeping your place: `/diffs-guided` again, or **Resume the guided review** in the options, picks it up at the same step without asking the model again. **Start a new guided review** in the options asks for a fresh one, such as after the agent changed more.
+`esc` closes the dialog, leaving the guide as it is: if it's still being written, it keeps going, and the button reads **guide: writing...**. `w` opens it again, at the slide you were on, without asking the model again. `x` stops a guide still being written, and `r` asks for a new one, such as after the agent changed more. Excerpts follow their lines as the agent edits.
 
 ### What to review
 
@@ -95,7 +95,7 @@ Usages are grouped by file: the definition first, then the files the diff change
 | `g` / `shift+g`, `home` / `end` | First / last line |
 | `]` / `[` | Next / previous hunk |
 | `shift+j` / `shift+k`, `alt+↓` / `alt+↑` | Next / previous file (clicking one in the list does too) |
-| `n` / `p` | In a guided review, the next / previous step; in a usage or search match you opened, the next / previous one |
+| `n` / `p` | In a usage or search match you opened, the next / previous one |
 | `/` | Search the diff: file paths and lines |
 | `h` / `l`, `←` / `→` | Previous / next name on the line |
 | `u` | Usages of the name |
@@ -106,10 +106,11 @@ Usages are grouped by file: the definition first, then the files the diff change
 | `x` | Delete the draft on the line, or dismiss the answer there |
 | `m` | Mark the file viewed, or not |
 | `o` | Options: what to review, how files are listed, and how usages are found |
+| `w` | Guided review: the changes as slides, by the conversation's model |
 | `b` | Show or hide the file list |
 | `r` | Refresh now |
 | `S` | Send the drafts |
-| `esc`, `ctrl+o` | Back from a usage or file; in the diff, `esc` cancels a question being answered or a guide being written, then leaves the guide, else sends the drafts and closes |
+| `esc`, `ctrl+o` | Back from a usage or file; in the diff, `esc` cancels a question being answered, else sends the drafts and closes |
 | `q` | Back to the conversation, keeping the drafts |
 | `?` | Show or hide the key hints |
 | `C` | All comments and the agent's replies |
@@ -128,4 +129,4 @@ In the comment box, `enter` saves, `shift+enter` adds a line, and `esc` saves an
 
 ## Storage
 
-Comments and viewed files are kept in OpenCode's terminal storage, synced across terminals on the same machine and kept across restarts. The line you were on, a half-written comment, the answers to your questions, and your place in a guided review survive closing the panel, until OpenCode exits. Replies are kept in the server's plugin storage.
+Comments and viewed files are kept in OpenCode's terminal storage, synced across terminals on the same machine and kept across restarts. The line you were on, a half-written comment, the answers to your questions, and the guided review, at the slide you were on, survive closing the panel, until OpenCode exits. Replies are kept in the server's plugin storage.

@@ -1,22 +1,24 @@
 /**
- * Guided reviews: the prompt that asks the conversation's model for a walk through the diff, and the steps its
- * answer becomes, anchored to the diff's lines so they follow them as the agent edits. Knows nothing about the host.
+ * Guided reviews: the prompt that asks the conversation's model to present the diff as a short slide deck, the
+ * deck its answer becomes (each slide's code anchored to the diff, so it follows its lines as the agent edits), and
+ * what the model is doing while it writes. Knows nothing about the host.
  */
 
+import type { SessionMessageInfo } from "@opencode/client"
 import { lineOf, type Row } from "./patch"
 import { anchorOf, type Anchor } from "./review"
 
-/** One stop on the walk: some lines, what they're for, and what to look at. */
-export interface GuideStep {
-  readonly anchor: Anchor
+/** One slide: an idea of the change, explained, with the code that shows it, from any files. */
+export interface Slide {
   readonly title: string
-  readonly note: string
+  readonly body: string
+  readonly code: readonly Anchor[]
 }
 
-export interface Guide {
-  readonly summary: string
-  readonly steps: readonly GuideStep[]
-  /** Changed files the walk leaves out, and why. */
+export interface Deck {
+  readonly title: string
+  readonly slides: readonly Slide[]
+  /** Changed files the deck leaves out, and why. */
   readonly skipped: readonly { readonly file: string; readonly why: string }[]
 }
 
@@ -33,15 +35,15 @@ export function guidePrompt(input: { view: string; files: readonly { file: strin
     else listed.push(`${entry.file} (+${entry.additions} -${entry.deletions})`)
   }
   return [
-    `Walk me through these changes (${input.view}) as a guided code review, in the order that makes them easiest to understand.`,
-    "Start where the change starts, such as a new type, the core logic, or the entry point, then follow what depends on it, with tests and small follow-on edits last. Group lines that belong together into one step, even across hunks of a file. Cover every meaningful change; leave out only trivial ones (lockfiles, formatting, generated files) and say so.",
-    "For each step, say what the lines do and why, and what deserves a careful look: risky logic, edge cases, behavior changes, and anything that looks wrong. Be concrete and brief: two to five sentences, plain text.",
+    `Present these changes (${input.view}) to me as a short slide deck for a code review, the way you'd walk a teammate through them in a meeting.`,
+    "Organize it by idea, not by file: one slide per thing the change does, and a slide can show code from several files. Start with an overview slide (what changed and why, usually without code), then the core change, then what builds on it, and end with a slide on risks and what to check before merging. Four to ten slides is typical; fewer for a small change.",
+    "On each slide, explain what the code does and why, and what deserves a careful look: risky logic, edge cases, behavior changes, anything that looks wrong. Two to five sentences of plain text, no headings or bullet syntax. Show at most three excerpts of the changed lines per slide.",
     "You can read and search the repository to check callers, definitions, or tests first. Don't edit anything.",
     "Reply with only a JSON object in a ```json block, in this shape:",
     "```json",
-    '{"summary": "two or three sentences on what the change does", "steps": [{"file": "path/as/in/the/diff", "start": 10, "end": 24, "side": "new", "title": "a few words", "note": "what to look at"}], "skipped": [{"file": "package-lock.json", "why": "generated"}]}',
+    '{"title": "a few words naming the change", "slides": [{"title": "a few words", "body": "the explanation", "code": [{"file": "path/as/in/the/diff", "start": 10, "end": 24, "side": "new"}]}], "skipped": [{"file": "package-lock.json", "why": "generated"}]}',
     "```",
-    'Line numbers are the file\'s after the change; use "side": "old" only for lines that were removed. Use the file paths exactly as the diff shows them.',
+    'Line numbers are the file\'s after the change; use "side": "old" only for lines that were removed. Use the file paths exactly as the diff shows them. Leave out only trivial changes (lockfiles, formatting, generated files), and list them in skipped.',
     "",
     "The diff:",
     "```diff",
@@ -65,7 +67,7 @@ function json(reply: string): unknown {
   return undefined
 }
 
-/** The rows of a file a step names: those showing its lines on its side, else the row nearest them. */
+/** The rows of a file an excerpt names: those showing its lines on its side, else the row nearest them. */
 function rowsFor(rows: readonly Row[], side: "new" | "old", start: number, end: number): { from: number; to: number } | undefined {
   const on = (row: Row) => side === "old" ? row.old : row.new
   const inside = rows.flatMap((row, index) => { const at = on(row); return at !== undefined && at >= start && at <= end ? [index] : [] })
@@ -76,28 +78,78 @@ function rowsFor(rows: readonly Row[], side: "new" | "old", start: number, end: 
   return { from: nearest, to: nearest }
 }
 
-/**
- * The guide in a reply, with each step anchored to the rows it names in the diff, or undefined when the reply has
- * no usable guide. Steps on files the diff doesn't change are dropped.
- */
-export function parseGuide(reply: string, rowsOf: (file: string) => readonly Row[] | undefined): Guide | undefined {
-  const value = json(reply) as { summary?: unknown; steps?: unknown; skipped?: unknown } | undefined
-  if (!value || typeof value !== "object" || !Array.isArray(value.steps)) return undefined
-  const steps = value.steps.flatMap((raw): GuideStep[] => {
+/** An excerpt anchored to the diff rows it names, or undefined when its file isn't in the diff. */
+function excerptOf(raw: unknown, rowsOf: (file: string) => readonly Row[] | undefined): Anchor | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const entry = raw as Record<string, unknown>
+  const file = text(entry.file).replace(/^[ab]\//, "")
+  const rows = rowsOf(file)
+  const start = line(entry.start)
+  if (!rows?.length || start === undefined) return undefined
+  const at = rowsFor(rows, entry.side === "old" ? "old" : "new", start, Math.max(start, line(entry.end) ?? start))
+  return at && anchorOf(file, rows, at.from, at.to)
+}
+
+/** The deck in a reply, or undefined when the reply has none. Excerpts of files the diff doesn't change are dropped. */
+export function parseDeck(reply: string, rowsOf: (file: string) => readonly Row[] | undefined): Deck | undefined {
+  const value = json(reply) as { title?: unknown; slides?: unknown; skipped?: unknown } | undefined
+  if (!value || typeof value !== "object" || !Array.isArray(value.slides)) return undefined
+  const slides = value.slides.flatMap((raw): Slide[] => {
     if (!raw || typeof raw !== "object") return []
-    const step = raw as Record<string, unknown>
-    const file = text(step.file).replace(/^[ab]\//, "")
-    const rows = rowsOf(file)
-    const start = line(step.start)
-    if (!rows?.length || start === undefined) return []
-    const end = Math.max(start, line(step.end) ?? start)
-    const at = rowsFor(rows, step.side === "old" ? "old" : "new", start, end)
-    if (!at) return []
-    return [{ anchor: anchorOf(file, rows, at.from, at.to), title: text(step.title) || `${file}:${start}`, note: text(step.note) }]
+    const slide = raw as Record<string, unknown>
+    const title = text(slide.title)
+    const body = text(slide.body)
+    if (!title && !body) return []
+    const code = (Array.isArray(slide.code) ? slide.code : []).flatMap((entry) => excerptOf(entry, rowsOf) ?? [])
+    return [{ title: title || "Untitled", body, code }]
   })
-  if (!steps.length) return undefined
+  if (!slides.length) return undefined
   const skipped = Array.isArray(value.skipped)
     ? value.skipped.flatMap((raw) => raw && typeof raw === "object" && text((raw as Record<string, unknown>).file) ? [{ file: text((raw as Record<string, unknown>).file), why: text((raw as Record<string, unknown>).why) }] : [])
     : []
-  return { summary: text(value.summary), steps, skipped }
+  return { title: text(value.title), slides, skipped }
+}
+
+/** Something the model did while writing, for the live log. */
+export type Activity =
+  | { readonly kind: "tool"; readonly text: string }
+  | { readonly kind: "thinking"; readonly text: string }
+  | { readonly kind: "slide"; readonly text: string }
+
+const short = (path: unknown) => typeof path === "string" ? path.replace(/^.*?\/(?=[^/]+\/[^/]+$)/, "…/") : ""
+
+/** What a tool call did, in a few words. */
+function toolText(name: string, input: unknown): string {
+  const fields = input && typeof input === "object" ? input as Record<string, unknown> : {}
+  if (name === "read") return `Reading ${short(fields.path) || "a file"}`
+  if (name === "grep") return `Searching for "${text(fields.pattern)}"${fields.path ? ` in ${short(fields.path)}` : ""}`
+  if (name === "glob") return `Looking for ${text(fields.pattern) || "files"}`
+  return `Using ${name}`
+}
+
+/** Slide titles in a reply that's still being written: the deck as far as it goes. */
+const TITLE = /"title"\s*:\s*"((?:[^"\\]|\\.)*)"/g
+
+/**
+ * What the model has done since the prompt `id`: the tools it used, what it's thinking, and the slides it has
+ * written so far, in order.
+ */
+export function activityOf(messages: readonly SessionMessageInfo[], id: string, promptOf: (message: SessionMessageInfo) => unknown): Activity[] {
+  const at = messages.findIndex((message) => message.type === "user" && promptOf(message) === id)
+  if (at < 0) return []
+  const next = messages.findIndex((message, index) => index > at && message.type === "user")
+  const activity: Activity[] = []
+  for (const message of messages.slice(at + 1, next < 0 ? undefined : next)) {
+    if (message.type !== "assistant") continue
+    for (const part of message.content) {
+      if (part.type === "tool") activity.push({ kind: "tool", text: toolText(part.name, part.state.status === "streaming" ? undefined : part.state.input) })
+      else if (part.type === "reasoning" && part.text.trim()) activity.push({ kind: "thinking", text: part.text.trim() })
+      else if (part.type === "text") {
+        // The deck's own title comes first; the rest are slides.
+        const titles = [...part.text.matchAll(TITLE)].map((match) => { try { return JSON.parse(`"${match[1]}"`) as string } catch { return match[1]! } })
+        for (const title of titles.slice(1)) activity.push({ kind: "slide", text: title })
+      }
+    }
+  }
+  return activity
 }
