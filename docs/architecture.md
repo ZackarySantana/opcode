@@ -7,7 +7,7 @@
 | Context | Recorded telemetry and observable retained-context estimate | Public history/context/catalog reads; read-only tool RPC | Session dialog and explicit metadata export |
 | Cost | Normalized usage ledger and date/entity aggregates | Server-owned SQLite, live events, RPC with one throttled update event per server process; client history import | Overview/Models/Projects/Daily/Turns dialog with a date picker; desktop: titlebar spend and the same dashboard |
 | Later | Ordered active items, completed history, and settings | One server-process service shared by every location: the whole list as one server plugin storage document, changed one read-modify-write at a time; RPC with a change event and the agent tools both use it; terminals follow it live; isolated prompt-paste bridge | Later/History/Settings dialog, native edit/confirmation dialogs, sidebar; desktop: side panel tab, panel launcher, `/later`, composer pill |
-| Sessions | Searchable user/assistant text and session metadata; active sessions projected from server state, their activation order and read times | Server-owned SQLite, live events, RPC; client history import; one server-process Agents service from a snapshot plus live events, with terminals' observations of running sessions, RPC with change and alert events | Browser, filters, preview, active-sessions sidebar, alerts, back trail, `/go` |
+| Sessions | Searchable user/assistant text and session metadata | Server-owned SQLite, live events, RPC; client history import | Browser, filters, preview |
 | Feed | Subscriptions, settings, and an interpreted timeline of feed items | One server-process service shared by every location: server plugin storage, the refresh schedule, feed fetching, RPC with a change event; terminals follow it live | Status/Upcoming/Releases/Subscribe/Settings dialog, feed picker, sidebar; desktop: in-progress incidents titlebar pill, Status/Upcoming/Releases/Subscriptions dialog |
 | GH PR Status | Pull requests classified by what waits on you, settings, and a saved team filter | One server-process service shared by every location: server plugin storage, the refresh schedule, `gh` GraphQL and REST calls, RPC with a change event; terminals follow it live | Mine/Reviewing/Teams/Settings dialog, team picker, sidebar; desktop composer pill, grouped pull request picker, review comments into the composer |
 | Snippets | Global and project snippet files, precedence, and `@name` mentions | Server-owned files, skill registration, prompt/context hooks, authoring tools, RPC | Dialog with previews, prompt paste bridge, authoring sessions; desktop: commands to insert, write, edit, and delete snippets |
@@ -83,7 +83,7 @@ Persistence, domain actions, and their cancellable I/O remain plugin-specific.
 search box and Escape that undoes one step at a time, grouped item cards that
 open on enter or click, the picker, the Settings tab, sidebar items with "+N
 more" lines, the refresh countdown beside a section title, the minute clock that ages views, and the browser
-launcher. Sessions uses its dialog, picker, and sidebar items too, Cost its tabbed
+launcher. Sessions uses its dialog and picker too, Cost its tabbed
 dialog and picker, and Snippets its tabbed dialog and item cards. Native prompts
 replace a custom dialog, so Later passes its own tab and focus signals, and Snippets
 its focus signal, to come back on the same tab and item. It is a separate workspace so
@@ -131,13 +131,6 @@ polled from an outside service. The shared parts live in `@opcode/core`:
   starts the plugin on a server that unloaded it everywhere.
 - **Time left, not wall-clock times.** Countdowns travel as milliseconds remaining, which the client counts from
   receipt on its own clock.
-- **Following the server's events.** Sessions' Agents list projects the server's own events. Its service consumes one
-  member's stream at a time (`consumeLive`, the oldest member's), not `failover`; a member's stream ends when it
-  leaves, and the next one's starts with a fresh snapshot, since events in between are gone. Changes are announced at
-  most every 100 ms, and only when what terminals show changed. A server plugin can't read which sessions run or what
-  they ask, so after any snapshot the state asks terminals for an observation made after a given revision; events since
-  then decide over it. Alerts travel as their own live event, so each terminal alerts once per transition, never for a
-  snapshot; what depends on the terminal (alerts, the back trail, leaving out the session it's on) stays there.
 - **Tests (`@opcode/core/test-support/server`).** `fakeServer` runs a server plugin as the host does, an instance per
   location sharing storage, with JSON-checked calls, live-only events, storage and location faults, and
   `closeServers` for `afterEach`.

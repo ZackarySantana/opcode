@@ -2,9 +2,7 @@ import { Plugin } from "@opencode/plugin"
 import { isSessionNotFoundError, type OpenCodeEvent } from "@opencode/client"
 import { errorMessage } from "@opcode/core"
 import { consumeLive, sleep } from "@opcode/core/live"
-import { guarded, toJson } from "@opcode/core/rpc"
-import { AgentsService, joinAgents, type ObserveInput } from "./agents"
-import { keepRead } from "./inbox"
+import { guarded } from "@opcode/core/rpc"
 import { acquireIndex, databasePath } from "./index-store"
 import { SessionsRpc, type SessionErrorType } from "./rpc"
 import { MissingSessionError, SessionsService, StaleSessionError } from "./service"
@@ -87,14 +85,9 @@ export default Plugin.define({
     const lease = acquireIndex(databasePath(context.options.database))
     const controller = new AbortController()
     const service = new SessionsService(context, lease, controller.signal)
-    // Registered before joining, so the Agents service can announce through this instance as soon as it joins.
-    const joined = Promise.withResolvers<AgentsService>()
-    const agents = joined.promise.then(async (agents) => { await agents.ready; return agents })
     let registration
     try {
       registration = await context.rpc.register(SessionsRpc, {
-        agents: async (_input, call) => guarded(call, async () => toJson((await agents).state())),
-        observe: async (input, call) => guarded(call, async () => toJson((await agents).observe(input as ObserveInput))),
         search: async (input, call) => guarded(call, () => service.search(input as SearchInput, call.signal), errorType),
         refresh: async (_input, call) => guarded(call, () => service.refresh(call.signal), errorType),
         begin: async (input, call) => guarded(call, () => service.begin(input as { sessionID: string; updatedAt: number }, call.signal), errorType),
@@ -102,17 +95,6 @@ export default Plugin.define({
         finish: async (input, call) => guarded(call, async () => { await service.finish(input as { token: string; complete?: boolean }); return {} }, errorType),
       })
     } catch (error) { controller.abort(); lease.release(); throw error }
-    const events = registration.events
-    // Ends this instance's event stream when it unloads, so the next location's takes over.
-    const left = new AbortController()
-    const joinedAgents = joinAgents({
-      events: (signal) => context.event.subscribe({ signal: AbortSignal.any([signal, left.signal]) }),
-      roots: async (limit, signal) => (await context.session.list({ parentID: null, archived: false, limit }, { signal })).data,
-      session: (sessionID, signal) => context.session.get({ sessionID }, { signal }),
-      publish: (state) => events.emit("agents", toJson(state)),
-      attention: (attention) => events.emit("attention", toJson(attention)),
-    }, (ports) => new AgentsService(ports, keepRead(context.options.inbox)))
-    joined.resolve(joinedAgents.service)
     const initial = (async () => {
       while (!controller.signal.aborted) {
         try {
@@ -130,8 +112,6 @@ export default Plugin.define({
     const indexing = watchSessions((signal) => context.event.subscribe({ signal }), service, context.location.directory, controller.signal)
     return async () => {
       controller.abort()
-      left.abort()
-      joinedAgents.leave()
       try { await registration.dispose() } finally {
         await Promise.allSettled([initial, indexing])
         await service.settled()

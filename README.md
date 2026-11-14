@@ -83,8 +83,6 @@ Remember the discussion but not where it happened? Search session titles, projec
 
 **Remember a phrase → find the session → get back to it.** Filter by project, include subagents when you need them, and see a matching message alongside the results, then open it, whichever directory it belongs to.
 
-**Keep an eye on every running agent.** The top of the sidebar lists the sessions that are working, waiting on you, or finished since you last looked, across all your projects. Click one, or type `/go 2`, to jump there, and `/go back` to return.
-
 ![Sessions browser searching for cache discussions across projects with a selected message preview](docs/images/sessions-browser.png)
 
 *Less hunting through projects. More getting back to the useful part.*

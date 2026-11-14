@@ -8,8 +8,6 @@ import { AUTHORING_LEAD, authoringGuide, authoringRequest, authoringSession, par
 import type { SnippetsRemote } from "./rpc"
 import type { SnippetEntry } from "./service"
 
-const SESSIONS_NAVIGATE = "opcode-sessions.navigate"
-
 interface BrowserState {
   rows: SnippetEntry[]
   loading: boolean
@@ -38,15 +36,6 @@ export function createBrowser(api: Context, remote: SnippetsRemote, render: () =
     if (opened) api.ui.dialog.clear()
   }
 
-  /**
-   * Through the Sessions plugin when it is loaded, so its sidebar offers a way back to the session the user left. Its
-   * command navigates synchronously, before anything else here navigates to the same session.
-   */
-  function navigate(sessionID: string) {
-    if (api.keymap.commands().some((command) => command.id === SESSIONS_NAVIGATE)) api.keymap.dispatch(SESSIONS_NAVIGATE, sessionID)
-    else api.ui.router.navigate({ type: "session", sessionID })
-  }
-
   async function load() {
     request?.abort()
     const current = request = new AbortController()
@@ -72,7 +61,7 @@ export function createBrowser(api: Context, remote: SnippetsRemote, render: () =
       const session = await api.client.session.create({ location: location(), model, ...authoringSession(target) })
       if (lifetime.signal.aborted) return
       const destination = { type: "session", sessionID: session.id } as const
-      navigate(session.id)
+      api.ui.router.navigate(destination)
       const ask = request.trim()
       if (ask) {
         await api.client.session.prompt({ sessionID: session.id, text: authoringRequest(target, ask) })

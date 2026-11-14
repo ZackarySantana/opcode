@@ -26,9 +26,8 @@ async function until(check: () => unknown) {
 
 /**
  * The plugin over a host whose dialogs replace one another, and whose prompt accepts pastes only with no dialog open.
- * With `sessions`, the Sessions plugin's navigate command is loaded.
  */
-async function harness(route: Route, sessions = false) {
+async function harness(route: Route) {
   let rows = [
     entry("global", "review", "GLOBAL REVIEW", { overridden: true }),
     entry("project", "later", "Loses to a skill", { conflict: true }),
@@ -42,7 +41,6 @@ async function harness(route: Route, sessions = false) {
   const removed: unknown[] = []
   const created: unknown[] = []
   const answers: boolean[] = []
-  const navigated: (string | undefined)[] = []
   const renderer = Object.assign(new EventEmitter(), {
     widthMethod: "unicode", isDestroyed: false,
     requestRender: () => { setTimeout(() => renderer.emit(CliRenderEvents.FRAME)) },
@@ -78,12 +76,7 @@ async function harness(route: Route, sessions = false) {
     },
     keymap: {
       layer: (factory: () => KeymapLayer) => { layers.add(factory); onCleanup(() => layers.delete(factory)) },
-      commands: () => [...dialog() ? [] : [{ id: "prompt.paste", run() {} }], ...sessions ? [{ id: "opcode-sessions.navigate", run() {} }] : []],
-      dispatch: (id: string, input?: string) => {
-        if (id !== "opcode-sessions.navigate") return
-        navigated.push(input)
-        route = { type: "session", sessionID: input! }
-      },
+      commands: () => dialog() ? [] : [{ id: "prompt.paste", run() {} }],
     },
   } as unknown as Context
   const stop = createRoot((dispose) => {
@@ -98,7 +91,7 @@ async function harness(route: Route, sessions = false) {
     .flatMap((layer) => (layer.commands ?? []) as KeymapCommand[])
     .find((command) => command.id === `opcode-snippets.${id}` && (typeof command.enabled === "function" ? command.enabled() : command.enabled ?? true))?.run()
   return {
-    dispatch, pastes, toasts, removed, created, answers, navigated,
+    dispatch, pastes, toasts, removed, created, answers,
     open: () => dialog() !== undefined,
     route: () => route,
     frame: (match: (frame: string) => boolean) => view.waitForFrame(match),
@@ -138,7 +131,7 @@ test("over another plugin's page, /snippets keeps its list open instead of inser
 })
 
 test("d deletes only after confirmation and returns to the list; e opens an authoring session through Sessions", async () => {
-  const h = await harness({ type: "session", sessionID: "work" }, true)
+  const h = await harness({ type: "session", sessionID: "work" })
   await h.dispatch("open")
   await h.frame((frame) => frame.includes("@later"))
 
@@ -159,8 +152,7 @@ test("d deletes only after confirmation and returns to the list; e opens an auth
   await until(() => h.pastes.length)
   expect(h.open()).toBe(false)
   expect(h.created).toMatchObject([authoringSession({ name: "review", scope: "global" })])
-  // Sessions navigated, so it can offer the way back; the instructions land in that session's prompt.
-  expect(h.navigated).toEqual(["authoring"])
+  // The instructions land in the new session's prompt.
   expect(h.route()).toEqual({ type: "session", sessionID: "authoring" })
   expect(h.pastes.at(-1)).toBe(AUTHORING_LEAD)
 })
