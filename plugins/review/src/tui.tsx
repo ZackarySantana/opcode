@@ -26,11 +26,11 @@ export default Plugin.define({
     ]
     api.keymap.layer(() => ({ mode: "global", commands: [{
       id: `${PLUGIN_ID}.open`, title: "Review changes", group: "Opcode", palette: true,
-      description: "Comment on the agent's diffs and steer it while it works", slash: { name: "review" },
+      description: "Comment on the agent's diffs and steer it while it works", slash: { name: "diffs" },
       run() {
-        // Already open: take input instead, so /review always lands in the panel.
+        // Already open: take input instead, so /diffs always lands in the panel.
         if (api.ui.panel.current()?.name === PLUGIN_ID) review.requestFocus()
-        else if (!api.ui.panel.open(PLUGIN_ID)) api.ui.toast.show({ variant: "warning", title: "Review", message: "Open a session first: /review reviews its changes." })
+        else if (!api.ui.panel.open(PLUGIN_ID)) api.ui.toast.show({ variant: "warning", title: "Review", message: "Open a session first: /diffs reviews its changes." })
       },
     }] }))
     return () => {

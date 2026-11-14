@@ -29,7 +29,7 @@ async function setup() {
   return { ...host, panel, view, run, frame: (text: string) => view.waitForFrame((current) => current.includes(text)), dispose: async () => { cleanup?.(); await view.dispose() } }
 }
 
-test("/review opens the panel in a session, takes input when it's already open, and explains itself elsewhere", async () => {
+test("/diffs opens the panel in a session, takes input when it's already open, and explains itself elsewhere", async () => {
   const { api, run, panelOpen, panel, toasts, session, frame, dispose } = await setup()
   try {
     await frame("Review This turn")
