@@ -57,7 +57,7 @@ The desktop app does not import history: only the terminal does (see [Collection
 
 ## Time
 
-"Where did my time go?" Only **root sessions** are timed; a subagent's work is part of its parent's turn, so it is never counted twice.
+"Where did my time go?" Only **root sessions** are timed; a subagent's work is part of its parent's turn, so it is never counted twice. Sessions an Opcode plugin starts beside yours, such as [Review](../review/README.md)'s questions about a diff, aren't timed either, though their usage and cost count.
 
 - **Turn (agent time):** from the user prompt, or the moment queued input is delivered, until the session goes idle. A prompt steered in while the agent works belongs to the same turn. A turn woken without a prompt, such as by a background subagent finishing, starts at its first recorded step.
 - **Waiting on you:** from a turn going idle until the next user prompt in that session, counting at most **30 minutes** per wait so nights away do not count. A turn woken without a prompt leaves no waiting gap. Waits are summed per session, so two sessions waiting at once count twice. A wait belongs to the turn it follows.

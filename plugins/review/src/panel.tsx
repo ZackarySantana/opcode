@@ -8,6 +8,7 @@ import { usePlugin } from "@opencode/plugin/tui"
 import type { PanelInput } from "@opencode/plugin/tui/context"
 import { CliRenderEvents, type BoxRenderable, type ScrollBoxRenderable, type SyntaxStyle, type TextareaRenderable } from "@opentui/core"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js"
+import { excerpt, type Answer, type Ask } from "./ask"
 import type { Cursor, Frame, Position, ReviewController } from "./host"
 import { CommentsView } from "./comments"
 import { frameFor, frameID, trail } from "./frames"
@@ -60,18 +61,25 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   // Comments go to the conversation you are in; a subagent's panel reviews its parent.
   const sessionID = createMemo(() => api.data.session.root(props.panel.sessionID))
   const state = () => review.review(sessionID())
-  const mode = () => state().mode
-  const view = () => mode() === "branch" ? `${modeTitle.branch} vs ${state().base ?? "its base"}` : modeTitle[mode()]
+  // The agent may work in a worktree of its own. Snapshots only cover the session's directory, so there the session
+  // views give way to the worktree's uncommitted changes.
+  const workspace = createMemo(() => review.workspace(sessionID()))
+  createEffect(on(sessionID, (id) => void review.worktrees(id)))
+  const elsewhere = (value: Mode) => !!workspace().worktree && (value === "turn" || value === "session")
+  const mode = (): Mode => elsewhere(state().mode) ? "working" : state().mode
+  const worktreeName = () => { const path = workspace().worktree; return path && path.replace(/[\\/]+$/, "").split(/[\\/]/).at(-1) }
+  const view = () => `${mode() === "branch" ? `${modeTitle.branch} vs ${state().base ?? "its base"}` : modeTitle[mode()]}${worktreeName() ? ` in ${worktreeName()}` : ""}`
 
   const [diff, setDiff] = createSignal<RefreshState<FileDiffInfo[]>>({ loading: false })
   const reads = createRefresh((signal) => {
     const id = sessionID()
-    const directory = review.directory(id)
+    const directory = workspace().directory
     if (!directory) throw new Error("This session has no directory to review.")
     return loadDiff(api.client, { sessionID: id, directory }, mode(), state().base, signal)
   }, setDiff, { delay: 200, timer: review.timer })
-  // Only a different view drops the diff; comments and viewed marks change the review without changing what it shows.
-  const source = createMemo(() => JSON.stringify([sessionID(), mode(), state().base]))
+  // Only a different view drops the diff, such as another worktree, or the session moving; comments and viewed marks
+  // change the review without changing what it shows.
+  const source = createMemo(() => JSON.stringify([sessionID(), mode(), state().base, workspace().directory]))
   createEffect(on(source, () => { reads.reset(); void reads.refresh() }))
   createEffect(on(sessionID, (id) => {
     void api.data.session.pending.sync(id).catch(() => undefined)
@@ -203,13 +211,19 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       if (moved.side !== comment.side || moved.start !== comment.start || moved.end !== comment.end) void review.moveComment(sessionID(), comment.id, moved)
     }
   }))
+  // Questions for the conversation's model, under the lines they're about, in the document they were asked in.
+  const asks = createMemo(() => review.asks.list(sessionID()).filter((ask) => ask.anchor.file === docFile() && !!ask.anchor.outside === !!doc()?.outside))
+  const placedAsks = createMemo(() => asks().map((ask) => ({ ask, at: locate(ask.anchor, rows()) })))
+  const answer = (ask: Ask) => review.asks.answer(ask)
+  /** The latest question still waiting or being answered, in any file. */
+  const unanswered = () => [...review.asks.list(sessionID())].reverse().find((ask) => ["waiting", "thinking", "answering"].includes(answer(ask).state))
   const editing = () => position().editing
   const editAt = createMemo(() => {
     const edit = editing()
     if (!edit || edit.anchor.file !== docFile()) return undefined
     return locate(edit.anchor, rows())?.to ?? rows().length - 1
   })
-  const breaks = createMemo(() => new Set([...placed().flatMap(({ at }) => at ? [at.to] : []), ...editAt() === undefined ? [] : [editAt()!]]))
+  const breaks = createMemo(() => new Set([...[...placed(), ...placedAsks()].flatMap(({ at }) => at ? [at.to] : []), ...editAt() === undefined ? [] : [editAt()!]]))
   const parts = createMemo<Segment[]>((previous) => {
     const kept = new Map(previous?.map((part) => [`${part.start}:${part.patch}`, part]))
     return segments(rows(), breaks()).map((part) => kept.get(`${part.start}:${part.patch}`) ?? part)
@@ -224,6 +238,8 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     const covering = placed().filter(({ at }) => at && at.from <= cursor() && cursor() <= at.to).map(({ comment }) => comment)
     return covering.find((comment) => !comment.sent) ?? covering[0]
   }
+  /** The latest question about the cursor's line. */
+  const askAtCursor = () => placedAsks().filter(({ at }) => at && at.from <= cursor() && cursor() <= at.to).at(-1)?.ask
 
   const startComment = () => {
     const existing = atCursor()
@@ -239,14 +255,45 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     place({ editing: { anchor: { ...anchorOf(current.file, rows(), span.from, span.to), ...current.outside ? { outside: true } : {} }, text: "" } })
     setMark(undefined)
   }
+  /** Opens a box for a question about the line or range, answered by the conversation's model in a session the agent doesn't see. */
+  const startAsk = () => {
+    const current = doc()
+    if (!current || !rows().length) return
+    const span = range() ?? { from: cursor(), to: cursor() }
+    place({ editing: { anchor: { ...anchorOf(current.file, rows(), span.from, span.to), ...current.outside ? { outside: true } : {} }, text: "", ask: true } })
+    setMark(undefined)
+  }
   let editor: TextareaRenderable | undefined
-  /** Saves and closes the comment being written. The text comes from the box while it's open, else from what was typed into it. */
+  const typed = () => {
+    const edit = editing()
+    return (editor && !editor.isDestroyed ? editor.plainText : edit?.text ?? "").trim()
+  }
+  /**
+   * Saves and closes the comment being written. The text comes from the box while it's open, else from what was
+   * typed into it. A question isn't kept: only enter asks it.
+   */
   function saveEditor() {
     const edit = editing()
     if (!edit) return
-    const body = (editor && !editor.isDestroyed ? editor.plainText : edit.text).trim()
-    if (edit.id) void review.editComment(sessionID(), edit.id, body)
-    else if (body) void review.addComment(sessionID(), edit.anchor, body)
+    // Asking costs money, so leaving a question's box doesn't ask it.
+    if (!edit.ask) {
+      const body = typed()
+      if (edit.id) void review.editComment(sessionID(), edit.id, body)
+      else if (body) void review.addComment(sessionID(), edit.anchor, body)
+    }
+    place({ editing: undefined })
+    props.panel.focus()
+  }
+  /** Enter: saves a comment, or asks the question about the lines it's on, with the diff around them. */
+  function submitEditor() {
+    const edit = editing()
+    const directory = workspace().directory
+    if (!edit?.ask || !directory) return saveEditor()
+    const body = typed()
+    // Lines that moved while you typed are asked about as quoted.
+    const at = locate(edit.anchor, rows())
+    const around = at ? excerpt(rows(), at.from, at.to) : edit.anchor.quote.join("\n")
+    if (body) void review.asks.ask(sessionID(), directory, edit.anchor, body, { excerpt: around, view: view(), files: ordered().map((entry) => entry.file) })
     place({ editing: undefined })
     props.panel.focus()
   }
@@ -258,7 +305,7 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     const frame = top()
     return frame?.kind === "file" && frame.content === undefined && !frame.error ? frame.file : undefined
   }, (path) => {
-    const directory = review.directory(sessionID())
+    const directory = workspace().directory
     if (!path || !directory) return
     const controller = new AbortController()
     onCleanup(() => controller.abort())
@@ -429,12 +476,17 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   const openOptions = async () => {
     // What's in effect is checked in the title, so it reads at a glance however narrow the menu is.
     const checked = (on: boolean, title: string) => on ? `✓ ${title}` : `  ${title}`
-    const choice = await api.ui.dialog.select<Mode | "base" | FileListStyle | `refs:${ReferenceEngine}`>({
+    const choice = await api.ui.dialog.select<Mode | "base" | "worktree" | FileListStyle | `refs:${ReferenceEngine}`>({
       title: "Review options",
       current: mode(),
       options: [
-        ...modes.map((value) => ({ title: checked(value === mode(), modeTitle[value]), value, description: describe[value], category: "View" })),
+        ...modes.map((value) => ({
+          title: checked(value === mode(), modeTitle[value]), value, category: "View",
+          description: elsewhere(value) ? `Only covers the session's own directory; ${worktreeName()} shows as Uncommitted` : describe[value],
+        })),
         { title: "  Base branch...", value: "base" as const, description: state().base ? `Comparing against ${state().base}` : "Pick what the branch view compares against", category: "View" },
+        { title: "  Worktree...", value: "worktree" as const, category: "View",
+          description: `${workspace().picked ? "Picked" : workspace().worktree ? "Found from the agent's work" : "The session's own directory"}: ${workspace().directory ?? "none"}` },
         { title: checked(review.settings().fileList === "tree", "Folder tree"), value: "tree" as const, description: "Files under their folders", category: "File list" },
         { title: checked(review.settings().fileList === "paths", "Full paths"), value: "paths" as const, description: "Each file's whole path", category: "File list" },
         { title: checked(review.settings().references === "lsp", "Language server, then search"), value: "refs:lsp" as const, description: "The language server OpenCode is set up with for the file, else a search by name", category: "Usages and definitions" },
@@ -442,12 +494,13 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       ],
     })
     if (choice === "base") return chooseBase()
+    if (choice === "worktree") return chooseWorktree()
     if (choice === "tree" || choice === "paths") return void review.updateSettings({ fileList: choice })
     if (choice === "refs:lsp" || choice === "refs:search") return void review.updateSettings({ references: choice === "refs:lsp" ? "lsp" : "search" })
     if (choice) void review.setView(sessionID(), choice)
   }
   const chooseBase = async () => {
-    const directory = review.directory(sessionID())
+    const directory = workspace().directory
     if (!directory) return
     try {
       const branches = await listBranches(api.client, directory)
@@ -456,6 +509,24 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     } catch (error) {
       api.ui.toast.show({ variant: "error", title: "Review", message: errorMessage(error) })
     }
+  }
+  /** Which checkout to review: found from where the agent works, the session's own directory, or any of the project's worktrees. */
+  const chooseWorktree = async () => {
+    const id = sessionID()
+    const own = review.directory(id)
+    // Worktrees made outside OpenCode, such as with git worktree add, are found by looking again.
+    const listed = await review.worktrees(id, "now")
+    const current = workspace()
+    const choice = await api.ui.dialog.select<string>({
+      title: "Review the changes in",
+      current: current.picked ? current.directory : "auto",
+      options: [
+        { title: "Where the agent works", value: "auto", description: "The worktree it last changed files or ran commands in, else the session's own directory" },
+        ...own ? [{ title: "The session's own directory", value: own, description: own }] : [],
+        ...listed.filter((directory) => directory !== own).map((directory) => ({ title: directory.split(/[\\/]/).at(-1) || directory, value: directory, description: directory })),
+      ],
+    })
+    if (choice) void review.pickWorktree(id, choice === "auto" ? undefined : choice)
   }
   const toggleFileViewed = () => {
     const entry = file()
@@ -474,10 +545,6 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
   const starts = createMemo(() => hunkStarts(rows()))
   const [listShown, setListShown] = createSignal(true)
   const [keysShown, setKeysShown] = createSignal(true)
-  /** The host's binding for a command, arrows drawn as arrows. */
-  const shortcut = (id: string) => api.keymap.shortcuts(id)[0]?.replace(/\bleft\b/, "←").replace(/\bright\b/, "→")
-  const focusPrompt = () => shortcut("pane.focus.left")
-  const focusPanel = () => shortcut("pane.focus.right")
   /** Where the file list goes: beside the diff, above it, or nowhere when hidden or empty. */
   const listAt = () => !listShown() || !files().length ? undefined : props.panel.width >= SIDE_WIDTH ? "side" : "top"
   const inList = () => !!refsFrame() || !!searchFrame() || !!commentsFrame()
@@ -506,17 +573,23 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
       { id: `${PLUGIN_ID}.search`, title: "Search the diff's files and lines", bind: "/", run: openSearch },
       { id: `${PLUGIN_ID}.definition`, title: "Definition of the name", bind: "d", run: () => find("definition") },
       { id: `${PLUGIN_ID}.comment`, title: "Comment on the line or range", bind: "c,return", run: startComment },
+      { id: `${PLUGIN_ID}.ask`, title: "Ask the conversation's model about the line or range", bind: "a", run: startAsk },
       { id: `${PLUGIN_ID}.range`, title: "Start or clear a range", bind: "v", run: () => setMark((current) => current === undefined ? cursor() : undefined) },
-      { id: `${PLUGIN_ID}.delete`, title: "Delete the draft here", bind: "x", run: () => {
+      { id: `${PLUGIN_ID}.delete`, title: "Delete the draft here, or dismiss the answer", bind: "x", run: () => {
         const comment = atCursor()
-        if (comment && !comment.sent) void review.removeComment(sessionID(), comment.id)
+        if (comment && !comment.sent) return void review.removeComment(sessionID(), comment.id)
+        const ask = askAtCursor()
+        if (ask) void review.asks.dismiss(sessionID(), ask.id)
       } },
       { id: `${PLUGIN_ID}.viewed`, title: "Mark the file viewed", bind: "m", enabled: () => !stack().length, run: toggleFileViewed },
       { id: `${PLUGIN_ID}.back`, title: "Back", bind: "ctrl+o", enabled: () => stack().length > 0, run: back },
       // Leaving sends what you wrote, like submitting a review. It never reaches the host's escape, which interrupts the agent.
       // Inside a view opened from the diff, escape goes back instead.
-      { id: `${PLUGIN_ID}.leave`, title: "Back, or send the drafts and close", bind: "escape", run: () => {
+      { id: `${PLUGIN_ID}.leave`, title: "Back, cancel the question being answered, or send the drafts and close", bind: "escape", run: () => {
         if (stack().length) return pop()
+        // A question still being answered is cancelled first, as escape stops the agent in the conversation.
+        const asking = unanswered()
+        if (asking) return void review.asks.dismiss(sessionID(), asking.id)
         if (hasUnsent()) send()
         props.panel.close()
       } },
@@ -580,10 +653,9 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     commands: [
       { id: `${PLUGIN_ID}.options`, title: "Review options", bind: "o", run: () => void openOptions() },
       { id: `${PLUGIN_ID}.files`, title: "Toggle the file list", bind: "b", run: () => setListShown((shown) => !shown) },
-      { id: `${PLUGIN_ID}.fullscreen`, title: "Toggle full screen", bind: "f", run: () => props.panel.toggleFullscreen() },
       { id: `${PLUGIN_ID}.refresh`, title: "Refresh", bind: "r", run: () => void reads.refresh() },
       { id: `${PLUGIN_ID}.send`, title: "Send the drafts to the agent", bind: "shift+s", run: send },
-      { id: `${PLUGIN_ID}.close`, title: "Close, keeping the drafts", bind: "q", run: () => props.panel.close() },
+      { id: `${PLUGIN_ID}.close`, title: "Back to the conversation, keeping the drafts", bind: "q", run: () => props.panel.close() },
       { id: `${PLUGIN_ID}.comments`, title: "All comments and replies", bind: "shift+c", run: openComments },
       { id: `${PLUGIN_ID}.keys`, title: "Show or hide the keys", bind: "shift+/,?", run: () => setKeysShown((shown) => !shown) },
     ],
@@ -633,7 +705,8 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     return parts.join(" · ")
   }
   const hints = (): KeyHint[] => {
-    if (editing()) return [{ key: "enter", label: "save" }, { key: "shift+enter", label: "newline" }, { key: "esc", label: "save & close", command: `${PLUGIN_ID}.editor.save` }, { key: "??", label: "asks a question" }]
+    if (editing()?.ask) return [{ key: "enter", label: "ask" }, { key: "shift+enter", label: "newline" }, { key: "esc", label: "cancel", command: `${PLUGIN_ID}.editor.save` }]
+    if (editing()) return [{ key: "enter", label: "save" }, { key: "shift+enter", label: "newline" }, { key: "esc", label: "save & close", command: `${PLUGIN_ID}.editor.save` }, { key: "??", label: "asks the agent" }]
     if (searchFrame()) return typing()
       ? [{ key: "↑/↓", label: "move" }, { key: "enter", label: "open", command: `${PLUGIN_ID}.search.open` }, { key: "esc", label: searchFrame()!.query ? "done" : "back", command: `${PLUGIN_ID}.search.back` }]
       : [{ key: "j/k", label: "move" }, { key: "enter", label: "open", command: `${PLUGIN_ID}.search.open` }, { key: "/", label: "edit", command: `${PLUGIN_ID}.search.type` }, { key: "esc", label: "back", command: `${PLUGIN_ID}.search.back` }]
@@ -653,13 +726,15 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
     ]
     return [
       { key: "c", label: "comment", command: `${PLUGIN_ID}.comment` },
+      { key: "a", label: "ask", command: `${PLUGIN_ID}.ask` },
+      ...!atCursor() && askAtCursor() ? [{ key: "x", label: "dismiss", command: `${PLUGIN_ID}.delete` }] : [],
       { key: "v", label: mark() === undefined ? "range" : "end range", command: `${PLUGIN_ID}.range` },
       { key: "u", label: "usages", command: `${PLUGIN_ID}.usages` },
       { key: "d", label: "definition", command: `${PLUGIN_ID}.definition` },
       { key: "/", label: "search", command: `${PLUGIN_ID}.search` },
       ...stack().length ? [] : [{ key: "S", label: hasUnsent() ? `send ${draftCount() || ""}`.trim() : "send", command: `${PLUGIN_ID}.send` }, { key: "m", label: "viewed", command: `${PLUGIN_ID}.viewed` }],
       { key: "o", label: "options", command: `${PLUGIN_ID}.options` },
-      { key: "esc", label: stack().length ? "back" : hasUnsent() ? "send & close" : "close", command: `${PLUGIN_ID}.leave` },
+      { key: "esc", label: stack().length ? "back" : unanswered() ? "cancel question" : hasUnsent() ? "send & close" : "close", command: `${PLUGIN_ID}.leave` },
     ]
   }
 
@@ -733,10 +808,11 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
               <scrollbox ref={(element: ScrollBoxRenderable) => { scroll = element }} flexGrow={1} minHeight={0}>
                 <For each={[false, true]}>{(outside) => (
                   // Comments left outside the diff aren't gone from it; they were never in it.
-                  <Show when={placed().some(({ comment, at }) => !at && !!comment.outside === outside)}>
+                  <Show when={placed().some(({ comment, at }) => !at && !!comment.outside === outside) || (!outside && placedAsks().some(({ at }) => !at))}>
                     <box flexDirection="column" marginBottom={1}>
                       <text fg={palette.muted}>{outside ? "Outside the diff:" : "Not in this diff any more:"}</text>
                       <For each={placed().filter(({ comment, at }) => !at && !!comment.outside === outside)}>{({ comment }) => <CommentCard comment={comment} delivery={deliveries().get(comment.id) ?? "draft"} reply={replies()[comment.id]} quote />}</For>
+                      <Show when={!outside}><For each={placedAsks().filter(({ at }) => !at)}>{({ ask }) => <AskCard ask={ask} answer={answer(ask)} model={review.asks.model(sessionID())} quote />}</For></Show>
                     </box>
                   </Show>
                 )}</For>
@@ -759,8 +835,9 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
                           picked={cursor() >= part.start && cursor() <= end && pickedToken() ? { line: cursor() - part.start, start: pickedToken()!.start } : undefined} />
                       </box>
                       <For each={placed().filter(({ at }) => at?.to === end)}>{({ comment }) => <CommentCard comment={comment} delivery={deliveries().get(comment.id) ?? "draft"} reply={replies()[comment.id]} />}</For>
+                      <For each={placedAsks().filter(({ at }) => at?.to === end)}>{({ ask }) => <AskCard ask={ask} answer={answer(ask)} model={review.asks.model(sessionID())} />}</For>
                       <Show when={editAt() === end && editing()}>{(edit) => (
-                        <Editor anchor={edit().anchor} id={edit().id} text={edit().text} ref={(element) => { editor = element }} onSubmit={saveEditor}
+                        <Editor anchor={edit().anchor} id={edit().id} ask={edit().ask} model={review.asks.model(sessionID())} text={edit().text} ref={(element) => { editor = element }} onSubmit={submitEditor}
                           onChange={(body) => {
                             // A change event can trail the save that closed the editor; it must not reopen it.
                             const current = editing()
@@ -794,11 +871,9 @@ export function ReviewPanel(props: { panel: PanelInput; review: ReviewController
         </box>
       </Show>
     </box>
-      {/* How to get back to the conversation, or here, in the host's own binding, as /diff says it. */}
+      {/* The panel fills the screen in place of the conversation: q or esc goes back to it. */}
       <box flexDirection="row" flexShrink={0} minWidth={0} paddingX={1} gap={2} backgroundColor={palette.background}>
-        <text wrapMode="none" minWidth={0} flexShrink={1} flexGrow={1} fg={palette.muted}>
-          <Show when={props.panel.focused ? focusPrompt() : focusPanel()}>{(keys) => <><span style={{ fg: palette.accent }}>{keys()}</span> {props.panel.focused ? "focus prompt" : "focus review"}</>}</Show>
-        </text>
+        <text wrapMode="none" minWidth={0} flexShrink={1} flexGrow={1} fg={palette.muted}><span style={{ fg: palette.text }}>q</span> back to the conversation</text>
         <box flexShrink={0} onMouseDown={() => setKeysShown((shown) => !shown)}>
           <text wrapMode="none" fg={palette.muted}><span style={{ fg: palette.text }}>?</span> {keysShown() ? "hide keys" : "keys"}</text>
         </box>
@@ -824,7 +899,32 @@ function CommentCard(props: { comment: Comment; delivery: Delivery; reply?: Repl
   )
 }
 
-function Editor(props: { anchor: Anchor; id?: string; text: string; ref: (element: TextareaRenderable | undefined) => void; onSubmit: () => void; onChange: (text: string) => void }): JSX.Element {
+const askState: Record<Answer["state"], string> = { waiting: "waiting", thinking: "thinking...", answering: "answering...", done: "answered", failed: "failed" }
+
+/** A question about the diff and its answer, streaming in. The agent never sees either. */
+function AskCard(props: { ask: Ask; answer: Answer; model?: string; quote?: boolean }) {
+  const palette = usePalette()
+  const looked = () => {
+    const tools = props.answer.looked
+    return tools.length ? ` · looked with ${[...new Set(tools)].join(", ")}` : ""
+  }
+  return (
+    <box flexDirection="column" minWidth={0} marginLeft={2} paddingX={1} border={["left"]} borderColor={props.answer.state === "failed" ? palette.error : palette.value}>
+      <text fg={palette.muted} wrapMode="none">
+        <span style={{ fg: palette.value }}>ask</span> {where(props.ask.anchor)}{props.model ? ` · ${props.model}` : ""} · {askState[props.answer.state]}{looked()}
+      </text>
+      <Show when={props.quote}><text fg={palette.muted} wrapMode="none">{props.ask.anchor.quote.slice(0, 2).join("\n")}</text></Show>
+      <text fg={palette.muted} wrapMode="word">{props.ask.question}</text>
+      <Show when={props.answer.text}><text fg={palette.text} wrapMode="word">{props.answer.text}</text></Show>
+      <Show when={props.answer.error}>{(error) => <text fg={palette.error} wrapMode="word">! {error()}</text>}</Show>
+    </box>
+  )
+}
+
+function Editor(props: {
+  anchor: Anchor; id?: string; ask?: boolean; model?: string; text: string
+  ref: (element: TextareaRenderable | undefined) => void; onSubmit: () => void; onChange: (text: string) => void
+}): JSX.Element {
   const palette = usePalette()
   let element: TextareaRenderable | undefined
   onMount(() => {
@@ -833,10 +933,10 @@ function Editor(props: { anchor: Anchor; id?: string; text: string; ref: (elemen
   })
   onCleanup(() => props.ref(undefined))
   return (
-    <box flexDirection="column" minWidth={0} marginLeft={2} paddingX={1} border={["left"]} borderColor={palette.accent}>
-      <text fg={palette.muted} wrapMode="none">{props.id ? `Editing ${props.id}` : "New comment"} on {where(props.anchor)}</text>
+    <box flexDirection="column" minWidth={0} marginLeft={2} paddingX={1} border={["left"]} borderColor={props.ask ? palette.value : palette.accent}>
+      <text fg={palette.muted} wrapMode="none">{props.ask ? `Ask ${props.model ?? "the conversation's model"} about` : props.id ? `Editing ${props.id} on` : "New comment on"} {where(props.anchor)}</text>
       <textarea ref={(textarea: TextareaRenderable) => { element = textarea; props.ref(textarea) }} initialValue={props.text} minHeight={1} maxHeight={8}
-        placeholder="Ask or adjust. End with ?? for a question." textColor={palette.text} focusedTextColor={palette.text} placeholderColor={palette.muted}
+        placeholder={props.ask ? "A question about these lines. Only you see the answer." : "Ask or adjust. End with ?? for a question."} textColor={palette.text} focusedTextColor={palette.text} placeholderColor={palette.muted}
         keyBindings={[
           { name: "return", action: "submit" },
           { name: "return", shift: true, action: "newline" },

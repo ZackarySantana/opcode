@@ -156,3 +156,22 @@ test("live turn markers match what history import records; subagents and synthet
     expect(imported.time("all")).toEqual(live.time("all"))
   } finally { collector.clear(); live.close(); imported.close() }
 })
+
+test("a side session a plugin started for another one counts its spend but not its time", async () => {
+  const ledger = new CostLedger(":memory:")
+  const side = { ...session, metadata: { "opcode.side": { parentID: "ses_parent", plugin: "opcode-review" } } }
+  const collector = createLiveCollector({ location, session: { get: async () => side, context: async () => [message] } }, ledger)
+  const signal = new AbortController().signal
+  const prompt = { sessionID: session.id, inboxID: "ask", item: { type: "user", payload: { text: "why?" }, delivery: "queue" } }
+  try {
+    for (const [type, data, created] of [
+      ["session.inbox.enqueued", prompt, record.createdAt - 1_000],
+      ["session.inbox.delivered", { sessionID: session.id, inboxID: "ask" }, record.createdAt - 1_000],
+      ["session.step.started", started, record.createdAt],
+      ["session.step.ended", ended, record.completedAt!],
+      ["session.execution.succeeded", { sessionID: session.id }, record.completedAt! + 1_000],
+    ] as const) await collector.handle(event(type, data, { created }), signal)
+    expect(ledger.dashboard("all").total).toMatchObject({ cost: 0.5, messages: 1 })
+    expect(ledger.time("all").total).toMatchObject({ agent: 0, turns: 0 })
+  } finally { collector.clear(); ledger.close() }
+})
