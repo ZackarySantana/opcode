@@ -47,18 +47,18 @@ Your own permission rules for `snippet_write` and `snippet_delete` on an agent w
 
 ### Manage
 
-Run `/snippets` or select **Snippets** in the command palette. It opens a dialog listing project snippets, then global ones, beside a preview of the outlined snippet: its scope, file, description, aliases, any problems, the snippets that use it, and the text `@name` attaches, with references expanded.
+Run `/snippets` or select **Snippets** in the command palette. It opens a dialog with project snippets and global snippets on separate tabs (`tab` switches; a project without snippets of its own opens on the global ones). Beside the list is a preview of the outlined snippet: its scope, file, description, aliases, any problems, the snippets that use it, and its text as written, with references to other snippets in purple.
 
 | Key | Action |
 | --- | --- |
 | `↑` / `↓`, `j` / `k` | Move selection |
+| `tab` / `shift+tab` | Switch between the project and global tabs |
 | `enter` | Close the dialog and insert `@name ` into the prompt under it (nothing is submitted). Over another plugin's page there is no prompt, so the dialog stays open |
 | `e` | Edit the selected snippet |
-| `n` | Write a new snippet |
+| `n` | Write a new snippet, in the open tab's scope |
 | `y` | Duplicate the selected snippet under a free `name-copy` |
 | `d` | Delete the selected snippet's file, after a confirmation that names the snippets whose references would stay as typed |
-| `m` | Save one of this session's messages as a snippet |
-| `v` | Show the snippet's own text or the expanded text, when they differ |
+| `pgup` / `pgdn`, `shift+↑` / `shift+↓` | Scroll the preview of a long snippet |
 | `/` | Search names, aliases, descriptions, and text |
 | `r` | Refresh |
 | `esc` | Leave the search, clear it, then close the dialog |
@@ -67,24 +67,25 @@ The list marks a global snippet **overridden** when a project snippet has the sa
 
 ### Edit
 
-`e`, `n`, `y`, `m`, and `/snippets new` open the editor, with fields for the name, scope, description, aliases (separated by spaces or commas), and the text.
+`e`, `n`, `y`, and `/snippets new` open the editor, with fields for the name, scope, description, aliases (separated by spaces or commas), and the text. References to other snippets in the text turn purple as you type them.
 
 | Key | Action |
 | --- | --- |
 | `tab` / `shift+tab` | Next or previous field (`enter` also moves on, except in the text, where it starts a new line) |
+| `↑` / `↓` | Previous or next field; in the text, the previous or next line, then the field above from its first line |
 | `space`, `←` / `→` | On the scope, switch between global and project |
 | `ctrl+s` | Save |
 | `esc` | Back to the list, or close when the editor was opened on its own; asks first if anything changed |
 
 Changing an existing snippet's name or scope renames or moves its file. A save that would replace another snippet, or with an invalid name, alias, or reference, keeps the editor open with the reason. Saving from the editor doesn't ask for approval: you are the one writing.
 
-**Save Message as Snippet** in the command palette (or `m` in `/snippets`) lists this session's recent messages, yours and the agent's, and opens the editor with the one you pick.
+**Save Message as Snippet** in the command palette lists this session's recent messages, yours and the agent's, and opens the editor with the one you pick.
 
 ### Desktop
 
 In the desktop app, from a session:
 
-- `/snippets` (or **Snippets** in the command palette) opens a dialog with a search field and the list on the left and the same preview on the right. **Insert** (or `enter` in the search, or a double click) types `@name ` into the prompt. **Edit**, **Duplicate**, **Delete**, and **New snippet** work as in the terminal, in an editor inside the dialog. `↑` / `↓` move the selection, and in the editor `ctrl+enter` (`⌘+enter` on macOS) saves.
+- `/snippets` (or **Snippets** in the command palette) opens a dialog with a search field and the list on the left and a preview on the right, showing the text as written with references in purple. **Insert** (or `enter` in the search, or a double click) types `@name ` into the prompt. **Edit**, **Duplicate**, **Delete**, and **New snippet** work as in the terminal, in an editor inside the dialog. `↑` / `↓` move the selection, and in the editor `ctrl+enter` (`⌘+enter` on macOS) saves.
 - `/snippets new` opens the editor, and `/snippets save [what]` asks the session's agent, as in the terminal.
 - **Save Prompt as Snippet** opens the editor with the prompt you are writing. After saving, it offers to replace the prompt with `@name `.
 - **Save Message as Snippet** picks one of the session's messages.

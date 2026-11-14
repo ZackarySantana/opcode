@@ -1,5 +1,6 @@
 import { usePlugin } from "@opencode/plugin/gui"
 import { createMemo, createSignal, For, Match, onCleanup, Show, Switch, type JSX } from "solid-js"
+import { effectiveSnippets, referenceSegments } from "../domain"
 import type { SnippetsRemote } from "../rpc"
 import type { SnippetEntry } from "../service"
 import type { SnippetActions } from "./actions"
@@ -104,6 +105,8 @@ function List(props: ListProps) {
   const ordered = createMemo(() => displayOrder(groups()))
   // The selection follows the filter: a row that no longer shows gives way to the first one that does.
   const current = createMemo(() => ordered().find((row) => rowKey(row) === props.selected) ?? ordered()[0])
+  // Every name and alias that inserts a snippet here, whose references the preview colors.
+  const keys = createMemo(() => new Set(effectiveSnippets(props.rows ?? []).keys()))
 
   const insert = (row: SnippetEntry) => { if (props.actions.insert(row)) props.close() }
   const remove = async (row: SnippetEntry) => { if (await props.actions.remove(row)) props.reload() }
@@ -156,7 +159,7 @@ function List(props: ListProps) {
             </div>
           </div>
           <Show when={current()}>{(row) => (
-            <Preview row={row()} insert={() => insert(row())} edit={() => props.edit(row())} duplicate={() => props.duplicate(row())} remove={() => void remove(row())} />
+            <Preview row={row()} keys={keys()} insert={() => insert(row())} edit={() => props.edit(row())} duplicate={() => props.duplicate(row())} remove={() => void remove(row())} />
           )}</Show>
         </div>
       </Match>
@@ -182,10 +185,9 @@ function Row(props: { row: SnippetEntry; selected: boolean; select(): void; inse
   )
 }
 
-function Preview(props: { row: SnippetEntry; insert(): void; edit(): void; duplicate(): void; remove(): void }) {
+/** The text as written, with references to snippets in purple rather than expanded. */
+function Preview(props: { row: SnippetEntry; keys: ReadonlySet<string>; insert(): void; edit(): void; duplicate(): void; remove(): void }) {
   const ctx = usePlugin()
-  const [raw, setRaw] = createSignal(false)
-  const differs = () => props.row.expanded !== props.row.body
   const flag = () => flagOf(props.row)
   return (
     <div class="opcode-snippets-preview">
@@ -206,10 +208,10 @@ function Preview(props: { row: SnippetEntry; insert(): void; edit(): void; dupli
         <ctx.ui.Button variant="neutral" icon="copy" onClick={() => props.duplicate()}>{ctx.t("action.duplicate")}</ctx.ui.Button>
         <ctx.ui.Button variant="danger" icon="trash" onClick={() => props.remove()}>{ctx.t("action.delete")}</ctx.ui.Button>
       </div>
-      <Show when={differs()}>
-        <ctx.ui.Switch checked={raw()} onChange={setRaw} label={ctx.t("preview.raw")} description={ctx.t("preview.raw.description")} />
-      </Show>
-      <ctx.ui.Code content={raw() && differs() ? props.row.body : props.row.expanded} language="markdown" />
+      <pre class="opcode-snippets-text">
+        <For each={referenceSegments(props.row.body, (key) => props.keys.has(key))}>{(segment) =>
+          segment.reference ? <span class="opcode-snippets-reference">{segment.text}</span> : segment.text}</For>
+      </pre>
       <Show when={props.row.problems.length}>
         <div class="opcode-snippets-field">
           <span class="opcode-snippets-label">{ctx.t("preview.problems")}</span>

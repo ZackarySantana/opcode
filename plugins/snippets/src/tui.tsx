@@ -27,7 +27,7 @@ export default Plugin.define({
       {
         id: `${PLUGIN_ID}.save-message`, title: "Save Message as Snippet", description: "Start a snippet from a message in this session",
         group: "Plugin", palette: true,
-        run: () => browser.saveMessage(false),
+        run: () => browser.saveMessage(),
       },
     ] }))
     return () => {

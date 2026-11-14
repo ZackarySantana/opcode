@@ -135,6 +135,20 @@ export function referenceKeys<T extends Keyed>(snippets: readonly T[], blocked: 
   return new Map([...effectiveSnippets(snippets)].filter(([key]) => !blocked.has(key)))
 }
 
+/** Text split into plain runs and `@name` references to snippets, so a view can color the references. */
+export function referenceSegments(text: string, isSnippet: (key: string) => boolean): { text: string; reference: boolean }[] {
+  const segments: { text: string; reference: boolean }[] = []
+  let last = 0
+  for (const match of text.matchAll(MENTION)) {
+    if (!isSnippet(match[1]!)) continue
+    if (match.index > last) segments.push({ text: text.slice(last, match.index), reference: false })
+    segments.push({ text: match[0], reference: true })
+    last = match.index + match[0].length
+  }
+  if (last < text.length) segments.push({ text: text.slice(last), reference: false })
+  return segments
+}
+
 /** Expands `@name` references in place, through nested references, stopping at loops and at MAX_BODY bytes. */
 export function expandSnippet<T extends Pick<Snippet, "body">>(snippet: T, keys: ReadonlyMap<string, T>): Expansion {
   const missing = new Set<string>()

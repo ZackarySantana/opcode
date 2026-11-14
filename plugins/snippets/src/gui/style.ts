@@ -18,6 +18,12 @@ export const css = `
 .opcode-snippets-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
 .opcode-snippets-title h3 { margin: 0; font-size: 1.1em; overflow-wrap: anywhere; }
 .opcode-snippets-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.opcode-snippets-text {
+  margin: 0; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 6px;
+  background: var(--surface-raised-base, color-mix(in srgb, currentColor 4%, transparent));
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.9em; line-height: 1.5;
+}
+.opcode-snippets-reference { color: #a371f7; }
 .opcode-snippets-path { font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.85em; overflow-wrap: anywhere; }
 .opcode-snippets-warning { margin: 0; padding-left: 18px; color: var(--text-warning, inherit); }
 .opcode-snippets-center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; flex: 1; padding: 32px 16px; text-align: center; }

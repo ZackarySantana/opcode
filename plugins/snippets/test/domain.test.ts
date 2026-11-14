@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { askFirst, newlyBroken, effectiveSnippets, expandSnippet, expandWrite, formatSnippet, MAX_BODY, parseCommand, parseSnippet, referenceKeys, referenceProblems, takenAliases, type Snippet } from "../src/domain"
+import { askFirst, newlyBroken, referenceSegments, effectiveSnippets, expandSnippet, expandWrite, formatSnippet, MAX_BODY, parseCommand, parseSnippet, referenceKeys, referenceProblems, takenAliases, type Snippet } from "../src/domain"
 
 const snippet = (name: string, scope: Snippet["scope"], aliases: string[] = [], body = `${scope} ${name}`): Snippet => ({ name, scope, aliases, body, path: `/${scope}/${name}.md` })
 const expand = (snippets: Snippet[], name: string, blocked?: Set<string>) => {
@@ -104,4 +104,14 @@ test("removing or renaming a snippet reports the snippets whose references stop 
   expect(newlyBroken(snippets, without(snippets[3]!))).toEqual([])
   // A rename that keeps the alias breaks nothing.
   expect(newlyBroken(snippets, [...without(review), snippet("check", "project", ["rv"])])).toEqual([])
+})
+
+test("references to snippets are split out for coloring; other @words, emails, and paths stay plain text", () => {
+  const known = new Set(["review", "rv"])
+  expect(referenceSegments("@review then mail me@b.com, read @b/x, ask @someone, and @rv", (key) => known.has(key))).toEqual([
+    { text: "@review", reference: true },
+    { text: " then mail me@b.com, read @b/x, ask @someone, and ", reference: false },
+    { text: "@rv", reference: true },
+  ])
+  expect(referenceSegments("", () => true)).toEqual([])
 })

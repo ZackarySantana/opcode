@@ -36,8 +36,8 @@ const messages = [
 /**
  * The plugin over a host whose dialogs replace one another, and whose prompt accepts pastes only with no dialog open.
  */
-async function harness(route: Route, options: { agentTools?: boolean } = {}) {
-  let rows = [
+async function harness(route: Route, options: { agentTools?: boolean; rows?: SnippetEntry[] } = {}) {
+  let rows = options.rows ?? [
     entry("global", "review", "GLOBAL REVIEW", { overridden: true }),
     entry("project", "later", "Loses to a skill", { conflict: true }),
     entry("project", "review", "Review the current changes\nfor correctness.", { description: "Review the diff", aliases: ["rv"], breaks: ["ticket"] }),
@@ -111,41 +111,55 @@ async function harness(route: Route, options: { agentTools?: boolean } = {}) {
     <PluginContextProvider value={api}><Show when={dialog()} keyed>{(open) => open.render()}</Show></PluginContextProvider>
   ), { width: 110, height: 44 })
   cleanups.push(stop, () => view.dispose())
-  const dispatch = (id: string, input?: string) => [...layers].map((layer) => layer()).sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
+  const enabled = (id: string) => [...layers].map((layer) => layer()).sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
     .flatMap((layer) => (layer.commands ?? []) as KeymapCommand[])
-    .find((command) => command.id === `opcode-snippets.${id}` && (typeof command.enabled === "function" ? command.enabled() : command.enabled ?? true))?.run(input)
+    .find((command) => command.id === `opcode-snippets.${id}` && (typeof command.enabled === "function" ? command.enabled() : command.enabled ?? true))
+  const dispatch = (id: string, input?: string) => enabled(id)?.run(input)
   const frame = (match: (frame: string) => boolean) => view.waitForFrame(match)
   return {
-    dispatch, frame, pastes, toasts, removed, saved, prompts, confirms, answers, failures, selects,
+    dispatch, frame, pastes,
+    /** Whether a key would run the command now. */
+    can: (id: string) => !!enabled(id), toasts, removed, saved, prompts, confirms, answers, failures, selects,
     open: () => dialog() !== undefined,
     route: () => route,
     /** Types into the focused editor field. */
     type: async (text: string) => { await view.mockInput.typeText(text); await view.renderOnce() },
     erase: async (count: number) => { for (let index = 0; index < count; index++) view.mockInput.pressBackspace(); await view.renderOnce() },
     newline: async () => { view.mockInput.pressEnter(); await view.renderOnce() },
+    /** A key the focused field handles itself, such as an arrow in the text. */
+    press: (key: Parameters<typeof view.mockInput.pressArrow>[0]) => view.mockInput.pressArrow(key),
+    render: () => view.renderOnce(),
     /** Moves the editor's focus forward by `count` fields. */
     next: async (count = 1) => { for (let index = 0; index < count; index++) dispatch("editor.next"); await view.renderOnce() },
   }
 }
 
-test("/snippets lists project snippets before global ones and previews the outlined one", async () => {
+test("/snippets puts project and global snippets on their own tabs and previews the outlined one as written", async () => {
   const h = await harness({ type: "session", sessionID: "work" })
   await h.dispatch("open")
-  const listed = await h.frame((frame) => frame.includes("GLOBAL") && frame.includes("/project/later.md"))
-  expect(listed).toMatch(/PROJECT[\s\S]*@later\s+skill conflict[\s\S]*@review[\s\S]*GLOBAL[\s\S]*@review\s+overridden[\s\S]*@ticket\s+broken reference/)
-  expect(listed).toMatch(/Skill conflict: another skill named later/)
+  const project = await h.frame((frame) => frame.includes("THIS PROJECT") && frame.includes("/project/later.md"))
+  expect(project).toMatch(/@later\s+skill conflict[\s\S]*@review/)
+  expect(project).not.toMatch(/@ticket|overridden/)
+  expect(project).toMatch(/Skill conflict: another skill named later/)
+  h.dispatch("down")
+  expect(await h.frame((frame) => frame.includes("/project/review.md"))).toMatch(/Used by: @ticket/)
 
-  // The preview shows what @name attaches, with references expanded, and can show the text as written.
-  for (let index = 0; index < 3; index++) h.dispatch("down")
+  h.dispatch("next")
+  const global = await h.frame((frame) => frame.includes("EVERY PROJECT") && frame.includes("/global/review.md"))
+  expect(global).toMatch(/@review\s+overridden[\s\S]*@ticket\s+broken reference/)
+  expect(global).not.toMatch(/@later/)
+  // The preview shows the text as written: references are colored, not expanded.
+  h.dispatch("down")
   const preview = await h.frame((frame) => frame.includes("/global/ticket.md"))
   expect(preview).toMatch(/Broken reference: @gone is not a snippet\./)
-  expect(preview).toMatch(/Do it, then GLOBAL REVIEW and @gone/)
-  h.dispatch("raw")
-  expect(await h.frame((frame) => frame.includes("RAW TEXT"))).toMatch(/Do it, then @review and @gone/)
+  expect(preview).toMatch(/Do it, then @review and @gone/)
+  expect(preview).not.toMatch(/GLOBAL REVIEW and/)
+})
 
-  h.dispatch("up")
-  h.dispatch("up")
-  expect(await h.frame((frame) => frame.includes("/project/review.md"))).toMatch(/Used by: @ticket/)
+test("a project without snippets of its own opens /snippets on the global ones", async () => {
+  const h = await harness({ type: "session", sessionID: "work" }, { rows: [entry("global", "plan", "PLAN")] })
+  await h.dispatch("open")
+  expect(await h.frame((frame) => frame.includes("EVERY PROJECT"))).toMatch(/@plan/)
 })
 
 test("enter closes /snippets and inserts @name into the prompt it was opened over", async () => {
@@ -218,10 +232,11 @@ test("n writes a new snippet in the editor and returns to the list focused on it
   await h.dispatch("editor.save")
   await until(() => h.saved.length)
 
-  expect(h.saved).toEqual([{ name: "greet", scope: "project", fields: { description: "Say hello", aliases: ["hi", "hello"], body: "Hello\nthere" } }])
+  // n on the project tab starts a project snippet; the scope was switched to global.
+  expect(h.saved).toEqual([{ name: "greet", scope: "global", fields: { description: "Say hello", aliases: ["hi", "hello"], body: "Hello\nthere" } }])
   expect(h.toasts).toContain("Saved @greet.")
   expect(h.open()).toBe(true)
-  await h.frame((frame) => !frame.includes("New snippet") && frame.includes("/project/greet.md"))
+  await h.frame((frame) => !frame.includes("New snippet") && frame.includes("EVERY PROJECT") && frame.includes("/global/greet.md"))
 })
 
 test("e edits the outlined snippet, renaming it through the original's key; a failed save keeps the editor open", async () => {
@@ -279,11 +294,13 @@ test("esc in a changed editor asks before discarding, and keeps the draft when t
   expect(h.saved).toEqual([])
 })
 
-test("m starts a snippet from one of the session's messages, newest first, text only", async () => {
+test("Save Message as Snippet starts one from the session's messages, newest first, text only", async () => {
   const h = await harness({ type: "session", sessionID: "work" })
   await h.dispatch("open")
   await h.frame((frame) => frame.includes("@later"))
-  await h.dispatch("message")
+  // The list has no key for it; the command palette does.
+  expect(h.can("message")).toBe(false)
+  await h.dispatch("save-message")
   expect(h.selects[0]?.options.map((option) => [option.description, option.value])).toEqual([
     ["Assistant", "Step one, then step two."],
     ["You", "Summarize the plan"],
@@ -293,6 +310,28 @@ test("m starts a snippet from one of the session's messages, newest first, text 
   await h.dispatch("editor.save")
   await until(() => h.saved.length)
   expect(h.saved).toEqual([{ name: "steps", scope: "global", fields: { aliases: [], body: "Step one, then step two." } }])
+})
+
+test("↑/↓ move between editor fields, and in the text between its lines before leaving it", async () => {
+  const h = await harness({ type: "home" })
+  await h.dispatch("open")
+  await h.frame((frame) => frame.includes("@later"))
+  h.dispatch("new")
+  await h.frame((frame) => frame.includes("New snippet"))
+  await h.type("steps")
+  for (let index = 0; index < 4; index++) { h.dispatch("editor.down"); await h.render() }
+  await h.type("one")
+  await h.newline()
+  await h.type("two")
+  // The text is the last field, so ↓ stays in it; ↑ moves between its lines, then past the first one to the aliases.
+  h.press("down")
+  h.press("up")
+  h.press("up")
+  await h.render()
+  await h.type(" also")
+  await h.dispatch("editor.save")
+  await until(() => h.saved.length)
+  expect(h.saved).toEqual([{ name: "steps", scope: "project", fields: { aliases: ["also"], body: "one\ntwo" } }])
 })
 
 test("Save Message as Snippet needs a session", async () => {

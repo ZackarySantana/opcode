@@ -5,7 +5,7 @@ import type { Context } from "@opencode/plugin/tui/context"
 import type { JSX } from "@opentui/solid/jsx-runtime"
 import { createSignal } from "solid-js"
 import { draftOf, duplicateOf, emptyDraft, messageChoices, sameDraft, saveRequest, type Draft } from "./draft"
-import { parseCommand, SAVE_LEAD } from "./domain"
+import { parseCommand, SAVE_LEAD, type Scope } from "./domain"
 import { describeError, type SnippetsRemote } from "./rpc"
 import type { SnippetEntry, SnippetKey } from "./service"
 
@@ -40,8 +40,12 @@ export const keyOf = (row: SnippetKey) => `${row.scope}/${row.name}`
 export function createBrowser(api: Context, remote: SnippetsRemote, render: () => JSX.Element) {
   const [state, setState] = createSignal<BrowserState>({ rows: [], loading: false })
   const [editing, setEditing] = createSignal<Editing>()
-  // The outlined snippet's key, kept here so it survives the list being replaced by a confirmation.
+  // The outlined snippet's key and the open tab (project, then global), kept here so they survive the list being
+  // replaced by a confirmation or the editor.
   const focus = createSignal<string>()
+  const tab = createSignal(0)
+  const tabOf = (scope: Scope) => scope === "project" ? 0 : 1
+  let chosen = false
   const lifetime = new AbortController()
   let request: AbortController | undefined
   let opened = false
@@ -66,7 +70,11 @@ export function createBrowser(api: Context, remote: SnippetsRemote, render: () =
     setState((value) => ({ ...value, loading: true }))
     try {
       const { snippets } = await remote.list(AbortSignal.any([current.signal, lifetime.signal]))
-      if (current === request) setState({ rows: snippets, loading: false })
+      if (current !== request) return
+      setState({ rows: snippets, loading: false })
+      // Until the user picks a tab, a project without snippets of its own opens on the global ones.
+      if (!chosen && !snippets.some((row) => row.scope === "project") && snippets.length) tab[1](tabOf("global"))
+      chosen = true
     } catch (error) {
       if (current === request && !lifetime.signal.aborted) setState((value) => ({ ...value, loading: false, error: describeError(error) }))
     }
@@ -104,6 +112,8 @@ export function createBrowser(api: Context, remote: SnippetsRemote, render: () =
         ? `Saved @${input.name}. References in ${result.breaks.map((name) => `@${name}`).join(", ")} no longer expand.`
         : `Saved @${input.name}.`, result.breaks.length ? "warning" : "success")
       focus[1](keyOf(input))
+      tab[1](tabOf(input.scope))
+      chosen = true
       leave({ ...current, back: true })
     } catch (error) {
       const latest = editing()
@@ -128,7 +138,7 @@ export function createBrowser(api: Context, remote: SnippetsRemote, render: () =
   }
 
   /** Picks one of the current session's messages, then opens the editor with its text. */
-  async function saveMessage(back: boolean) {
+  async function saveMessage() {
     const route = snapshotRoute(api.ui.router.current())
     if (route.type !== "session") { toast("Open a session to save one of its messages as a snippet.", "warning"); return }
     let messages = api.data.session.message.list(route.sessionID)
@@ -147,10 +157,8 @@ export function createBrowser(api: Context, remote: SnippetsRemote, render: () =
         value: choice.text,
       })),
     })
-    if (lifetime.signal.aborted) return
-    // The picker replaced the list; without a pick, esc goes back to it.
-    if (body === undefined) { if (back) show(); return }
-    write(emptyDraft(body), { back })
+    if (lifetime.signal.aborted || body === undefined) return
+    write(emptyDraft(body), { back: false })
   }
 
   /** `/snippets save`: the session's agent writes the snippet with its tools, asking first. */
@@ -178,7 +186,7 @@ export function createBrowser(api: Context, remote: SnippetsRemote, render: () =
   }
 
   return {
-    state, focus, editing, load, save, cancel,
+    state, focus, tab, editing, load, save, cancel,
     shown: () => opened,
     async command(input = "") {
       const parsed = parseCommand(input)
@@ -186,7 +194,8 @@ export function createBrowser(api: Context, remote: SnippetsRemote, render: () =
       else if (parsed.verb === "save") await askAgent(parsed.request)
       else open()
     },
-    create: () => write(emptyDraft(), { back: true }),
+    /** A new snippet in `scope`, such as the open tab's. */
+    create: (scope: Scope = "global") => write({ ...emptyDraft(), scope }, { back: true }),
     edit: (row: SnippetEntry) => write(draftOf(row), { from: { name: row.name, scope: row.scope }, back: true }),
     duplicate: (row: SnippetEntry) => write(duplicateOf(row, state().rows), { back: true }),
     saveMessage,

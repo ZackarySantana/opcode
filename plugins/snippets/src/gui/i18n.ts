@@ -25,8 +25,6 @@ export const en = {
   "action.delete": "Delete",
   "action.retry": "Retry",
   "preview.aliases": "Also {{aliases}}",
-  "preview.raw": "Show text as written",
-  "preview.raw.description": "Without its @references expanded",
   "preview.problems": "References that stay as typed",
   "preview.usedBy": "Used by {{names}}",
   "editor.new.title": "New snippet",
